@@ -7,6 +7,7 @@ import {
   applyEffectOverlay, applyEffectTransform, drawSticker, drawTransition, effectCss, sourceTime, stickerHandle,
   stickerHandleRadius, stickersOf, textPose, transitionAt, transitionLength, type StickerBox,
 } from './visuals';
+import { maskFor, maskImageOf, type Mask } from './segmentation';
 
 interface MediaRec<E extends HTMLMediaElement> {
   el: E;
@@ -101,6 +102,24 @@ class Engine {
             const img = new Image();
             img.src = url;
             this.images.set(c.assetId, img);
+          }
+        }
+        // Photo or video shown behind a cut-out person.
+        const bgId = c.bgRemoval?.mode === 'media' ? c.bgRemoval.assetId : undefined;
+        const bg = bgId ? p.assets[bgId] : undefined;
+        const bgUrl = bgId && urls[bgId];
+        if (bg && bgUrl) {
+          if (bg.kind === 'video') {
+            const id = bgClipId(c.id);
+            keepV.add(id);
+            if (!this.videos.has(id)) this.videos.set(id, this.make('video', bgUrl));
+          } else if (bg.kind === 'image') {
+            keepI.add(bg.id);
+            if (!this.images.has(bg.id)) {
+              const img = new Image();
+              img.src = bgUrl;
+              this.images.set(bg.id, img);
+            }
           }
         }
       }
@@ -302,6 +321,29 @@ class Engine {
       }
     }
 
+    // Background videos of "Quitar fondo" play silently behind their visible clip.
+    for (const l of placed) {
+      const r = this.videos.get(bgClipId(l.clip.id));
+      if (!r) continue;
+      const el = r.el;
+      const bg = bgClip(p, l);
+      const visible = bg && ((cur && l.index === cur.index) || (partner && l.index === partner.index));
+      if (!visible) {
+        if (!el.paused) el.pause();
+        continue;
+      }
+      const src = bgTime(bg.asset, l, t);
+      this.setVolume(r, 0);
+      if (playing) {
+        if (el.playbackRate !== 1) el.playbackRate = 1;
+        if (Math.abs(el.currentTime - src) > 0.3 && !el.seeking) el.currentTime = src;
+        if (el.paused) el.play().catch(() => {});
+      } else {
+        if (!el.paused) el.pause();
+        if (Math.abs(el.currentTime - src) > 0.02 && !el.seeking) el.currentTime = src;
+      }
+    }
+
     for (const a of p.audios) {
       const r = this.audios.get(a.id);
       if (!r) continue;
@@ -344,6 +386,7 @@ class Engine {
     // The preview's media elements are already seeked by updateMedia, so the source time is not needed here.
     const r = renderFrame(ctx, p, t, W, H, (clip, asset) => this.frameOf(clip, asset), placed, {
       stickerImage: (id) => this.images.get(id),
+      live: useStore.getState().playing && !this.exporting,
     });
     if (!r) return; // keep the previous frame until this one is decoded
 
@@ -484,6 +527,8 @@ export interface RenderOptions {
    * current clip alone. The export uses it so every transition frame is complete.
    */
   waitForAll?: boolean;
+  /** Smooth playback matters more than detail (cheaper background removal). */
+  live?: boolean;
 }
 
 export interface RenderResult {
@@ -492,6 +537,8 @@ export interface RenderResult {
 }
 
 const small = document.createElement('canvas');
+/** The cut-out person of a clip with "Quitar fondo", before it goes over the new background. */
+const cutLayer = document.createElement('canvas');
 /** Offscreen frames of the outgoing and incoming clip during a transition. */
 const layers = [document.createElement('canvas'), document.createElement('canvas')];
 
@@ -525,6 +572,24 @@ export function renderFrame(
     return lookup(l.clip, asset, sourceTime(l, t, asset.duration));
   };
 
+  /** Mask and background of a clip with "Quitar fondo"; null when the export must wait for them. */
+  const cutoutOf = (l: Placed, f: FrameImage): Cutout | null | undefined => {
+    const bgr = l.clip.bgRemoval;
+    const asset = p.assets[l.clip.assetId];
+    if (!bgr || !asset) return undefined;
+    const st = sourceTime(l, t, asset.duration);
+    const key = asset.kind === 'image' ? `${asset.id}@img` : `${asset.id}@${Math.round(st * 30)}`;
+    const mask = maskFor(key, asset.id, f.src, f.w, f.h, !!opts.live);
+    if (!mask && opts.waitForAll) return null;
+    let bgFrame: FrameImage | null = null;
+    const bg = bgClip(p, l);
+    if (bg) {
+      bgFrame = lookup(bg.clip, bg.asset, bgTime(bg.asset, l, t));
+      if (!bgFrame && opts.waitForAll) return null;
+    }
+    return { bg: bgr, mask, bgFrame };
+  };
+
   const cur = activeClip(p, t, placed);
   const tr = cur ? transitionAt(placed, t) : null;
   const source = cur ? frameAt(cur) : undefined;
@@ -535,16 +600,22 @@ export function renderFrame(
     const other = frameAt(partner);
     if (other === null && opts.waitForAll) return null;
     // Render both clips offscreen, then mix them. If the other clip isn't decoded yet, show the current one alone.
-    const [a, b] = [tr.out, tr.in].map((l, i) => {
+    const parts = [tr.out, tr.in].map((l) => {
       const f = l.index === cur.index ? source : other;
-      if (!f || !f.w || !f.h) return null;
+      return f && f.w && f.h ? { l, f, cut: cutoutOf(l, f) } : null;
+    });
+    if (parts.some((x) => x?.cut === null)) return null;
+    const [a, b] = parts.map((x, i) => {
+      if (!x) return null;
       const c = layer(i, W, H);
-      drawClip(c.getContext('2d')!, l, f, t, W, H);
+      drawClip(c.getContext('2d')!, x.l, x.f, t, W, H, x.cut ?? undefined);
       return c;
     });
     drawTransition(ctx, tr.type, a ?? b, b ?? a, tr.k, W, H);
   } else if (cur && source && source.w && source.h) {
-    drawClip(ctx, cur, source, t, W, H);
+    const cut = cutoutOf(cur, source);
+    if (cut === null) return null;
+    drawClip(ctx, cur, source, t, W, H, cut);
   } else {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
@@ -565,21 +636,82 @@ export function renderFrame(
   return { texts, stickers };
 }
 
+/** "Quitar fondo" data for one frame of a clip. Without a mask (model still loading) the clip draws as usual. */
+interface Cutout {
+  bg: NonNullable<Clip['bgRemoval']>;
+  mask: Mask | null;
+  /** Picture for the 'media' background, null while not decoded. */
+  bgFrame: FrameImage | null;
+}
+
+/** Id under which the background video of a clip is decoded (preview element / export reader). */
+export const bgClipId = (clipId: string) => `${clipId}~bg`;
+
+/** The background photo/video of a clip as a pseudo-clip the frame lookups understand. */
+function bgClip(p: Project, l: Placed): { clip: Clip; asset: Asset } | null {
+  const b = l.clip.bgRemoval;
+  const asset = b?.mode === 'media' && b.assetId ? p.assets[b.assetId] : undefined;
+  if (!asset || (asset.kind !== 'video' && asset.kind !== 'image')) return null;
+  return { clip: { ...l.clip, id: bgClipId(l.clip.id), assetId: asset.id, in: 0, out: asset.duration, speed: 1, bgRemoval: undefined }, asset };
+}
+
+/** Background videos start with the clip and loop. */
+function bgTime(asset: Asset, l: Placed, t: number) {
+  if (asset.kind !== 'video' || asset.duration <= 0) return 0;
+  const d = Math.max(0.1, asset.duration - 0.05);
+  return Math.max(0, t - l.start) % d;
+}
+
 /** Paint one main-track clip (picture, color filter and effect) filling the whole frame. */
-function drawClip(ctx: CanvasRenderingContext2D, l: Placed, f: FrameImage, t: number, W: number, H: number) {
+function drawClip(ctx: CanvasRenderingContext2D, l: Placed, f: FrameImage, t: number, W: number, H: number, cut?: Cutout) {
   const local = t - l.start;
   ctx.save();
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
   applyEffectTransform(ctx, l.clip, local, W, H);
-  drawFrame(ctx, f.src, f.w, f.h, W, H, l.clip, effectCss(l.clip, W));
+  drawFrame(ctx, f.src, f.w, f.h, W, H, l.clip, effectCss(l.clip, W), cut?.mask ? cut : undefined);
   ctx.restore();
   applyEffectOverlay(ctx, l.clip, local, W, H);
 }
 
-function drawFrame(ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: number, sh: number, W: number, H: number, clip: Clip, extraCss: string) {
+/** Cover the frame with `src`; with `blurDiv`, blurred by stretching a tiny copy (works without canvas filters). */
+function drawCover(ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: number, sh: number, W: number, H: number, blurDiv = 0) {
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  if (!blurDiv) {
+    const k = Math.max(W / sw, H / sh);
+    ctx.drawImage(src, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
+    return;
+  }
+  const bw = Math.max(8, Math.round(W / blurDiv));
+  const bh = Math.max(8, Math.round(H / blurDiv));
+  if (small.width !== bw || small.height !== bh) {
+    small.width = bw;
+    small.height = bh;
+  }
+  const k = Math.max(bw / sw, bh / sh);
+  small.getContext('2d')!.drawImage(src, (bw - sw * k) / 2, (bh - sh * k) / 2, sw * k, sh * k);
+  ctx.drawImage(small, 0, 0, W, H);
+}
+
+/** New background behind a cut-out person. */
+function drawBackground(ctx: CanvasRenderingContext2D, cut: Cutout, src: CanvasImageSource, sw: number, sh: number, W: number, H: number) {
+  const { bg, bgFrame } = cut;
+  if (bg.mode === 'blur') drawCover(ctx, src, sw, sh, W, H, 20);
+  else if (bg.mode === 'media' && bgFrame && bgFrame.w && bgFrame.h) drawCover(ctx, bgFrame.src, bgFrame.w, bgFrame.h, W, H);
+  else {
+    ctx.fillStyle = bg.mode === 'color' ? bg.color : '#000';
+    ctx.fillRect(-W * 0.1, -H * 0.1, W * 1.2, H * 1.2); // margin for shake / zoom effects
+  }
+}
+
+function drawFrame(
+  ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: number, sh: number, W: number, H: number, clip: Clip, extraCss: string,
+  cut?: Cutout,
+) {
   const fit = clip.fit;
-  if (fit === 'fit') {
+  if (cut) drawBackground(ctx, cut, src, sw, sh, W, H);
+  else if (fit === 'fit') {
     // Blurred, darkened copy behind the picture instead of black bars.
     const bw = Math.max(8, Math.round(W / 24));
     const bh = Math.max(8, Math.round(H / 24));
@@ -603,11 +735,49 @@ function drawFrame(ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: nu
   const dy = (H - dh) / 2;
   const f = getFilter(clip.filter);
   const css = [f.id !== 'none' ? f.css : '', extraCss].filter(Boolean).join(' ');
+  if (cut?.mask) {
+    drawCutout(ctx, src, dx, dy, dw, dh, sw, sh, W, H, css, extraCss, f, cut.mask, cut.bg.smooth);
+    return;
+  }
   if (css && supportsCanvasFilter) ctx.filter = css;
   ctx.drawImage(src, dx, dy, dw, dh);
   if (extraCss && !supportsCanvasFilter) softBlur(ctx, src, dx, dy, dw, dh, sw, sh);
   ctx.filter = 'none';
   if (f.id !== 'none' && !supportsCanvasFilter) applyFallback(ctx, f, src, dx, dy, dw, dh);
+}
+
+/** Draws only the person: the picture on its own layer, keeps the masked part, then lays it on `ctx`. */
+function drawCutout(
+  ctx: CanvasRenderingContext2D, src: CanvasImageSource, dx: number, dy: number, dw: number, dh: number, sw: number, sh: number,
+  W: number, H: number, css: string, extraCss: string, f: ReturnType<typeof getFilter>, mask: Mask, smooth: number,
+) {
+  if (cutLayer.width !== W || cutLayer.height !== H) {
+    cutLayer.width = W;
+    cutLayer.height = H;
+  }
+  const c = cutLayer.getContext('2d')!;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, W, H);
+  c.setTransform(ctx.getTransform()); // same effect transform (shake, zoom) as the clip
+  c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = 'high';
+  if (css && supportsCanvasFilter) c.filter = css;
+  c.drawImage(src, dx, dy, dw, dh);
+  if (extraCss && !supportsCanvasFilter) softBlur(c, src, dx, dy, dw, dh, sw, sh);
+  c.filter = 'none';
+  if (f.id !== 'none' && !supportsCanvasFilter) applyFallback(c, f, src, dx, dy, dw, dh);
+  // Keep the person. Smoothing blurs the mask, relative to the picture size so preview and export match.
+  c.globalCompositeOperation = 'destination-in';
+  const px = smooth * Math.max(dw, dh) * 0.012;
+  if (px > 0.3 && supportsCanvasFilter) c.filter = `blur(${px.toFixed(2)}px)`;
+  c.drawImage(maskImageOf(mask), dx, dy, dw, dh);
+  c.filter = 'none';
+  c.globalCompositeOperation = 'source-over';
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(cutLayer, 0, 0);
+  ctx.restore();
 }
 
 /** Blur without canvas filter support (older Safari): stretch a tiny copy. */

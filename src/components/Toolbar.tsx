@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Gauge, Maximize, Mic, Minimize,
+  ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Eraser, Gauge, Maximize, Mic, Minimize,
   Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors, Smile, Sparkles, Trash2, Type, Undo2,
   Volume2, type LucideIcon,
 } from 'lucide-react';
@@ -46,6 +46,7 @@ export function Toolbar() {
       ...(kind === 'video' ? [{ icon: Volume2, label: 'Volumen', run: open('volume') }] : []),
       { icon: Palette, label: 'Filtros', run: open('filters') },
       { icon: Sparkles, label: 'Efectos', run: open('effects') },
+      { icon: Eraser, label: 'Quitar fondo', run: open('background') },
       ...(!isLast ? [{ icon: ArrowLeftRight, label: 'Transición', run: open('transition') }] : []),
       {
         icon: clip?.fit === 'fill' ? Minimize : Maximize,

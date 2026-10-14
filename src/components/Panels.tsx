@@ -13,6 +13,8 @@ import { EffectsPanel, StickersPanel, TextAnimSection, TransitionPanel } from '.
 import { MediaLibrary } from './MediaLibrary';
 import { showOnboarding } from './Onboarding';
 import { RecordPanel, TtsPanel } from './VoicePanels';
+import { BackgroundPanel } from './BackgroundPanel';
+import { BgError } from '../segmentation';
 
 const TITLES: Record<PanelId, string> = {
   media: 'Agregar videos y fotos',
@@ -25,6 +27,7 @@ const TITLES: Record<PanelId, string> = {
   captions: 'Subtítulos automáticos',
   transition: 'Transición',
   effects: 'Efectos de video',
+  background: 'Quitar fondo',
   stickers: 'Stickers y emojis',
   record: 'Grabar tu voz',
   tts: 'Texto a voz',
@@ -50,6 +53,7 @@ export function Sheet() {
     captions: <CaptionsPanel />,
     transition: <TransitionPanel />,
     effects: <EffectsPanel />,
+    background: <BackgroundPanel />,
     stickers: <StickersPanel />,
     record: <RecordPanel />,
     tts: <TtsPanel />,
@@ -392,7 +396,7 @@ function ExportPanel() {
       setState({ kind: 'done', url: URL.createObjectURL(file), file });
     } catch (e) {
       if ((e as Error).message === 'cancelled') setState({ kind: 'idle' });
-      else setState({ kind: 'error', message: 'Algo salió mal al guardar. Intenta otra vez con calidad 720p.' });
+      else setState({ kind: 'error', message: e instanceof BgError ? e.message : 'Algo salió mal al guardar. Intenta otra vez con calidad 720p.' });
     }
   };
 
