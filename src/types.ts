@@ -77,5 +77,7 @@ export type PanelId =
   | 'filters'
   | 'text'
   | 'captions'
+  | 'record'
+  | 'tts'
   | 'export'
   | 'help';

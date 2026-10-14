@@ -11,6 +11,7 @@ import { CAPTION_LANGUAGES, captionDownloadMB, cancelCaptions, generateCaptions,
 import { FormatPicker } from './FormatPicker';
 import { MediaLibrary } from './MediaLibrary';
 import { showOnboarding } from './Onboarding';
+import { RecordPanel, TtsPanel } from './VoicePanels';
 
 const TITLES: Record<PanelId, string> = {
   media: 'Agregar videos y fotos',
@@ -21,6 +22,8 @@ const TITLES: Record<PanelId, string> = {
   filters: 'Filtros',
   text: 'Texto',
   captions: 'Subtítulos automáticos',
+  record: 'Grabar tu voz',
+  tts: 'Texto a voz',
   export: 'Guardar video',
   help: 'Cómo usar Clipo',
 };
@@ -41,6 +44,8 @@ export function Sheet() {
     filters: <FiltersPanel />,
     text: <TextPanel />,
     captions: <CaptionsPanel />,
+    record: <RecordPanel />,
+    tts: <TtsPanel />,
     export: <ExportPanel />,
     help: <HelpPanel />,
   };
