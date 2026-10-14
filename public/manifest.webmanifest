@@ -1,0 +1,15 @@
+{
+  "name": "Clipo · Editor de video",
+  "short_name": "Clipo",
+  "description": "Editor de video fácil para móvil y PC. Sin cuenta y sin marca de agua.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e0e12",
+  "theme_color": "#0e0e12",
+  "lang": "es",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

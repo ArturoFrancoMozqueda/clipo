@@ -1,0 +1,97 @@
+import {
+  ArrowLeft, ArrowRight, Captions, Copy, Gauge, Maximize, Minimize, Music, Palette, Pencil, Plus,
+  RectangleHorizontal, Scissors, Trash2, Type, Undo2, Volume2, type LucideIcon,
+} from 'lucide-react';
+import { useStore } from '../store';
+import { addText, deleteSelected, duplicateSelected, moveClip, splitAtPlayhead } from '../ops';
+import type { PanelId } from '../types';
+
+interface Tool {
+  icon: LucideIcon;
+  label: string;
+  run: () => void;
+  danger?: boolean;
+}
+
+const open = (p: PanelId) => () => useStore.getState().setPanel(p);
+
+/** Bottom bar whose tools change with what is selected, so only relevant actions show. */
+export function Toolbar() {
+  const sel = useStore((s) => s.selection);
+  const clip = useStore((s) => (s.selection?.kind === 'clip' ? s.project!.clips.find((c) => c.id === s.selection!.id) : undefined));
+  const kind = useStore((s) => (clip ? s.project!.assets[clip.assetId]?.kind : undefined));
+  const deselect = () => useStore.getState().select(null);
+
+  let title = '';
+  let tools: Tool[];
+  if (!sel) {
+    tools = [
+      { icon: Plus, label: 'Agregar', run: open('media') },
+      { icon: Type, label: 'Texto', run: addText },
+      { icon: Captions, label: 'Subtítulos', run: open('captions') },
+      { icon: Music, label: 'Música', run: open('audio') },
+      { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
+      { icon: RectangleHorizontal, label: 'Formato', run: open('format') },
+    ];
+  } else if (sel.kind === 'clip') {
+    title = kind === 'image' ? 'Foto' : 'Video';
+    tools = [
+      { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
+      ...(kind === 'video' ? [{ icon: Gauge, label: 'Velocidad', run: open('speed') }] : []),
+      ...(kind === 'video' ? [{ icon: Volume2, label: 'Volumen', run: open('volume') }] : []),
+      { icon: Palette, label: 'Filtros', run: open('filters') },
+      {
+        icon: clip?.fit === 'fill' ? Minimize : Maximize,
+        label: clip?.fit === 'fill' ? 'Ajustar' : 'Rellenar',
+        run: () => {
+          const s = useStore.getState();
+          s.commit((p) => {
+            const c = p.clips.find((x) => x.id === sel.id);
+            if (c) c.fit = c.fit === 'fill' ? 'fit' : 'fill';
+          });
+          s.notify(clip?.fit === 'fill' ? 'Se ve completo, con fondo difuminado' : 'Llena toda la pantalla');
+        },
+      },
+      { icon: ArrowLeft, label: 'Mover antes', run: () => moveClip(-1) },
+      { icon: ArrowRight, label: 'Mover después', run: () => moveClip(1) },
+      { icon: Copy, label: 'Duplicar', run: duplicateSelected },
+      { icon: Trash2, label: 'Eliminar', run: deleteSelected, danger: true },
+    ];
+  } else if (sel.kind === 'text') {
+    title = 'Texto';
+    tools = [
+      { icon: Pencil, label: 'Editar', run: open('text') },
+      { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
+      { icon: Copy, label: 'Duplicar', run: duplicateSelected },
+      { icon: Trash2, label: 'Eliminar', run: deleteSelected, danger: true },
+    ];
+  } else {
+    title = 'Audio';
+    tools = [
+      { icon: Volume2, label: 'Volumen', run: open('volume') },
+      { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
+      { icon: Copy, label: 'Duplicar', run: duplicateSelected },
+      { icon: Trash2, label: 'Eliminar', run: deleteSelected, danger: true },
+    ];
+  }
+
+  return (
+    <nav className="toolbar" aria-label="Herramientas">
+      {sel && (
+        <button className="tool back" onClick={deselect} title="Terminar de editar este elemento">
+          <Undo2 size={22} />
+          <span>Listo</span>
+          <small>{title}</small>
+        </button>
+      )}
+      <div className="tools">
+        {tools.map((t) => (
+          <button key={t.label} className={`tool ${t.danger ? 'danger' : ''}`} onClick={t.run}>
+            <t.icon size={24} />
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
