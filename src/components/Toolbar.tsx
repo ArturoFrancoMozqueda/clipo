@@ -1,6 +1,7 @@
 import {
-  ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Diamond, Gauge, Layers, Maximize, Mic, Minimize,
-  Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors, SlidersHorizontal, Smile, Sparkles, Trash2, Type, Undo2,
+  ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Diamond, Eraser, Gauge, Layers,
+  Maximize, Mic, Minimize, Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors,
+  SlidersHorizontal, Smile, Sparkles, Trash2, Type, Undo2,
   Volume2, type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../store';
@@ -56,6 +57,7 @@ export function Toolbar() {
       { icon: Palette, label: 'Filtros', run: open('filters') },
       ...adv({ icon: SlidersHorizontal, label: 'Color', run: open('color') }),
       { icon: Sparkles, label: 'Efectos', run: open('effects') },
+      { icon: Eraser, label: 'Quitar fondo', run: open('background') },
       ...(!isLast ? [{ icon: ArrowLeftRight, label: 'Transición', run: open('transition') }] : []),
       {
         icon: clip?.fit === 'fill' ? Minimize : Maximize,

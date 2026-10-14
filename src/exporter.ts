@@ -1,5 +1,6 @@
 import type { VideoCodec, VideoSample, VideoSampleSink } from 'mediabunny';
-import { engine, renderFrame, type FrameImage, type MediaRef } from './engine';
+import { bgClipId, engine, renderFrame, type FrameImage, type MediaRef } from './engine';
+import { loadSegmenter, usesBgRemoval } from './segmentation';
 import { audioDur, canvasSize, clamp, clipDur, layout, overlayDur, overlaysOf, totalDuration } from './model';
 import { useStore } from './store';
 import type { Project } from './types';
@@ -42,6 +43,8 @@ export async function exportVideo(short: number, onProgress: (p: ExportProgress)
   const s = useStore.getState();
   const p = s.project;
   if (!p) throw new Error('No hay proyecto abierto');
+  // "Quitar fondo" must be ready before the first frame, or the export would show the original background.
+  if (usesBgRemoval(p)) await loadSegmenter();
 
   if (canFastExport()) {
     engine.pause();
@@ -141,9 +144,13 @@ async function fastExport(
     }
     return r;
   };
-  // Photos on the main track and on the overlay track.
-  for (const c of [...p.clips, ...overlaysOf(p)]) {
-    const a = p.assets[c.assetId];
+  // Photos on the main track, on the overlay track, and behind "Quitar fondo".
+  const pictureIds = [...p.clips, ...overlaysOf(p)].flatMap((c) => [
+    c.assetId,
+    ...('bgRemoval' in c && c.bgRemoval?.mode === 'media' && c.bgRemoval.assetId ? [c.bgRemoval.assetId] : []),
+  ]);
+  for (const id of pictureIds) {
+    const a = p.assets[id];
     if (a?.kind === 'image' && !images.has(a.id)) {
       const img = new Image();
       img.src = urls[a.id];
@@ -201,10 +208,10 @@ async function fastExport(
 
       // Free decoders of clips that are over.
       for (const l of placed) {
-        const r = readers.get(l.clip.id);
-        if (r && l.end < t) {
-          r.close();
-          readers.delete(l.clip.id);
+        if (l.end >= t) continue;
+        for (const id of [l.clip.id, bgClipId(l.clip.id)]) {
+          readers.get(id)?.close();
+          readers.delete(id);
         }
       }
       for (const o of overlaysOf(p)) {

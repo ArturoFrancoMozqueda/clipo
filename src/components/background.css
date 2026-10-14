@@ -1,0 +1,10 @@
+.bg-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0; font-size: 14px; }
+.bg-error { padding: 10px 12px; border-radius: 12px; background: rgba(255, 90, 90, .12); border: 1px solid rgba(255, 90, 90, .4); }
+.bg-error span { flex: 1; min-width: 180px; }
+.bg-error .btn-ghost { display: inline-flex; align-items: center; gap: 6px; }
+.bg-swatches { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.bg-swatch { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--line); padding: 0; }
+.bg-swatch.active { outline: 3px solid var(--accent); outline-offset: 2px; }
+.bg-custom { position: relative; overflow: hidden; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); cursor: pointer; }
+.bg-custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.bg-thumb { height: 40px; border-radius: 6px; }

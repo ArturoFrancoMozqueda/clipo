@@ -99,6 +99,18 @@ export interface OverlayItem {
   keyframes?: Keyframe[];
 }
 
+export type BgMode = 'color' | 'blur' | 'media';
+/** "Quitar fondo": the person is cut out on-device and drawn over a new background. */
+export interface BgRemoval {
+  mode: BgMode;
+  /** CSS color for mode 'color'. */
+  color: string;
+  /** Image or video asset behind the person (mode 'media'); videos loop. */
+  assetId?: string;
+  /** Edge smoothing, 0..1. */
+  smooth: number;
+}
+
 /** A piece of the main (magnetic) track. Clips play back to back. */
 export interface Clip {
   id: string;
@@ -114,6 +126,7 @@ export interface Clip {
   transition?: Transition;
   effect?: Effect;
   color?: ColorAdjust;
+  bgRemoval?: BgRemoval;
 }
 
 export interface TextItem {
@@ -198,6 +211,7 @@ export type PanelId =
   | 'captions'
   | 'transition'
   | 'effects'
+  | 'background'
   | 'stickers'
   | 'record'
   | 'tts'
