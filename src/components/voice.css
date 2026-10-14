@@ -1,0 +1,22 @@
+/* Grabar voz / Texto a voz panels */
+.voice-center { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 8px 0; }
+.countdown { font-size: 88px; font-weight: 800; line-height: 1; color: #fff; animation: count-pop 1s ease-out; }
+@keyframes count-pop { from { transform: scale(1.6); opacity: 0; } 30% { transform: scale(1); opacity: 1; } }
+.btn-rec { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 64px; margin: 12px 0 4px; border-radius: 16px; font-size: 20px; font-weight: 700; color: #fff; background: #e5484d; }
+.btn-rec:disabled { opacity: .5; }
+.btn-rec.stop { background: var(--panel-2); border: 2px solid #e5484d; }
+.rec-live { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; margin: 4px 0; font-variant-numeric: tabular-nums; }
+.rec-dot { width: 14px; height: 14px; border-radius: 50%; background: #e5484d; animation: rec-blink 1s infinite; }
+@keyframes rec-blink { 50% { opacity: .25; } }
+
+.tts-texts { align-items: center; margin-top: 8px; }
+.voice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.voice-card { display: flex; align-items: stretch; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+.voice-card.active { border-color: var(--accent); background: rgba(124,108,255,.18); }
+.voice-pick { flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; min-height: 56px; padding: 8px 12px; text-align: left; }
+.voice-pick small { color: var(--muted); font-size: 12px; }
+.voice-play { width: 52px; display: grid; place-items: center; border-left: 1px solid var(--line); }
+.voice-play:disabled, .voice-pick:disabled { opacity: .5; }
+
+/* The voice list needs room on phones; on wide screens the sheet is a full-height side panel already. */
+@media (max-width: 1023px) { .sheet-tts { max-height: 80dvh; } }

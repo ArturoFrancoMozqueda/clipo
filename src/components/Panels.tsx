@@ -12,6 +12,7 @@ import { FormatPicker } from './FormatPicker';
 import { EffectsPanel, StickersPanel, TextAnimSection, TransitionPanel } from './VisualPanels';
 import { MediaLibrary } from './MediaLibrary';
 import { showOnboarding } from './Onboarding';
+import { RecordPanel, TtsPanel } from './VoicePanels';
 
 const TITLES: Record<PanelId, string> = {
   media: 'Agregar videos y fotos',
@@ -25,6 +26,8 @@ const TITLES: Record<PanelId, string> = {
   transition: 'Transición',
   effects: 'Efectos de video',
   stickers: 'Stickers y emojis',
+  record: 'Grabar tu voz',
+  tts: 'Texto a voz',
   export: 'Guardar video',
   help: 'Cómo usar Clipo',
 };
@@ -48,6 +51,8 @@ export function Sheet() {
     transition: <TransitionPanel />,
     effects: <EffectsPanel />,
     stickers: <StickersPanel />,
+    record: <RecordPanel />,
+    tts: <TtsPanel />,
     export: <ExportPanel />,
     help: <HelpPanel />,
   };

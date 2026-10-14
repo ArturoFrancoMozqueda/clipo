@@ -1,6 +1,7 @@
 import {
-  ArrowLeft, ArrowRight, Captions, Copy, Gauge, Maximize, Minimize, Music, Palette, Pencil, Plus,
-  RectangleHorizontal, Scissors, Trash2, Type, Undo2, Volume2, ArrowLeftRight, Smile, Sparkles, type LucideIcon,
+  ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Gauge, Maximize, Mic, Minimize,
+  Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors, Smile, Sparkles, Trash2, Type, Undo2,
+  Volume2, type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { addText, deleteSelected, duplicateSelected, moveClip, splitAtPlayhead } from '../ops';
@@ -32,6 +33,8 @@ export function Toolbar() {
       { icon: Captions, label: 'Subtítulos', run: open('captions') },
       { icon: Smile, label: 'Stickers', run: open('stickers') },
       { icon: Music, label: 'Música', run: open('audio') },
+      { icon: Mic, label: 'Grabar voz', run: open('record') },
+      { icon: AudioLines, label: 'Texto a voz', run: open('tts') },
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
       { icon: RectangleHorizontal, label: 'Formato', run: open('format') },
     ];
@@ -65,6 +68,7 @@ export function Toolbar() {
     title = 'Texto';
     tools = [
       { icon: Pencil, label: 'Editar', run: open('text') },
+      { icon: AudioLines, label: 'Leer en voz', run: open('tts') },
       { icon: Sparkles, label: 'Animación', run: open('text') },
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
       { icon: Copy, label: 'Duplicar', run: duplicateSelected },

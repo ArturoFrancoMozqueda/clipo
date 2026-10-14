@@ -128,5 +128,7 @@ export type PanelId =
   | 'transition'
   | 'effects'
   | 'stickers'
+  | 'record'
+  | 'tts'
   | 'export'
   | 'help';
