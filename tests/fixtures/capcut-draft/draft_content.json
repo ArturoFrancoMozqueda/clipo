@@ -1,0 +1,91 @@
+{
+  "id": "SYNTHETIC-DRAFT-0001",
+  "name": "Vacaciones de prueba",
+  "duration": 9000000,
+  "canvas_config": { "width": 1080, "height": 1920, "ratio": "9:16" },
+  "materials": {
+    "videos": [
+      { "id": "v1", "type": "video", "path": "C:/Users/demo/Videos/playa.mp4", "material_name": "playa.mp4", "duration": 10000000 },
+      { "id": "p1", "type": "photo", "path": "/storage/emulated/0/DCIM/foto_perro.jpg", "material_name": "foto_perro.jpg" },
+      { "id": "c1", "type": "color", "path": "" }
+    ],
+    "audios": [
+      { "id": "a1", "type": "extract_music", "path": "D:\\Musica\\cancion.mp3", "name": "cancion.mp3", "duration": 30000000 },
+      { "id": "a2", "type": "music", "path": "", "name": "Canción de la biblioteca" }
+    ],
+    "texts": [
+      { "id": "t1", "type": "text", "content": "{\"text\":\"¡Hola playa!\",\"styles\":[{\"range\":[0,11]}]}", "font_size": 15 },
+      { "id": "t2", "type": "subtitle", "content": "<font id=\"\" path=\"\"><color=(1,1,1,1)>[Fin del viaje]</color></font>", "font_size": 10 }
+    ],
+    "transitions": [{ "id": "tr1", "name": "Mezcla" }],
+    "material_animations": [{ "id": "an1", "animations": [{ "type": "in" }] }, { "id": "an2", "animations": [] }]
+  },
+  "tracks": [
+    {
+      "id": "track-main",
+      "type": "video",
+      "segments": [
+        {
+          "id": "s1",
+          "material_id": "v1",
+          "source_timerange": { "start": 2000000, "duration": 4000000 },
+          "target_timerange": { "start": 0, "duration": 2000000 },
+          "speed": 2,
+          "volume": 0.5
+        },
+        {
+          "id": "s2",
+          "material_id": "p1",
+          "source_timerange": null,
+          "target_timerange": { "start": 2500000, "duration": 3000000 },
+          "common_keyframes": [{ "id": "k1" }]
+        },
+        {
+          "id": "s3",
+          "material_id": "c1",
+          "target_timerange": { "start": 5500000, "duration": 1000000 }
+        }
+      ]
+    },
+    {
+      "id": "track-overlay",
+      "type": "video",
+      "segments": [{ "id": "s4", "material_id": "v1", "target_timerange": { "start": 0, "duration": 1000000 } }]
+    },
+    {
+      "id": "track-text",
+      "type": "text",
+      "segments": [
+        {
+          "id": "s5",
+          "material_id": "t1",
+          "target_timerange": { "start": 500000, "duration": 2000000 },
+          "clip": { "transform": { "x": 0, "y": 0.5 }, "scale": { "x": 1, "y": 1 } }
+        },
+        {
+          "id": "s6",
+          "material_id": "t2",
+          "target_timerange": { "start": 3000000, "duration": 2000000 },
+          "clip": { "transform": { "x": -0.5, "y": -0.8 }, "scale": { "x": 2, "y": 2 } }
+        },
+        { "id": "s7", "material_id": "missing-text", "target_timerange": { "start": 0, "duration": 1000000 } }
+      ]
+    },
+    {
+      "id": "track-audio",
+      "type": "audio",
+      "segments": [
+        {
+          "id": "s8",
+          "material_id": "a1",
+          "source_timerange": { "start": 1000000, "duration": 5000000 },
+          "target_timerange": { "start": 1000000, "duration": 5000000 },
+          "volume": 0.8
+        },
+        { "id": "s9", "material_id": "a2", "target_timerange": { "start": 0, "duration": 3000000 } }
+      ]
+    },
+    { "id": "track-sticker", "type": "sticker", "segments": [{ "id": "s10" }] },
+    { "id": "track-effect", "type": "effect", "segments": [{ "id": "s11" }, { "id": "s12" }] }
+  ]
+}
