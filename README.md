@@ -33,7 +33,8 @@ npm run build
 ```
 
 Sube la carpeta `dist/` a cualquier hosting estático con HTTPS (Vercel,
-Netlify, Cloudflare Pages, GitHub Pages).
+Netlify, Cloudflare Pages, GitHub Pages). La guía completa (web, Android, iOS
+y políticas de las tiendas) está en [PUBLICAR.md](PUBLICAR.md).
 
 ## Estructura
 
