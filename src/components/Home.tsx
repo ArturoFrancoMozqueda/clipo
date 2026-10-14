@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Download, Film, LayoutTemplate, Plus, Trash2, X } from 'lucide-react';
+import { Download, Film, FolderInput, LayoutTemplate, Plus, Trash2, X } from 'lucide-react';
 import type { AspectId, Project } from '../types';
 import { deleteProject, getBlob, listProjects } from '../db';
 import { useStore } from '../store';
 import { newProject } from '../ops';
 import { fmtTime, totalDuration } from '../model';
 import { FormatPicker } from './FormatPicker';
+import { CapcutImport } from './CapcutImport';
 import { useInstallPrompt } from './useInstallPrompt';
 import { TemplateGallery } from '../templates/TemplateGallery';
 import { SaveTemplateButton } from '../templates/SaveTemplateButton';
@@ -14,6 +15,7 @@ export function Home() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [picking, setPicking] = useState(false);
   const [templates, setTemplates] = useState(false);
+  const [importing, setImporting] = useState(false);
   const install = useInstallPrompt();
 
   useEffect(() => {
@@ -64,6 +66,9 @@ export function Home() {
         <button className="btn-primary alt big home-template-btn" onClick={() => setTemplates(true)}>
           <LayoutTemplate size={24} /> Usar una plantilla
         </button>
+        <button className="btn-ghost hero-alt" onClick={() => setImporting(true)}>
+          <FolderInput size={18} /> Importar proyecto de CapCut
+        </button>
         <ol className="steps">
           <li><b>1</b> Agrega tus videos y fotos</li>
           <li><b>2</b> Corta, pon texto y música</li>
@@ -101,6 +106,7 @@ export function Home() {
       </section>
 
       {templates && <TemplateGallery onClose={() => setTemplates(false)} />}
+      {importing && <CapcutImport onClose={() => setImporting(false)} />}
 
       {picking && (
         <div className="modal-backdrop" onClick={() => setPicking(false)}>
