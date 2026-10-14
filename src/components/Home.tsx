@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, Film, Plus, Trash2, X } from 'lucide-react';
+import { Download, Film, LayoutTemplate, Plus, Trash2, X } from 'lucide-react';
 import type { AspectId, Project } from '../types';
 import { deleteProject, getBlob, listProjects } from '../db';
 import { useStore } from '../store';
@@ -7,10 +7,13 @@ import { newProject } from '../ops';
 import { fmtTime, totalDuration } from '../model';
 import { FormatPicker } from './FormatPicker';
 import { useInstallPrompt } from './useInstallPrompt';
+import { TemplateGallery } from '../templates/TemplateGallery';
+import { SaveTemplateButton } from '../templates/SaveTemplateButton';
 
 export function Home() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [picking, setPicking] = useState(false);
+  const [templates, setTemplates] = useState(false);
   const install = useInstallPrompt();
 
   useEffect(() => {
@@ -58,6 +61,9 @@ export function Home() {
         <button className="btn-primary big" onClick={() => setPicking(true)}>
           <Plus size={24} /> Nuevo video
         </button>
+        <button className="btn-primary alt big home-template-btn" onClick={() => setTemplates(true)}>
+          <LayoutTemplate size={24} /> Usar una plantilla
+        </button>
         <ol className="steps">
           <li><b>1</b> Agrega tus videos y fotos</li>
           <li><b>2</b> Corta, pon texto y música</li>
@@ -83,6 +89,7 @@ export function Home() {
                     <strong>{p.name}</strong>
                     <small>{new Date(p.updatedAt).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' })}</small>
                   </button>
+                  {p.clips.length > 0 && <SaveTemplateButton project={p} className="icon-btn tpl-card-save" />}
                   <button className="icon-btn danger" aria-label={`Eliminar ${p.name}`} onClick={() => remove(p)}>
                     <Trash2 size={18} />
                   </button>
@@ -92,6 +99,8 @@ export function Home() {
           </div>
         )}
       </section>
+
+      {templates && <TemplateGallery onClose={() => setTemplates(false)} />}
 
       {picking && (
         <div className="modal-backdrop" onClick={() => setPicking(false)}>

@@ -2,6 +2,7 @@ import { ChevronLeft, CircleHelp, Redo2, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store';
 import { engine } from '../engine';
 import { saveProject } from '../db';
+import { SaveTemplateButton } from '../templates/SaveTemplateButton';
 
 export function TopBar() {
   const name = useStore((s) => s.project!.name);
@@ -37,6 +38,7 @@ export function TopBar() {
         <Redo2 size={20} />
         <span>Rehacer</span>
       </button>
+      <SaveTemplateButton />
       <button className="icon-btn" onClick={() => s().setPanel('help')} aria-label="Ayuda" title="Ayuda">
         <CircleHelp size={20} />
       </button>
