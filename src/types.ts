@@ -142,6 +142,8 @@ export interface TextItem {
   styleId: string;
   /** Made by automatic captions; regenerating replaces these. */
   caption?: boolean;
+  /** Bundled typeface id (src/fonts.ts); the style's default font when missing. */
+  font?: string;
   anim?: TextAnim;
   /** Radians (advanced mode). */
   rotation?: number;
@@ -219,4 +221,5 @@ export type PanelId =
   | 'overlay'
   | 'color'
   | 'keyframes'
+  | 'sfx'
   | 'help';

@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { TextItem } from './types';
 import type { TextPose } from './visuals';
+import { fontCss, getFont } from './fonts';
 
 export interface TextStyle {
   id: string;
@@ -73,7 +74,8 @@ export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: numbe
   const st = getTextStyle(item.styleId);
   const fs = Math.max(8, item.size * Math.min(W, H));
   ctx.save();
-  ctx.font = `${st.italic ? 'italic ' : ''}${st.weight} ${fs}px ${st.font}`;
+  const face = getFont(item.font);
+  ctx.font = face ? fontCss(face, fs, st.italic) : `${st.italic ? 'italic ' : ''}${st.weight} ${fs}px ${st.font}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';

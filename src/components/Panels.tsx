@@ -4,13 +4,16 @@ import type { AudioItem, Clip, OverlayItem, PanelId, SelectionKind, StickerItem,
 import { itemsOf, useStore } from '../store';
 import { canExport, exportVideo, type ExportProgress } from '../exporter';
 import { FILTERS } from '../filters';
-import { TEXT_STYLES, styleToCss } from '../textStyles';
+import { TEXT_STYLES, getTextStyle, styleToCss } from '../textStyles';
+import { FONTS, getFont, warmFont } from '../fonts';
+import { TEXT_PRESETS } from '../textPresets';
 import { clipDur, fmtTime, totalDuration } from '../model';
 import { editPose, poseNow, setAspect } from '../ops';
 import { CAPTION_LANGUAGES, captionDownloadMB, cancelCaptions, generateCaptions, type CaptionProgress, type CaptionQuality } from '../captions';
 import { FormatPicker } from './FormatPicker';
 import { EffectsPanel, StickersPanel, TextAnimSection, TransitionPanel } from './VisualPanels';
 import { MediaLibrary } from './MediaLibrary';
+import { SfxPanel } from './SoundPanels';
 import { showOnboarding } from './Onboarding';
 import { RecordPanel, TtsPanel } from './VoicePanels';
 import { AdvancedToggle, ColorPanel, KeyframesPanel, OverlayPanel } from './AdvancedPanels';
@@ -36,6 +39,7 @@ const TITLES: Record<PanelId, string> = {
   overlay: 'Superposición',
   color: 'Corrección de color',
   keyframes: 'Fotogramas clave',
+  sfx: 'Efectos de sonido',
   help: 'Cómo usar Clipo',
 };
 
@@ -65,6 +69,7 @@ export function Sheet() {
     overlay: <OverlayPanel />,
     color: <ColorPanel />,
     keyframes: <KeyframesPanel />,
+    sfx: <SfxPanel />,
     help: <HelpPanel />,
   };
   return (
@@ -257,7 +262,54 @@ function TextPanel() {
         onFocus={(e) => { checkpoint(); e.target.select(); }}
         onChange={(e) => editSelected((t) => void (t.text = e.target.value))}
       />
-      <p className="label">Estilo</p>
+      <p className="label">Estilos rápidos</p>
+      <div className="preset-row">
+        {TEXT_PRESETS.map((pr) => {
+          const st = getTextStyle(pr.styleId);
+          const f = getFont(pr.font)!;
+          return (
+            <button
+              key={pr.id}
+              className="preset"
+              title={pr.use}
+              onClick={() => {
+                checkpoint();
+                warmFont(pr.font);
+                editSelected((t) => {
+                  t.font = pr.font;
+                  t.styleId = pr.styleId;
+                  t.size = pr.size;
+                  t.anim = { ...pr.anim };
+                  if (pr.y !== undefined) {
+                    t.x = 0.5;
+                    t.y = pr.y;
+                  }
+                });
+              }}
+            >
+              <span style={{ ...styleToCss(st), fontFamily: f.family, fontWeight: f.weight }}>{pr.name}</span>
+              <small>{pr.use}</small>
+            </button>
+          );
+        })}
+      </div>
+      <p className="label">Fuente</p>
+      <div className="font-grid">
+        <button className={`font-opt ${!text.font ? 'active' : ''}`} onClick={() => { checkpoint(); editSelected((t) => void (t.font = undefined)); }}>
+          <span>Normal</span>
+        </button>
+        {FONTS.map((f) => (
+          <button
+            key={f.id}
+            className={`font-opt ${text.font === f.id ? 'active' : ''}`}
+            title={f.hint}
+            onClick={() => { checkpoint(); warmFont(f.id); editSelected((t) => void (t.font = f.id)); }}
+          >
+            <span style={{ fontFamily: f.family, fontWeight: f.weight }}>{f.name}</span>
+          </button>
+        ))}
+      </div>
+      <p className="label">Color y fondo</p>
       <div className="style-grid">
         {TEXT_STYLES.map((st) => (
           <button

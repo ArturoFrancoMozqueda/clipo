@@ -1,0 +1,914 @@
+[
+ {
+  "glyph": "😃",
+  "file": "1f603.svg",
+  "name": "Grinning face with big eyes",
+  "group": "Caras"
+ },
+ {
+  "glyph": "😂",
+  "file": "1f602.svg",
+  "name": "Face with tears of joy",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🤣",
+  "file": "1f923.svg",
+  "name": "Rolling on the floor laughing",
+  "group": "Caras"
+ },
+ {
+  "glyph": "😍",
+  "file": "1f60d.svg",
+  "name": "Smiling face with heart-eyes",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🥰",
+  "file": "1f970.svg",
+  "name": "Smiling face with hearts",
+  "group": "Caras"
+ },
+ {
+  "glyph": "😎",
+  "file": "1f60e.svg",
+  "name": "Smiling face with sunglasses",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🤩",
+  "file": "1f929.svg",
+  "name": "Star-struck",
+  "group": "Caras"
+ },
+ {
+  "glyph": "😜",
+  "file": "1f61c.svg",
+  "name": "Winking face with tongue",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🤔",
+  "file": "1f914.svg",
+  "name": "Thinking face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "😮",
+  "file": "1f62e.svg",
+  "name": "Face with open mouth",
+  "group": "Caras"
+ },
+ {
+  "glyph": "😱",
+  "file": "1f631.svg",
+  "name": "Face screaming in fear",
+  "group": "Caras"
+ },
+ {
+  "glyph": "😭",
+  "file": "1f62d.svg",
+  "name": "Loudly crying face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "😡",
+  "file": "1f621.svg",
+  "name": "Pouting face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🥳",
+  "file": "1f973.svg",
+  "name": "Partying face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "😴",
+  "file": "1f634.svg",
+  "name": "Sleeping face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🤯",
+  "file": "1f92f.svg",
+  "name": "Exploding head",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🙄",
+  "file": "1f644.svg",
+  "name": "Face with rolling eyes",
+  "group": "Caras"
+ },
+ {
+  "glyph": "😇",
+  "file": "1f607.svg",
+  "name": "Smiling face with halo",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🤗",
+  "file": "1f917.svg",
+  "name": "Hugging face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🤫",
+  "file": "1f92b.svg",
+  "name": "Shushing face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🤪",
+  "file": "1f92a.svg",
+  "name": "Zany face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🤓",
+  "file": "1f913.svg",
+  "name": "Nerd face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🥺",
+  "file": "1f97a.svg",
+  "name": "Pleading face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🫠",
+  "file": "1fae0.svg",
+  "name": "Melting face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🫡",
+  "file": "1fae1.svg",
+  "name": "Saluting face",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🧐",
+  "file": "1f9d0.svg",
+  "name": "Face with monocle",
+  "group": "Caras"
+ },
+ {
+  "glyph": "💀",
+  "file": "1f480.svg",
+  "name": "Skull",
+  "group": "Caras"
+ },
+ {
+  "glyph": "👻",
+  "file": "1f47b.svg",
+  "name": "Ghost",
+  "group": "Caras"
+ },
+ {
+  "glyph": "👽",
+  "file": "1f47d.svg",
+  "name": "Alien",
+  "group": "Caras"
+ },
+ {
+  "glyph": "🤖",
+  "file": "1f916.svg",
+  "name": "Robot",
+  "group": "Caras"
+ },
+ {
+  "glyph": "👍",
+  "file": "1f44d.svg",
+  "name": "Thumbs up",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "👎",
+  "file": "1f44e.svg",
+  "name": "Thumbs down",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "👏",
+  "file": "1f44f.svg",
+  "name": "Clapping hands",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "🙌",
+  "file": "1f64c.svg",
+  "name": "Raising hands",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "🙏",
+  "file": "1f64f.svg",
+  "name": "Folded hands",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "💪",
+  "file": "1f4aa.svg",
+  "name": "Flexed biceps",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "👋",
+  "file": "1f44b.svg",
+  "name": "Waving hand",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "✌️",
+  "file": "270c.svg",
+  "name": "Victory hand",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "🤞",
+  "file": "1f91e.svg",
+  "name": "Crossed fingers",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "👌",
+  "file": "1f44c.svg",
+  "name": "Ok hand",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "👉",
+  "file": "1f449.svg",
+  "name": "Backhand index pointing right",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "👈",
+  "file": "1f448.svg",
+  "name": "Backhand index pointing left",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "👆",
+  "file": "1f446.svg",
+  "name": "Backhand index pointing up",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "👇",
+  "file": "1f447.svg",
+  "name": "Backhand index pointing down",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "🫶",
+  "file": "1faf6.svg",
+  "name": "Heart hands",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "🤝",
+  "file": "1f91d.svg",
+  "name": "Handshake",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "✍️",
+  "file": "270d.svg",
+  "name": "Writing hand",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "👀",
+  "file": "1f440.svg",
+  "name": "Eyes",
+  "group": "Gestos"
+ },
+ {
+  "glyph": "❤️",
+  "file": "2764.svg",
+  "name": "Red heart",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "🧡",
+  "file": "1f9e1.svg",
+  "name": "Orange heart",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "💛",
+  "file": "1f49b.svg",
+  "name": "Yellow heart",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "💚",
+  "file": "1f49a.svg",
+  "name": "Green heart",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "💙",
+  "file": "1f499.svg",
+  "name": "Blue heart",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "💜",
+  "file": "1f49c.svg",
+  "name": "Purple heart",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "🖤",
+  "file": "1f5a4.svg",
+  "name": "Black heart",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "🤍",
+  "file": "1f90d.svg",
+  "name": "White heart",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "💖",
+  "file": "1f496.svg",
+  "name": "Sparkling heart",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "💔",
+  "file": "1f494.svg",
+  "name": "Broken heart",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "❤️‍🔥",
+  "file": "2764-200d-1f525.svg",
+  "name": "Heart on fire",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "💕",
+  "file": "1f495.svg",
+  "name": "Two hearts",
+  "group": "Corazones"
+ },
+ {
+  "glyph": "🎉",
+  "file": "1f389.svg",
+  "name": "Party popper",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🎊",
+  "file": "1f38a.svg",
+  "name": "Confetti ball",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🎈",
+  "file": "1f388.svg",
+  "name": "Balloon",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🎁",
+  "file": "1f381.svg",
+  "name": "Wrapped gift",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🎂",
+  "file": "1f382.svg",
+  "name": "Birthday cake",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🏆",
+  "file": "1f3c6.svg",
+  "name": "Trophy",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🥇",
+  "file": "1f947.svg",
+  "name": "1st place medal",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "👑",
+  "file": "1f451.svg",
+  "name": "Crown",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🥂",
+  "file": "1f942.svg",
+  "name": "Clinking glasses",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🍾",
+  "file": "1f37e.svg",
+  "name": "Bottle with popping cork",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🎆",
+  "file": "1f386.svg",
+  "name": "Fireworks",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🎇",
+  "file": "1f387.svg",
+  "name": "Sparkler",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🎄",
+  "file": "1f384.svg",
+  "name": "Christmas tree",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🎃",
+  "file": "1f383.svg",
+  "name": "Jack-o-lantern",
+  "group": "Fiesta"
+ },
+ {
+  "glyph": "🔥",
+  "file": "1f525.svg",
+  "name": "Fire",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "✨",
+  "file": "2728.svg",
+  "name": "Sparkles",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "⭐",
+  "file": "2b50.svg",
+  "name": "Star",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "🌟",
+  "file": "1f31f.svg",
+  "name": "Glowing star",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "💯",
+  "file": "1f4af.svg",
+  "name": "Hundred points",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "✅",
+  "file": "2705.svg",
+  "name": "Check mark button",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "❌",
+  "file": "274c.svg",
+  "name": "Cross mark",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "⚠️",
+  "file": "26a0.svg",
+  "name": "Warning",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "❓",
+  "file": "2753.svg",
+  "name": "Red question mark",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "❗",
+  "file": "2757.svg",
+  "name": "Red exclamation mark",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "💥",
+  "file": "1f4a5.svg",
+  "name": "Collision",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "💫",
+  "file": "1f4ab.svg",
+  "name": "Dizzy",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "💡",
+  "file": "1f4a1.svg",
+  "name": "Light bulb",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "🔔",
+  "file": "1f514.svg",
+  "name": "Bell",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "📍",
+  "file": "1f4cd.svg",
+  "name": "Round pushpin",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "➡️",
+  "file": "27a1.svg",
+  "name": "Right arrow",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "⬅️",
+  "file": "2b05.svg",
+  "name": "Left arrow",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "⬆️",
+  "file": "2b06.svg",
+  "name": "Up arrow",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "⬇️",
+  "file": "2b07.svg",
+  "name": "Down arrow",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "🆕",
+  "file": "1f195.svg",
+  "name": "New button",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "🆓",
+  "file": "1f193.svg",
+  "name": "Free button",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "🚫",
+  "file": "1f6ab.svg",
+  "name": "Prohibited",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "⚡",
+  "file": "26a1.svg",
+  "name": "High voltage",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "🎶",
+  "file": "1f3b6.svg",
+  "name": "Musical notes",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "💬",
+  "file": "1f4ac.svg",
+  "name": "Speech balloon",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "💭",
+  "file": "1f4ad.svg",
+  "name": "Thought balloon",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "💰",
+  "file": "1f4b0.svg",
+  "name": "Money bag",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "💎",
+  "file": "1f48e.svg",
+  "name": "Gem stone",
+  "group": "Símbolos"
+ },
+ {
+  "glyph": "🎬",
+  "file": "1f3ac.svg",
+  "name": "Clapper board",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "📸",
+  "file": "1f4f8.svg",
+  "name": "Camera with flash",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "📱",
+  "file": "1f4f1.svg",
+  "name": "Mobile phone",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "💻",
+  "file": "1f4bb.svg",
+  "name": "Laptop",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "🛒",
+  "file": "1f6d2.svg",
+  "name": "Shopping cart",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "🛍️",
+  "file": "1f6cd.svg",
+  "name": "Shopping bags",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "📣",
+  "file": "1f4e3.svg",
+  "name": "Megaphone",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "🚀",
+  "file": "1f680.svg",
+  "name": "Rocket",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "⏰",
+  "file": "23f0.svg",
+  "name": "Alarm clock",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "⌛",
+  "file": "231b.svg",
+  "name": "Hourglass done",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "📅",
+  "file": "1f4c5.svg",
+  "name": "Calendar",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "🎓",
+  "file": "1f393.svg",
+  "name": "Graduation cap",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "📚",
+  "file": "1f4da.svg",
+  "name": "Books",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "🎤",
+  "file": "1f3a4.svg",
+  "name": "Microphone",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "🎧",
+  "file": "1f3a7.svg",
+  "name": "Headphone",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "🎮",
+  "file": "1f3ae.svg",
+  "name": "Video game",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "🚗",
+  "file": "1f697.svg",
+  "name": "Automobile",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "✈️",
+  "file": "2708.svg",
+  "name": "Airplane",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "🏠",
+  "file": "1f3e0.svg",
+  "name": "House",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "💼",
+  "file": "1f4bc.svg",
+  "name": "Briefcase",
+  "group": "Cosas"
+ },
+ {
+  "glyph": "🍕",
+  "file": "1f355.svg",
+  "name": "Pizza",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🍔",
+  "file": "1f354.svg",
+  "name": "Hamburger",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🌮",
+  "file": "1f32e.svg",
+  "name": "Taco",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🌭",
+  "file": "1f32d.svg",
+  "name": "Hot dog",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🍟",
+  "file": "1f35f.svg",
+  "name": "French fries",
+  "group": "Comida"
+ },
+ {
+  "glyph": "☕",
+  "file": "2615.svg",
+  "name": "Hot beverage",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🍰",
+  "file": "1f370.svg",
+  "name": "Shortcake",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🍩",
+  "file": "1f369.svg",
+  "name": "Doughnut",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🍨",
+  "file": "1f368.svg",
+  "name": "Ice cream",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🍿",
+  "file": "1f37f.svg",
+  "name": "Popcorn",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🥑",
+  "file": "1f951.svg",
+  "name": "Avocado",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🍓",
+  "file": "1f353.svg",
+  "name": "Strawberry",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🍉",
+  "file": "1f349.svg",
+  "name": "Watermelon",
+  "group": "Comida"
+ },
+ {
+  "glyph": "🍹",
+  "file": "1f379.svg",
+  "name": "Tropical drink",
+  "group": "Comida"
+ },
+ {
+  "glyph": "☀️",
+  "file": "2600.svg",
+  "name": "Sun",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🌙",
+  "file": "1f319.svg",
+  "name": "Crescent moon",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🌈",
+  "file": "1f308.svg",
+  "name": "Rainbow",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🌧️",
+  "file": "1f327.svg",
+  "name": "Cloud with rain",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "❄️",
+  "file": "2744.svg",
+  "name": "Snowflake",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🌸",
+  "file": "1f338.svg",
+  "name": "Cherry blossom",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🌻",
+  "file": "1f33b.svg",
+  "name": "Sunflower",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🌴",
+  "file": "1f334.svg",
+  "name": "Palm tree",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🍀",
+  "file": "1f340.svg",
+  "name": "Four leaf clover",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🐶",
+  "file": "1f436.svg",
+  "name": "Dog face",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🐱",
+  "file": "1f431.svg",
+  "name": "Cat face",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🦄",
+  "file": "1f984.svg",
+  "name": "Unicorn",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🐻",
+  "file": "1f43b.svg",
+  "name": "Bear",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🦋",
+  "file": "1f98b.svg",
+  "name": "Butterfly",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🌊",
+  "file": "1f30a.svg",
+  "name": "Water wave",
+  "group": "Naturaleza"
+ },
+ {
+  "glyph": "🌎",
+  "file": "1f30e.svg",
+  "name": "Globe showing americas",
+  "group": "Naturaleza"
+ }
+]

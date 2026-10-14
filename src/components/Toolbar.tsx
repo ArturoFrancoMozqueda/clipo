@@ -1,4 +1,5 @@
 import {
+  BellRing,
   ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Diamond, Eraser, Gauge, Layers,
   Maximize, Mic, Minimize, Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors,
   SlidersHorizontal, Smile, Sparkles, Trash2, Type, Undo2,
@@ -43,6 +44,7 @@ export function Toolbar() {
       { icon: Captions, label: 'Subtítulos', run: open('captions') },
       { icon: Smile, label: 'Stickers', run: open('stickers') },
       { icon: Music, label: 'Música', run: open('audio') },
+      { icon: BellRing, label: 'Sonidos', run: open('sfx') },
       { icon: Mic, label: 'Grabar voz', run: open('record') },
       { icon: AudioLines, label: 'Texto a voz', run: open('tts') },
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },

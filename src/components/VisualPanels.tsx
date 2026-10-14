@@ -8,9 +8,10 @@ import { useStore } from '../store';
 import { engine } from '../engine';
 import { clipDur, layout } from '../model';
 import { importFiles } from '../media';
+import { STICKER_GROUPS, stickerUrl } from '../stickers';
 import { addImageStickers, addSticker, editPose, poseNow } from '../ops';
 import {
-  EFFECTS, EFFECT_DEFAULT_INTENSITY, EMOJI_GROUPS, NO_ANIM, TEXT_IN, TEXT_LOOP, TEXT_OUT, TRANSITIONS, TRANSITION_DEFAULT,
+  EFFECTS, EFFECT_DEFAULT_INTENSITY, NO_ANIM, TEXT_IN, TEXT_LOOP, TEXT_OUT, TRANSITIONS, TRANSITION_DEFAULT,
   TRANSITION_MAX, TRANSITION_MIN, transitionLength,
 } from '../visuals';
 import { Hint, NeedsSelection, Slider, checkpoint, editSelected, useSelected } from './Panels';
@@ -271,18 +272,19 @@ export function StickersPanel() {
         }}
       />
       <p className="muted small">{sticker ? 'Toca un emoji para agregar otro:' : 'Toca un emoji para ponerlo en tu video:'}</p>
-      {EMOJI_GROUPS.map((g) => (
+      {STICKER_GROUPS.map((g) => (
         <div key={g.name}>
           <p className="label">{g.name}</p>
           <div className="emoji-grid">
             {g.list.map((e) => (
-              <button key={e} className="emoji" onClick={() => addSticker({ emoji: e })} aria-label={`Agregar ${e}`}>
-                {e}
+              <button key={e.file} className="emoji" onClick={() => addSticker({ emoji: e.glyph })} aria-label={`Agregar ${e.glyph}`} title={e.glyph}>
+                <img src={stickerUrl(e)} alt="" loading="lazy" draggable={false} />
               </button>
             ))}
           </div>
         </div>
       ))}
+      <p className="muted small">Stickers: Fluent Emoji de Microsoft (licencia MIT).</p>
     </>
   );
 }

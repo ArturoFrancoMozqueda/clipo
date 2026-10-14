@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import { fmtTime } from '../model';
 import { addAssetsToTimeline } from '../ops';
 import { ImportButton } from './ImportButton';
+import { MusicSection } from './SoundPanels';
 import type { MediaKind } from '../types';
 
 const ICON: Record<MediaKind, typeof Film> = { video: Film, image: ImageIcon, audio: Music };
@@ -14,6 +15,8 @@ export function MediaLibrary({ only }: { only?: 'audio' }) {
 
   return (
     <div className="library">
+      {only === 'audio' && <MusicSection />}
+      {only === 'audio' && <p className="label">Tu propia música</p>}
       <ImportButton className="dropzone" accept={only === 'audio' ? 'audio/*' : 'video/*,image/*,audio/*'}>
         <Upload size={22} />
         <span>{only === 'audio' ? 'Elegir música del dispositivo' : 'Elegir del dispositivo'}</span>

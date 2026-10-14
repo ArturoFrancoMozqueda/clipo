@@ -1,6 +1,8 @@
 import type { VideoCodec, VideoSample, VideoSampleSink } from 'mediabunny';
 import { bgClipId, engine, renderFrame, type FrameImage, type MediaRef } from './engine';
 import { loadSegmenter, usesBgRemoval } from './segmentation';
+import { loadProjectFonts } from './fonts';
+import { preloadEmojis } from './stickers';
 import { audioDur, canvasSize, clamp, clipDur, layout, overlayDur, overlaysOf, totalDuration } from './model';
 import { useStore } from './store';
 import type { Project } from './types';
@@ -45,6 +47,8 @@ export async function exportVideo(short: number, onProgress: (p: ExportProgress)
   if (!p) throw new Error('No hay proyecto abierto');
   // "Quitar fondo" must be ready before the first frame, or the export would show the original background.
   if (usesBgRemoval(p)) await loadSegmenter();
+  await loadProjectFonts(p);
+  await preloadEmojis(p);
 
   if (canFastExport()) {
     engine.pause();

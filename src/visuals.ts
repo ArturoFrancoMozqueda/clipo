@@ -2,6 +2,7 @@
 // Everything here is pure drawing/timing logic so the engine (preview and export) shares it.
 import type { Clip, EffectId, Project, StickerItem, TextAnim, TextInAnim, TextItem, TextLoopAnim, TextOutAnim, TransitionId } from './types';
 import { clamp, clipDur, type Placed } from './model';
+import { emojiImage } from './stickers';
 
 // ---------- transitions ----------
 
@@ -298,6 +299,7 @@ export function drawSticker(ctx: CanvasRenderingContext2D, st: StickerItem, img:
   const short = Math.min(W, H);
   const w = st.size * short;
   let h = w;
+  const art = st.assetId ? undefined : emojiImage(st.emoji);
   const cx = st.x * W;
   const cy = st.y * H;
   ctx.save();
@@ -310,6 +312,8 @@ export function drawSticker(ctx: CanvasRenderingContext2D, st: StickerItem, img:
     }
     h = (w * img.naturalHeight) / img.naturalWidth;
     ctx.drawImage(img, -w / 2, -h / 2, w, h);
+  } else if (art && art.complete && art.naturalWidth) {
+    ctx.drawImage(art, -w / 2, -h / 2, w, h);
   } else {
     ctx.font = `${w * 0.86}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
     ctx.textAlign = 'center';
