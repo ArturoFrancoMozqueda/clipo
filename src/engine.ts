@@ -1,5 +1,5 @@
 import { useStore } from './store';
-import type { Clip, Project, Selection } from './types';
+import type { Asset, Clip, Project, Selection } from './types';
 import { activeClip, audioDur, canvasSize, clamp, layout, totalDuration, type Placed } from './model';
 import { applyFallback, getFilter, supportsCanvasFilter } from './filters';
 import { drawText, type Box } from './textStyles';
@@ -41,9 +41,6 @@ class Engine {
   private master: GainNode | null = null;
   private monitor: GainNode | null = null;
   private recDest: MediaStreamAudioDestinationNode | null = null;
-  private small = document.createElement('canvas');
-  /** Offscreen frames of the outgoing and incoming clip during a transition. */
-  private layers = [document.createElement('canvas'), document.createElement('canvas')];
   private playWall = 0;
   private playT = 0;
   private lastNow = 0;
@@ -54,6 +51,8 @@ class Engine {
   /** Boxes of the visible stickers, topmost last. */
   stickerBoxes: StickerBox[] = [];
   exporting = false;
+  /** Set by the fast exporter so the preview stops redrawing and leaves it the processor. */
+  holdPreview = false;
 
   constructor() {
     this.host = document.createElement('div');
@@ -231,7 +230,7 @@ class Engine {
     const p = s.project;
     const dt = now - this.lastNow;
     this.lastNow = now;
-    if (!p || !this.ctx || !this.canvas) return;
+    if (!p || !this.ctx || !this.canvas || this.holdPreview) return;
 
     const placed = layout(p);
     let t = s.time;
@@ -328,87 +327,33 @@ class Engine {
     }
   }
 
-  /** The decoded picture of a clip, or null if it is not ready yet. */
-  private sourceOf(p: Project, clip: Clip): { src: CanvasImageSource; w: number; h: number } | null {
-    const asset = p.assets[clip.assetId];
-    if (asset?.kind === 'video') {
+  /** The decoded picture a preview media element is showing, or null if it is not ready yet. */
+  private frameOf(clip: Clip, asset: Asset): FrameImage | null {
+    if (asset.kind === 'video') {
       const el = this.videos.get(clip.id)?.el;
-      if (!el || el.readyState < 2 || !el.videoWidth) return null;
-      return { src: el, w: el.videoWidth, h: el.videoHeight };
+      return el && el.readyState >= 2 && el.videoWidth ? { src: el, w: el.videoWidth, h: el.videoHeight } : null;
     }
-    if (asset?.kind === 'image') {
-      const img = this.images.get(asset.id);
-      if (!img || !img.complete || !img.naturalWidth) return null;
-      return { src: img, w: img.naturalWidth, h: img.naturalHeight };
-    }
-    return null;
-  }
-
-  /** Paint one main-track clip (picture, color filter and effect) filling the whole frame. */
-  private drawClip(ctx: CanvasRenderingContext2D, l: Placed, source: { src: CanvasImageSource; w: number; h: number }, t: number, W: number, H: number) {
-    const local = t - l.start;
-    ctx.save();
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
-    applyEffectTransform(ctx, l.clip, local, W, H);
-    this.drawFrame(ctx, source.src, source.w, source.h, W, H, l.clip, effectCss(l.clip, W));
-    ctx.restore();
-    applyEffectOverlay(ctx, l.clip, local, W, H);
-  }
-
-  private layer(i: number, W: number, H: number) {
-    const c = this.layers[i];
-    if (c.width !== W || c.height !== H) {
-      c.width = W;
-      c.height = H;
-    }
-    return c;
+    const img = this.images.get(asset.id);
+    return img && img.complete && img.naturalWidth ? { src: img, w: img.naturalWidth, h: img.naturalHeight } : null;
   }
 
   private render(p: Project, t: number, selection: Selection, placed: Placed[]) {
     const ctx = this.ctx!;
     const W = this.canvas!.width;
     const H = this.canvas!.height;
-    const cur = activeClip(p, t, placed);
-    const tr = cur ? transitionAt(placed, t) : null;
+    // The preview's media elements are already seeked by updateMedia, so the source time is not needed here.
+    const r = renderFrame(ctx, p, t, W, H, (clip, asset) => this.frameOf(clip, asset), placed, {
+      stickerImage: (id) => this.images.get(id),
+    });
+    if (!r) return; // keep the previous frame until this one is decoded
 
-    const source = cur ? this.sourceOf(p, cur.clip) : null;
-    if (cur && !source) return; // keep the previous frame until this one is decoded
-
-    if (tr && cur) {
-      // Render both clips offscreen, then mix them. If the other clip isn't decoded yet, show the current one alone.
-      const [a, b] = [tr.out, tr.in].map((l, i) => {
-        const s = l.index === cur.index ? source : this.sourceOf(p, l.clip);
-        if (!s) return null;
-        const c = this.layer(i, W, H);
-        this.drawClip(c.getContext('2d')!, l, s, t, W, H);
-        return c;
-      });
-      drawTransition(ctx, tr.type, a ?? b, b ?? a, tr.k, W, H);
-    } else if (cur && source) {
-      this.drawClip(ctx, cur, source, t, W, H);
-    } else {
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, W, H);
+    if (!this.exporting && selection?.kind === 'sticker') {
+      const b = r.stickers.find((x) => x.id === selection.id);
+      if (b) this.drawStickerSelection(ctx, b, W);
     }
-
-    const showSel = !this.exporting;
-    const sboxes: StickerBox[] = [];
-    for (const st of stickersOf(p)) {
-      if (t < st.start || t >= st.start + st.duration) continue;
-      const b = drawSticker(ctx, st, st.assetId ? this.images.get(st.assetId) : undefined, W, H);
-      if (!b) continue;
-      sboxes.push(b);
-      if (showSel && selection?.kind === 'sticker' && selection.id === st.id) this.drawStickerSelection(ctx, b, W);
-    }
-    this.stickerBoxes = sboxes;
-
-    const boxes: Box[] = [];
-    for (const item of p.texts) {
-      if (t < item.start || t >= item.start + item.duration || !item.text.trim()) continue;
-      const box = drawText(ctx, item, W, H, item.anim ? textPose(item, t - item.start) : undefined);
-      boxes.push(box);
-      if (showSel && selection?.kind === 'text' && selection.id === item.id) {
+    if (!this.exporting && selection?.kind === 'text') {
+      const box = r.texts.find((x) => x.id === selection.id);
+      if (box) {
         ctx.save();
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = Math.max(2, W / 360);
@@ -417,7 +362,8 @@ class Engine {
         ctx.restore();
       }
     }
-    this.textBoxes = boxes;
+    this.stickerBoxes = r.stickers;
+    this.textBoxes = r.texts;
   }
 
   private drawStickerSelection(ctx: CanvasRenderingContext2D, b: StickerBox, W: number) {
@@ -444,60 +390,6 @@ class Engine {
     ctx.arc(hp.x, hp.y, r * 0.5, -Math.PI * 0.9, Math.PI * 0.4);
     ctx.stroke();
     ctx.restore();
-  }
-
-  private drawFrame(
-    ctx: CanvasRenderingContext2D,
-    src: CanvasImageSource,
-    sw: number,
-    sh: number,
-    W: number,
-    H: number,
-    clip: Clip,
-    extraCss: string,
-  ) {
-    const fit = clip.fit;
-    if (fit === 'fit') {
-      // Blurred, darkened copy behind the picture instead of black bars.
-      const bw = Math.max(8, Math.round(W / 24));
-      const bh = Math.max(8, Math.round(H / 24));
-      if (this.small.width !== bw || this.small.height !== bh) {
-        this.small.width = bw;
-        this.small.height = bh;
-      }
-      const sc = this.small.getContext('2d')!;
-      const k = Math.max(bw / sw, bh / sh);
-      sc.drawImage(src, (bw - sw * k) / 2, (bh - sh * k) / 2, sw * k, sh * k);
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(this.small, 0, 0, W, H);
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.fillRect(0, 0, W, H);
-    }
-    const k = fit === 'fit' ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
-    const dw = sw * k;
-    const dh = sh * k;
-    const dx = (W - dw) / 2;
-    const dy = (H - dh) / 2;
-    const f = getFilter(clip.filter);
-    const css = [f.id !== 'none' ? f.css : '', extraCss].filter(Boolean).join(' ');
-    if (css && supportsCanvasFilter) ctx.filter = css;
-    ctx.drawImage(src, dx, dy, dw, dh);
-    if (extraCss && !supportsCanvasFilter) this.softBlur(ctx, src, dx, dy, dw, dh, sw, sh);
-    ctx.filter = 'none';
-    if (f.id !== 'none' && !supportsCanvasFilter) applyFallback(ctx, f, src, dx, dy, dw, dh);
-  }
-
-  /** Blur without canvas filter support (older Safari): stretch a tiny copy. */
-  private softBlur(ctx: CanvasRenderingContext2D, src: CanvasImageSource, dx: number, dy: number, dw: number, dh: number, sw: number, sh: number) {
-    const tw = Math.max(4, Math.round(dw / 14));
-    const th = Math.max(4, Math.round((tw * sh) / sw));
-    const tmp = this.small;
-    tmp.width = tw;
-    tmp.height = th;
-    tmp.getContext('2d')!.drawImage(src, 0, 0, tw, th);
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(tmp, dx, dy, dw, dh);
   }
 
   // ---------- export ----------
@@ -572,6 +464,161 @@ class Engine {
     useStore.getState().setPlaying(false);
     this.abortExport?.();
   }
+}
+
+/** A decoded picture of a clip, ready to draw. A zero size means "nothing to show" (drawn black). */
+export interface FrameImage {
+  src: CanvasImageSource;
+  w: number;
+  h: number;
+}
+
+/** Returns the picture of `clip` at source time `srcTime` (seconds), or null while it isn't ready. */
+export type FrameLookup = (clip: Clip, asset: Asset, srcTime: number) => FrameImage | null;
+
+export interface RenderOptions {
+  /** Image for a sticker made from a picture. */
+  stickerImage?: (assetId: string) => HTMLImageElement | undefined;
+  /**
+   * Fail (return null) when the other clip of a transition isn't ready, instead of showing the
+   * current clip alone. The export uses it so every transition frame is complete.
+   */
+  waitForAll?: boolean;
+}
+
+export interface RenderResult {
+  texts: Box[];
+  stickers: StickerBox[];
+}
+
+const small = document.createElement('canvas');
+/** Offscreen frames of the outgoing and incoming clip during a transition. */
+const layers = [document.createElement('canvas'), document.createElement('canvas')];
+
+function layer(i: number, W: number, H: number) {
+  const c = layers[i];
+  if (c.width !== W || c.height !== H) {
+    c.width = W;
+    c.height = H;
+  }
+  return c;
+}
+
+/**
+ * Draws the whole project at time t: pictures with filters, effects and transitions, then stickers
+ * and texts. Shared by the live preview and the fast export so both look identical. Returns the
+ * on-screen boxes, or null (nothing drawn) when a picture it needs isn't ready yet.
+ */
+export function renderFrame(
+  ctx: CanvasRenderingContext2D,
+  p: Project,
+  t: number,
+  W: number,
+  H: number,
+  lookup: FrameLookup,
+  placed: Placed[] = layout(p),
+  opts: RenderOptions = {},
+): RenderResult | null {
+  const frameAt = (l: Placed): FrameImage | null | undefined => {
+    const asset = p.assets[l.clip.assetId];
+    if (asset?.kind !== 'video' && asset?.kind !== 'image') return undefined; // missing file: draw black
+    return lookup(l.clip, asset, sourceTime(l, t, asset.duration));
+  };
+
+  const cur = activeClip(p, t, placed);
+  const tr = cur ? transitionAt(placed, t) : null;
+  const source = cur ? frameAt(cur) : undefined;
+  if (source === null) return null;
+
+  if (tr && cur) {
+    const partner = tr.out.index === cur.index ? tr.in : tr.out;
+    const other = frameAt(partner);
+    if (other === null && opts.waitForAll) return null;
+    // Render both clips offscreen, then mix them. If the other clip isn't decoded yet, show the current one alone.
+    const [a, b] = [tr.out, tr.in].map((l, i) => {
+      const f = l.index === cur.index ? source : other;
+      if (!f || !f.w || !f.h) return null;
+      const c = layer(i, W, H);
+      drawClip(c.getContext('2d')!, l, f, t, W, H);
+      return c;
+    });
+    drawTransition(ctx, tr.type, a ?? b, b ?? a, tr.k, W, H);
+  } else if (cur && source && source.w && source.h) {
+    drawClip(ctx, cur, source, t, W, H);
+  } else {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  const stickers: StickerBox[] = [];
+  for (const st of stickersOf(p)) {
+    if (t < st.start || t >= st.start + st.duration) continue;
+    const b = drawSticker(ctx, st, st.assetId ? opts.stickerImage?.(st.assetId) : undefined, W, H);
+    if (b) stickers.push(b);
+  }
+
+  const texts: Box[] = [];
+  for (const item of p.texts) {
+    if (t < item.start || t >= item.start + item.duration || !item.text.trim()) continue;
+    texts.push(drawText(ctx, item, W, H, item.anim ? textPose(item, t - item.start) : undefined));
+  }
+  return { texts, stickers };
+}
+
+/** Paint one main-track clip (picture, color filter and effect) filling the whole frame. */
+function drawClip(ctx: CanvasRenderingContext2D, l: Placed, f: FrameImage, t: number, W: number, H: number) {
+  const local = t - l.start;
+  ctx.save();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  applyEffectTransform(ctx, l.clip, local, W, H);
+  drawFrame(ctx, f.src, f.w, f.h, W, H, l.clip, effectCss(l.clip, W));
+  ctx.restore();
+  applyEffectOverlay(ctx, l.clip, local, W, H);
+}
+
+function drawFrame(ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: number, sh: number, W: number, H: number, clip: Clip, extraCss: string) {
+  const fit = clip.fit;
+  if (fit === 'fit') {
+    // Blurred, darkened copy behind the picture instead of black bars.
+    const bw = Math.max(8, Math.round(W / 24));
+    const bh = Math.max(8, Math.round(H / 24));
+    if (small.width !== bw || small.height !== bh) {
+      small.width = bw;
+      small.height = bh;
+    }
+    const sc = small.getContext('2d')!;
+    const k = Math.max(bw / sw, bh / sh);
+    sc.drawImage(src, (bw - sw * k) / 2, (bh - sh * k) / 2, sw * k, sh * k);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(small, 0, 0, W, H);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(0, 0, W, H);
+  }
+  const k = fit === 'fit' ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
+  const dw = sw * k;
+  const dh = sh * k;
+  const dx = (W - dw) / 2;
+  const dy = (H - dh) / 2;
+  const f = getFilter(clip.filter);
+  const css = [f.id !== 'none' ? f.css : '', extraCss].filter(Boolean).join(' ');
+  if (css && supportsCanvasFilter) ctx.filter = css;
+  ctx.drawImage(src, dx, dy, dw, dh);
+  if (extraCss && !supportsCanvasFilter) softBlur(ctx, src, dx, dy, dw, dh, sw, sh);
+  ctx.filter = 'none';
+  if (f.id !== 'none' && !supportsCanvasFilter) applyFallback(ctx, f, src, dx, dy, dw, dh);
+}
+
+/** Blur without canvas filter support (older Safari): stretch a tiny copy. */
+function softBlur(ctx: CanvasRenderingContext2D, src: CanvasImageSource, dx: number, dy: number, dw: number, dh: number, sw: number, sh: number) {
+  const tw = Math.max(4, Math.round(dw / 14));
+  const th = Math.max(4, Math.round((tw * sh) / sw));
+  small.width = tw;
+  small.height = th;
+  small.getContext('2d')!.drawImage(src, 0, 0, tw, th);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(small, dx, dy, dw, dh);
 }
 
 export const engine = new Engine();
