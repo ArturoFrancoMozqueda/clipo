@@ -22,6 +22,8 @@ interface State {
   exporting: boolean;
   /** Automatic captions are being generated. */
   captioning: boolean;
+  /** Shows the advanced tools (overlays, keyframes, color correction). Remembered per device. */
+  advanced: boolean;
 
   open(p: Project, urls: Record<string, string>): void;
   close(): void;
@@ -41,6 +43,16 @@ interface State {
   addUrls(u: Record<string, string>): void;
   setExporting(b: boolean): void;
   setCaptioning(b: boolean): void;
+  setAdvanced(b: boolean): void;
+}
+
+const ADVANCED_KEY = 'clipo.advanced';
+function loadAdvanced() {
+  try {
+    return localStorage.getItem(ADVANCED_KEY) === '1';
+  } catch {
+    return false;
+  }
 }
 
 function selectionExists(p: Project | null, s: Selection): Selection {
@@ -54,6 +66,7 @@ export function itemsOf(p: Project, kind: SelectionKind): { id: string }[] {
   if (kind === 'clip') return p.clips;
   if (kind === 'text') return p.texts;
   if (kind === 'audio') return p.audios;
+  if (kind === 'overlay') return p.overlays ?? [];
   return p.stickers ?? [];
 }
 
@@ -79,6 +92,7 @@ export const useStore = create<State>()((set, get) => ({
   toast: null,
   exporting: false,
   captioning: false,
+  advanced: loadAdvanced(),
 
   open: (p, urls) =>
     set({ project: p.stickers ? p : { ...p, stickers: [] }, urls, selection: null, time: 0, playing: false, panel: null, past: [], future: [] }),
@@ -122,4 +136,12 @@ export const useStore = create<State>()((set, get) => ({
   addUrls: (u) => set({ urls: { ...get().urls, ...u } }),
   setExporting: (b) => set({ exporting: b }),
   setCaptioning: (b) => set({ captioning: b }),
+  setAdvanced: (b) => {
+    try {
+      localStorage.setItem(ADVANCED_KEY, b ? '1' : '0');
+    } catch {
+      /* private mode: only this session */
+    }
+    set({ advanced: b });
+  },
 }));

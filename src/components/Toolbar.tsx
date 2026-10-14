@@ -1,6 +1,6 @@
 import {
-  ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Gauge, Maximize, Mic, Minimize,
-  Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors, Smile, Sparkles, Trash2, Type, Undo2,
+  ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Diamond, Gauge, Layers, Maximize, Mic, Minimize,
+  Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors, SlidersHorizontal, Smile, Sparkles, Trash2, Type, Undo2,
   Volume2, type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../store';
@@ -22,6 +22,14 @@ export function Toolbar() {
   const clip = useStore((s) => (s.selection?.kind === 'clip' ? s.project!.clips.find((c) => c.id === s.selection!.id) : undefined));
   const kind = useStore((s) => (clip ? s.project!.assets[clip.assetId]?.kind : undefined));
   const isLast = useStore((s) => !!clip && s.project!.clips[s.project!.clips.length - 1]?.id === clip.id);
+  const advanced = useStore((s) => s.advanced);
+  const overlayKind = useStore((s) => {
+    const sel = s.selection;
+    const o = sel?.kind === 'overlay' ? s.project!.overlays?.find((x) => x.id === sel.id) : undefined;
+    return o ? s.project!.assets[o.assetId]?.kind : undefined;
+  });
+  // Advanced tools only show up when the advanced mode is on (Ayuda → Modo avanzado).
+  const adv = (...t: Tool[]) => (advanced ? t : []);
   const deselect = () => useStore.getState().select(null);
 
   let title = '';
@@ -29,6 +37,7 @@ export function Toolbar() {
   if (!sel) {
     tools = [
       { icon: Plus, label: 'Agregar', run: open('media') },
+      ...adv({ icon: Layers, label: 'Superponer', run: open('overlay') }),
       { icon: Type, label: 'Texto', run: addText },
       { icon: Captions, label: 'Subtítulos', run: open('captions') },
       { icon: Smile, label: 'Stickers', run: open('stickers') },
@@ -45,6 +54,7 @@ export function Toolbar() {
       ...(kind === 'video' ? [{ icon: Gauge, label: 'Velocidad', run: open('speed') }] : []),
       ...(kind === 'video' ? [{ icon: Volume2, label: 'Volumen', run: open('volume') }] : []),
       { icon: Palette, label: 'Filtros', run: open('filters') },
+      ...adv({ icon: SlidersHorizontal, label: 'Color', run: open('color') }),
       { icon: Sparkles, label: 'Efectos', run: open('effects') },
       ...(!isLast ? [{ icon: ArrowLeftRight, label: 'Transición', run: open('transition') }] : []),
       {
@@ -70,6 +80,7 @@ export function Toolbar() {
       { icon: Pencil, label: 'Editar', run: open('text') },
       { icon: AudioLines, label: 'Leer en voz', run: open('tts') },
       { icon: Sparkles, label: 'Animación', run: open('text') },
+      ...adv({ icon: Diamond, label: 'Fotogramas clave', run: open('keyframes') }),
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
       { icon: Copy, label: 'Duplicar', run: duplicateSelected },
       { icon: Trash2, label: 'Eliminar', run: deleteSelected, danger: true },
@@ -78,7 +89,20 @@ export function Toolbar() {
     title = 'Sticker';
     tools = [
       { icon: Pencil, label: 'Editar', run: open('stickers') },
+      ...adv({ icon: Diamond, label: 'Fotogramas clave', run: open('keyframes') }),
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
+      { icon: Copy, label: 'Duplicar', run: duplicateSelected },
+      { icon: Trash2, label: 'Eliminar', run: deleteSelected, danger: true },
+    ];
+  } else if (sel.kind === 'overlay') {
+    title = 'Superposición';
+    tools = [
+      { icon: Pencil, label: 'Ajustes', run: open('overlay') },
+      { icon: Diamond, label: 'Fotogramas clave', run: open('keyframes') },
+      { icon: SlidersHorizontal, label: 'Color', run: open('color') },
+      ...(overlayKind === 'video' ? [{ icon: Volume2, label: 'Volumen', run: open('overlay') }] : []),
+      { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
+
       { icon: Copy, label: 'Duplicar', run: duplicateSelected },
       { icon: Trash2, label: 'Eliminar', run: deleteSelected, danger: true },
     ];

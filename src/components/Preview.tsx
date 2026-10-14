@@ -4,11 +4,18 @@ import { useStore } from '../store';
 import { engine } from '../engine';
 import { ASPECTS, canvasSize, clamp, fmtTime, totalDuration } from '../model';
 import { ImportButton } from './ImportButton';
-import { hitSticker, stickerHandle, stickerHandleRadius, stickersOf } from '../visuals';
+import { hitSticker, stickerHandle, stickerHandleRadius } from '../visuals';
+import { editPose, poseNow } from '../ops';
+
+/** Things that can be dragged, resized and rotated on the preview. */
+type Shape = 'sticker' | 'overlay';
 
 type Gesture =
-  | { kind: 'text' | 'sticker'; id: string; ox: number; oy: number; sx: number; sy: number; moved: boolean; wasSelected: boolean }
-  | { kind: 'handle' | 'pinch'; id: string; d0: number; a0: number; size0: number; rot0: number; moved: boolean };
+  | { kind: 'text' | Shape; id: string; ox: number; oy: number; sx: number; sy: number; moved: boolean; wasSelected: boolean }
+  | { kind: 'handle' | 'pinch'; shape: Shape; id: string; d0: number; a0: number; size0: number; rot0: number; moved: boolean };
+
+const SIZE_LIMITS: Record<Shape, [number, number]> = { sticker: [0.04, 1.5], overlay: [0.05, 2] };
+const PANEL_OF = { text: 'text', sticker: 'stickers', overlay: 'overlay' } as const;
 
 export function Preview() {
   const aspect = useStore((s) => s.project!.aspect);
@@ -60,17 +67,19 @@ export function Preview() {
     return { x: ((e.clientX - r.left) * c.width) / r.width, y: ((e.clientY - r.top) * c.height) / r.height, r };
   };
 
-  /** Start resizing/rotating a sticker around its center, from a reference distance and angle. */
-  const startTransform = (id: string, kind: 'handle' | 'pinch', d0: number, a0: number, moved: boolean) => {
-    const st = stickersOf(useStore.getState().project!).find((i) => i.id === id);
-    if (!st) return;
-    drag.current = { kind, id, d0: Math.max(1, d0), a0, size0: st.size, rot0: st.rotation, moved };
+  const boxesOf = (shape: Shape) => (shape === 'sticker' ? engine.stickerBoxes : engine.overlayBoxes);
+
+  /** Start resizing/rotating a sticker or overlay around its center, from a reference distance and angle. */
+  const startTransform = (shape: Shape, id: string, kind: 'handle' | 'pinch', d0: number, a0: number, moved: boolean) => {
+    const pose = poseNow(shape, id);
+    if (!pose) return;
+    drag.current = { kind, shape, id, d0: Math.max(1, d0), a0, size0: pose.size, rot0: pose.rotation, moved };
   };
 
-  const stickerCenter = (id: string) => {
+  const shapeCenter = (shape: Shape, id: string) => {
     const c = canvas.current!;
     const r = c.getBoundingClientRect();
-    const b = engine.stickerBoxes.find((x) => x.id === id);
+    const b = boxesOf(shape).find((x) => x.id === id);
     return b ? { x: r.left + (b.cx * r.width) / c.width, y: r.top + (b.cy * r.height) / c.height } : null;
   };
 
@@ -86,11 +95,11 @@ export function Preview() {
     canvas.current!.setPointerCapture(e.pointerId);
     const g = drag.current;
 
-    // Second finger on a sticker: pinch to resize and rotate.
+    // Second finger on a sticker or overlay: pinch to resize and rotate.
     if (pointers.current.size === 2 && g && g.kind !== 'text') {
       if (!g.moved) s.checkpoint();
       const { d, a } = pinchGeom();
-      startTransform(g.id, 'pinch', d, a, true);
+      startTransform(g.kind === 'handle' || g.kind === 'pinch' ? g.shape : g.kind, g.id, 'pinch', d, a, true);
       return;
     }
     if (pointers.current.size > 1) return;
@@ -98,35 +107,30 @@ export function Preview() {
     const { x, y } = toCanvas(e);
     const W = canvas.current!.width;
     const sel = s.selection;
-    if (sel?.kind === 'sticker') {
-      const b = engine.stickerBoxes.find((i) => i.id === sel.id);
+    if (sel?.kind === 'sticker' || sel?.kind === 'overlay') {
+      const b = boxesOf(sel.kind).find((i) => i.id === sel.id);
       const h = b && stickerHandle(b);
       if (b && h && Math.hypot(x - h.x, y - h.y) < stickerHandleRadius(W) * 1.8) {
         engine.pause();
-        const c = stickerCenter(sel.id)!;
-        startTransform(sel.id, 'handle', Math.hypot(e.clientX - c.x, e.clientY - c.y), Math.atan2(e.clientY - c.y, e.clientX - c.x), false);
+        const c = shapeCenter(sel.kind, sel.id)!;
+        startTransform(sel.kind, sel.id, 'handle', Math.hypot(e.clientX - c.x, e.clientY - c.y), Math.atan2(e.clientY - c.y, e.clientX - c.x), false);
         return;
       }
     }
 
+    const grab = (kind: 'text' | Shape, id: string) => {
+      engine.pause();
+      const pose = poseNow(kind, id)!;
+      const wasSelected = sel?.kind === kind && sel.id === id;
+      s.select({ kind, id });
+      drag.current = { kind, id, ox: pose.x, oy: pose.y, sx: e.clientX, sy: e.clientY, moved: false, wasSelected };
+    };
     const hit = [...engine.textBoxes].reverse().find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
-    if (hit) {
-      engine.pause();
-      const t = s.project!.texts.find((i) => i.id === hit.id)!;
-      const wasSelected = sel?.kind === 'text' && sel.id === hit.id;
-      s.select({ kind: 'text', id: hit.id });
-      drag.current = { kind: 'text', id: hit.id, ox: t.x, oy: t.y, sx: e.clientX, sy: e.clientY, moved: false, wasSelected };
-      return;
-    }
+    if (hit) return grab('text', hit.id);
     const sHit = [...engine.stickerBoxes].reverse().find((b) => hitSticker(b, x, y, W / 80));
-    if (sHit) {
-      engine.pause();
-      const st = stickersOf(s.project!).find((i) => i.id === sHit.id)!;
-      const wasSelected = sel?.kind === 'sticker' && sel.id === sHit.id;
-      s.select({ kind: 'sticker', id: sHit.id });
-      drag.current = { kind: 'sticker', id: sHit.id, ox: st.x, oy: st.y, sx: e.clientX, sy: e.clientY, moved: false, wasSelected };
-      return;
-    }
+    if (sHit) return grab('sticker', sHit.id);
+    const oHit = [...engine.overlayBoxes].reverse().find((b) => hitSticker(b, x, y, W / 80));
+    if (oHit) return grab('overlay', oHit.id);
     if (sel) s.select(null);
     else engine.toggle();
   };
@@ -144,7 +148,7 @@ export function Preview() {
         if (pointers.current.size < 2) return;
         ({ d: dist, a: ang } = pinchGeom());
       } else {
-        const c = stickerCenter(d.id);
+        const c = shapeCenter(d.shape, d.id);
         if (!c) return;
         dist = Math.hypot(e.clientX - c.x, e.clientY - c.y);
         ang = Math.atan2(e.clientY - c.y, e.clientX - c.x);
@@ -157,18 +161,12 @@ export function Preview() {
       let rot = d.rot0 + ang - d.a0;
       rot = Math.atan2(Math.sin(rot), Math.cos(rot));
       if (Math.abs(rot) < 0.06) rot = 0;
-      const size = clamp((d.size0 * dist) / d.d0, 0.04, 1.5);
-      store.live((p) => {
-        const st = p.stickers?.find((i) => i.id === d.id);
-        if (st) {
-          st.size = size;
-          st.rotation = rot;
-        }
-      });
+      const [lo, hi] = SIZE_LIMITS[d.shape];
+      editPose(d.shape, d.id, { size: clamp((d.size0 * dist) / d.d0, lo, hi), rotation: rot });
       return;
     }
 
-    if (d.kind !== 'text' && d.kind !== 'sticker') return;
+    if (!('ox' in d)) return;
     const { r } = toCanvas(e);
     const dx = (e.clientX - d.sx) / r.width;
     const dy = (e.clientY - d.sy) / r.height;
@@ -179,12 +177,9 @@ export function Preview() {
     }
     // Snap to the center lines, which is where people usually want things.
     const snap = (v: number) => (Math.abs(v - 0.5) < 0.025 ? 0.5 : v);
-    store.live((p) => {
-      const it = d.kind === 'text' ? p.texts.find((i) => i.id === d.id) : p.stickers?.find((i) => i.id === d.id);
-      if (!it) return;
-      it.x = snap(clamp(d.ox + dx, 0.03, 0.97));
-      it.y = snap(clamp(d.oy + dy, 0.03, 0.97));
-    });
+    // Overlays may go partly off the frame; texts and stickers stay inside.
+    const [lo, hi] = d.kind === 'overlay' ? [-0.2, 1.2] : [0.03, 0.97];
+    editPose(d.kind, d.id, { x: snap(clamp(d.ox + dx, lo, hi)), y: snap(clamp(d.oy + dy, lo, hi)) });
   };
 
   const onUp = (e: React.PointerEvent) => {
@@ -196,7 +191,7 @@ export function Preview() {
     }
     if (pointers.current.size) return;
     drag.current = null;
-    if (d && (d.kind === 'text' || d.kind === 'sticker') && !d.moved && d.wasSelected) useStore.getState().setPanel(d.kind === 'text' ? 'text' : 'stickers');
+    if (d && 'wasSelected' in d && !d.moved && d.wasSelected) useStore.getState().setPanel(PANEL_OF[d.kind]);
   };
 
   return (

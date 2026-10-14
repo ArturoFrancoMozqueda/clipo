@@ -1,12 +1,14 @@
 import { useStore } from './store';
-import type { Asset, Clip, Project, Selection } from './types';
-import { activeClip, audioDur, canvasSize, clamp, layout, totalDuration, type Placed } from './model';
+import type { Asset, Clip, OverlayItem, Project, Selection } from './types';
+import { activeClip, audioDur, canvasSize, clamp, layout, overlayDur, overlaysOf, totalDuration, type Placed } from './model';
 import { applyFallback, getFilter, supportsCanvasFilter } from './filters';
 import { drawText, type Box } from './textStyles';
 import {
   applyEffectOverlay, applyEffectTransform, drawSticker, drawTransition, effectCss, sourceTime, stickerHandle,
   stickerHandleRadius, stickersOf, textPose, transitionAt, transitionLength, type StickerBox,
 } from './visuals';
+import { applyColorPixels, colorCss, drawVignette } from './color';
+import { poseAt, type Pose } from './keyframes';
 
 interface MediaRec<E extends HTMLMediaElement> {
   el: E;
@@ -34,7 +36,7 @@ class Engine {
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
   private host: HTMLDivElement;
-  private videos = new Map<string, MediaRec<HTMLVideoElement>>(); // by clip id
+  private videos = new Map<string, MediaRec<HTMLVideoElement>>(); // by clip or overlay id
   private audios = new Map<string, MediaRec<HTMLAudioElement>>(); // by audio item id
   private images = new Map<string, HTMLImageElement>(); // by asset id
   private actx: AudioContext | null = null;
@@ -50,6 +52,8 @@ class Engine {
   textBoxes: Box[] = [];
   /** Boxes of the visible stickers, topmost last. */
   stickerBoxes: StickerBox[] = [];
+  /** Boxes of the visible overlays (picture-in-picture), topmost last. */
+  overlayBoxes: StickerBox[] = [];
   exporting = false;
   /** Set by the fast exporter so the preview stops redrawing and leaves it the processor. */
   holdPreview = false;
@@ -112,6 +116,22 @@ class Engine {
           const img = new Image();
           img.src = url;
           this.images.set(st.assetId!, img);
+        }
+      }
+      for (const ov of overlaysOf(p)) {
+        const a = p.assets[ov.assetId];
+        const url = urls[ov.assetId];
+        if (!a || !url) continue;
+        if (a.kind === 'video') {
+          keepV.add(ov.id);
+          if (!this.videos.has(ov.id)) this.videos.set(ov.id, this.make('video', url));
+        } else if (a.kind === 'image') {
+          keepI.add(ov.assetId);
+          if (!this.images.has(ov.assetId)) {
+            const img = new Image();
+            img.src = url;
+            this.images.set(ov.assetId, img);
+          }
         }
       }
       for (const au of p.audios) {
@@ -238,7 +258,8 @@ class Engine {
       // Hold the clock while the current video is still buffering so audio and picture stay together.
       const cur = activeClip(p, t, placed);
       const rec = cur && this.videos.get(cur.clip.id);
-      if (rec && (rec.el.readyState < 3 || rec.el.seeking)) this.playWall += dt;
+      const busy = (r: MediaRec<HTMLVideoElement> | null | undefined) => !!r && (r.el.readyState < 3 || r.el.seeking);
+      if (busy(rec) || overlaysOf(p).some((o) => t >= o.start && t < o.start + overlayDur(o) && busy(this.videos.get(o.id)))) this.playWall += dt;
 
       const d = totalDuration(p);
       t = this.playT + (now - this.playWall) / 1000;
@@ -302,6 +323,29 @@ class Engine {
       }
     }
 
+    for (const ov of overlaysOf(p)) {
+      const r = this.videos.get(ov.id);
+      if (!r) continue;
+      const el = r.el;
+      const local = t - ov.start;
+      if (local >= 0 && local < overlayDur(ov)) {
+        const src = ov.in + local;
+        this.setVolume(r, ov.volume);
+        if (playing) {
+          if (el.playbackRate !== 1) el.playbackRate = 1;
+          if (Math.abs(el.currentTime - src) > 0.3 && !el.seeking) el.currentTime = src;
+          if (el.paused) el.play().catch(() => {});
+        } else {
+          if (!el.paused) el.pause();
+          if (Math.abs(el.currentTime - src) > 0.02 && !el.seeking) el.currentTime = src;
+        }
+      } else {
+        if (!el.paused) el.pause();
+        // Pre-roll so the overlay appears on time.
+        if (local < 0 && local > -3 && Math.abs(el.currentTime - ov.in) > 0.05 && !el.seeking) el.currentTime = ov.in;
+      }
+    }
+
     for (const a of p.audios) {
       const r = this.audios.get(a.id);
       if (!r) continue;
@@ -328,7 +372,7 @@ class Engine {
   }
 
   /** The decoded picture a preview media element is showing, or null if it is not ready yet. */
-  private frameOf(clip: Clip, asset: Asset): FrameImage | null {
+  private frameOf(clip: MediaRef, asset: Asset): FrameImage | null {
     if (asset.kind === 'video') {
       const el = this.videos.get(clip.id)?.el;
       return el && el.readyState >= 2 && el.videoWidth ? { src: el, w: el.videoWidth, h: el.videoHeight } : null;
@@ -347,8 +391,8 @@ class Engine {
     });
     if (!r) return; // keep the previous frame until this one is decoded
 
-    if (!this.exporting && selection?.kind === 'sticker') {
-      const b = r.stickers.find((x) => x.id === selection.id);
+    if (!this.exporting && (selection?.kind === 'sticker' || selection?.kind === 'overlay')) {
+      const b = (selection.kind === 'sticker' ? r.stickers : r.overlays).find((x) => x.id === selection.id);
       if (b) this.drawStickerSelection(ctx, b, W);
     }
     if (!this.exporting && selection?.kind === 'text') {
@@ -363,7 +407,27 @@ class Engine {
       }
     }
     this.stickerBoxes = r.stickers;
+    this.overlayBoxes = r.overlays;
     this.textBoxes = r.texts;
+  }
+
+  /** A small RGBA sample of what a clip or overlay shows right now (for automatic color). */
+  samplePixels(ref: MediaRef): Uint8ClampedArray | null {
+    const p = useStore.getState().project;
+    const asset = p?.assets[ref.assetId];
+    if (!asset) return null;
+    const f = this.frameOf(ref, asset);
+    if (!f) return null;
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = Math.max(8, Math.round((64 * f.h) / f.w));
+    const cx = c.getContext('2d', { willReadFrequently: true })!;
+    cx.drawImage(f.src, 0, 0, c.width, c.height);
+    try {
+      return cx.getImageData(0, 0, c.width, c.height).data;
+    } catch {
+      return null;
+    }
   }
 
   private drawStickerSelection(ctx: CanvasRenderingContext2D, b: StickerBox, W: number) {
@@ -473,8 +537,11 @@ export interface FrameImage {
   h: number;
 }
 
-/** Returns the picture of `clip` at source time `srcTime` (seconds), or null while it isn't ready. */
-export type FrameLookup = (clip: Clip, asset: Asset, srcTime: number) => FrameImage | null;
+/** What a frame lookup needs to know about a main-track clip or an overlay. */
+export type MediaRef = Pick<Clip, 'id' | 'assetId'>;
+
+/** Returns the picture of `clip` (or an overlay) at source time `srcTime` (seconds), or null while it isn't ready. */
+export type FrameLookup = (clip: MediaRef, asset: Asset, srcTime: number) => FrameImage | null;
 
 export interface RenderOptions {
   /** Image for a sticker made from a picture. */
@@ -489,11 +556,14 @@ export interface RenderOptions {
 export interface RenderResult {
   texts: Box[];
   stickers: StickerBox[];
+  overlays: StickerBox[];
 }
 
 const small = document.createElement('canvas');
 /** Offscreen frames of the outgoing and incoming clip during a transition. */
 const layers = [document.createElement('canvas'), document.createElement('canvas')];
+/** Offscreen picture of one overlay, colored before it is blended onto the frame. */
+const ovLayer = document.createElement('canvas');
 
 function layer(i: number, W: number, H: number) {
   const c = layers[i];
@@ -550,19 +620,86 @@ export function renderFrame(
     ctx.fillRect(0, 0, W, H);
   }
 
+  // Picture-in-picture track, above the main one.
+  const overlays: StickerBox[] = [];
+  for (const ov of overlaysOf(p)) {
+    const local = t - ov.start;
+    if (local < 0 || local >= overlayDur(ov)) continue;
+    const asset = p.assets[ov.assetId];
+    if (asset?.kind !== 'video' && asset?.kind !== 'image') continue;
+    const f = lookup(ov, asset, clamp(ov.in + local, 0, Math.max(0, asset.duration - 0.05)));
+    if (f === null && opts.waitForAll) return null;
+    if (!f || !f.w || !f.h) continue; // not decoded yet in the preview: skip it this frame
+    overlays.push(drawOverlay(ctx, ov, poseAt(ov, local), f, W, H));
+  }
+
   const stickers: StickerBox[] = [];
   for (const st of stickersOf(p)) {
     if (t < st.start || t >= st.start + st.duration) continue;
-    const b = drawSticker(ctx, st, st.assetId ? opts.stickerImage?.(st.assetId) : undefined, W, H);
+    const pose = poseAt(st, t - st.start);
+    ctx.save();
+    ctx.globalAlpha = clamp(pose.opacity, 0, 1);
+    const b = drawSticker(ctx, { ...st, ...pose }, st.assetId ? opts.stickerImage?.(st.assetId) : undefined, W, H);
+    ctx.restore();
     if (b) stickers.push(b);
   }
 
   const texts: Box[] = [];
   for (const item of p.texts) {
     if (t < item.start || t >= item.start + item.duration || !item.text.trim()) continue;
-    texts.push(drawText(ctx, item, W, H, item.anim ? textPose(item, t - item.start) : undefined));
+    const pose = poseAt(item, t - item.start);
+    ctx.save();
+    ctx.globalAlpha = clamp(pose.opacity, 0, 1);
+    if (pose.rotation) {
+      ctx.translate(pose.x * W, pose.y * H);
+      ctx.rotate(pose.rotation);
+      ctx.translate(-pose.x * W, -pose.y * H);
+    }
+    texts.push(drawText(ctx, { ...item, x: pose.x, y: pose.y, size: pose.size }, W, H, item.anim ? textPose(item, t - item.start) : undefined));
+    ctx.restore();
   }
-  return { texts, stickers };
+  return { texts, stickers, overlays };
+}
+
+const BLEND_OPS: Record<OverlayItem['blend'], GlobalCompositeOperation> = {
+  normal: 'source-over',
+  multiply: 'multiply',
+  screen: 'screen',
+  overlay: 'overlay',
+  darken: 'darken',
+  lighten: 'lighten',
+  'soft-light': 'soft-light',
+  difference: 'difference',
+};
+
+/** Paint one overlay: colored on its own layer, then placed with its pose, opacity and blend mode. */
+function drawOverlay(ctx: CanvasRenderingContext2D, ov: OverlayItem, pose: Pose, f: FrameImage, W: number, H: number): StickerBox {
+  const w = Math.max(1, pose.size * W);
+  const h = (w * f.h) / f.w;
+  const cx = pose.x * W;
+  const cy = pose.y * H;
+  // The layer never needs many more pixels than the output frame has.
+  const k = Math.min(1, (2 * Math.max(W, H)) / Math.max(w, h));
+  const lw = Math.max(1, Math.round(w * k));
+  const lh = Math.max(1, Math.round(h * k));
+  if (ovLayer.width !== lw || ovLayer.height !== lh) {
+    ovLayer.width = lw;
+    ovLayer.height = lh;
+  }
+  const lc = ovLayer.getContext('2d')!;
+  lc.clearRect(0, 0, lw, lh);
+  drawFrame(lc, f.src, f.w, f.h, lw, lh, { fit: 'fill', filter: ov.filter ?? 'none', color: ov.color } as Clip, '');
+  drawVignette(lc, ov.color, lw, lh);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(pose.rotation);
+  ctx.globalAlpha = clamp(pose.opacity, 0, 1);
+  ctx.globalCompositeOperation = BLEND_OPS[ov.blend] ?? 'source-over';
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(ovLayer, -w / 2, -h / 2, w, h);
+  ctx.restore();
+  return { id: ov.id, cx, cy, w, h, rot: pose.rotation };
 }
 
 /** Paint one main-track clip (picture, color filter and effect) filling the whole frame. */
@@ -575,10 +712,12 @@ function drawClip(ctx: CanvasRenderingContext2D, l: Placed, f: FrameImage, t: nu
   drawFrame(ctx, f.src, f.w, f.h, W, H, l.clip, effectCss(l.clip, W));
   ctx.restore();
   applyEffectOverlay(ctx, l.clip, local, W, H);
+  drawVignette(ctx, l.clip.color, W, H);
 }
 
 function drawFrame(ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: number, sh: number, W: number, H: number, clip: Clip, extraCss: string) {
   const fit = clip.fit;
+  const cc = colorCss(clip.color);
   if (fit === 'fit') {
     // Blurred, darkened copy behind the picture instead of black bars.
     const bw = Math.max(8, Math.round(W / 24));
@@ -592,7 +731,9 @@ function drawFrame(ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: nu
     sc.drawImage(src, (bw - sw * k) / 2, (bh - sh * k) / 2, sw * k, sh * k);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    if (cc && supportsCanvasFilter) ctx.filter = cc;
     ctx.drawImage(small, 0, 0, W, H);
+    ctx.filter = 'none';
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.fillRect(0, 0, W, H);
   }
@@ -602,13 +743,15 @@ function drawFrame(ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: nu
   const dx = (W - dw) / 2;
   const dy = (H - dh) / 2;
   const f = getFilter(clip.filter);
-  const css = [f.id !== 'none' ? f.css : '', extraCss].filter(Boolean).join(' ');
+  const css = [f.id !== 'none' ? f.css : '', cc, extraCss].filter(Boolean).join(' ');
   if (css && supportsCanvasFilter) ctx.filter = css;
   ctx.drawImage(src, dx, dy, dw, dh);
   if (extraCss && !supportsCanvasFilter) softBlur(ctx, src, dx, dy, dw, dh, sw, sh);
   ctx.filter = 'none';
   if (f.id !== 'none' && !supportsCanvasFilter) applyFallback(ctx, f, src, dx, dy, dw, dh);
+  if (cc && !supportsCanvasFilter) applyColorPixels(ctx, clip.color, 0, 0, ctx.canvas.width, ctx.canvas.height);
 }
+
 
 /** Blur without canvas filter support (older Safari): stretch a tiny copy. */
 function softBlur(ctx: CanvasRenderingContext2D, src: CanvasImageSource, dx: number, dy: number, dw: number, dh: number, sw: number, sh: number) {

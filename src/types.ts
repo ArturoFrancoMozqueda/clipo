@@ -39,6 +39,66 @@ export interface TextAnim {
   loop: TextLoopAnim;
 }
 
+/**
+ * Manual color correction (advanced mode). Every value is -1..1 and 0 means "unchanged",
+ * so a missing field or a missing object both leave the picture as it was.
+ */
+export interface ColorAdjust {
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
+  /** Negative = cooler (blue), positive = warmer (orange). */
+  temperature?: number;
+  /** Negative = greener, positive = more magenta. */
+  tint?: number;
+  highlights?: number;
+  shadows?: number;
+  /** Positive darkens the corners, negative lightens them. */
+  vignette?: number;
+}
+
+export type Easing = 'linear' | 'ease';
+
+/** A saved pose of an overlay, sticker or text (advanced mode). */
+export interface Keyframe {
+  /** Seconds from the item's start. */
+  t: number;
+  x: number;
+  y: number;
+  size: number;
+  /** Radians, clockwise. */
+  rotation: number;
+  /** 0..1 */
+  opacity: number;
+  /** How the motion from this keyframe to the next one moves. */
+  ease: Easing;
+}
+
+export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'soft-light' | 'difference';
+
+/** A video or photo on an extra track above the main one (picture-in-picture). */
+export interface OverlayItem {
+  id: string;
+  assetId: string;
+  /** Timeline position in seconds. */
+  start: number;
+  /** Source in/out in seconds. For photos `in` is 0 and `out` is how long it shows. */
+  in: number;
+  out: number;
+  volume: number;
+  /** Center as a fraction of the frame (0..1). */
+  x: number;
+  y: number;
+  /** Width as a fraction of the frame width. */
+  size: number;
+  rotation: number;
+  opacity: number;
+  blend: BlendMode;
+  filter?: string;
+  color?: ColorAdjust;
+  keyframes?: Keyframe[];
+}
+
 /** A piece of the main (magnetic) track. Clips play back to back. */
 export interface Clip {
   id: string;
@@ -53,6 +113,7 @@ export interface Clip {
   /** Transition into the next main-track clip. */
   transition?: Transition;
   effect?: Effect;
+  color?: ColorAdjust;
 }
 
 export interface TextItem {
@@ -69,6 +130,11 @@ export interface TextItem {
   /** Made by automatic captions; regenerating replaces these. */
   caption?: boolean;
   anim?: TextAnim;
+  /** Radians (advanced mode). */
+  rotation?: number;
+  /** 0..1 (advanced mode). */
+  opacity?: number;
+  keyframes?: Keyframe[];
 }
 
 /** An emoji or image drawn over the video, like a text. */
@@ -86,6 +152,9 @@ export interface StickerItem {
   emoji?: string;
   /** Image asset (kind 'image', marked `sticker`). */
   assetId?: string;
+  /** 0..1 (advanced mode). */
+  opacity?: number;
+  keyframes?: Keyframe[];
 }
 
 export interface AudioItem {
@@ -109,11 +178,13 @@ export interface Project {
   audios: AudioItem[];
   /** Missing in projects saved before stickers existed. */
   stickers?: StickerItem[];
+  /** Picture-in-picture track (advanced mode). Missing in older projects. */
+  overlays?: OverlayItem[];
   createdAt: number;
   updatedAt: number;
 }
 
-export type SelectionKind = 'clip' | 'text' | 'audio' | 'sticker';
+export type SelectionKind = 'clip' | 'text' | 'audio' | 'sticker' | 'overlay';
 export type Selection = { kind: SelectionKind; id: string } | null;
 
 export type PanelId =
@@ -131,4 +202,7 @@ export type PanelId =
   | 'record'
   | 'tts'
   | 'export'
+  | 'overlay'
+  | 'color'
+  | 'keyframes'
   | 'help';

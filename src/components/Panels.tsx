@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Captions, CheckCircle2, Download, Share2, TriangleAlert, VolumeX } from 'lucide-react';
-import type { AudioItem, Clip, PanelId, SelectionKind, StickerItem, TextItem } from '../types';
+import type { AudioItem, Clip, OverlayItem, PanelId, SelectionKind, StickerItem, TextItem } from '../types';
 import { itemsOf, useStore } from '../store';
 import { canExport, exportVideo, type ExportProgress } from '../exporter';
 import { FILTERS } from '../filters';
 import { TEXT_STYLES, styleToCss } from '../textStyles';
 import { clipDur, fmtTime, totalDuration } from '../model';
-import { setAspect } from '../ops';
+import { editPose, poseNow, setAspect } from '../ops';
 import { CAPTION_LANGUAGES, captionDownloadMB, cancelCaptions, generateCaptions, type CaptionProgress, type CaptionQuality } from '../captions';
 import { FormatPicker } from './FormatPicker';
 import { EffectsPanel, StickersPanel, TextAnimSection, TransitionPanel } from './VisualPanels';
 import { MediaLibrary } from './MediaLibrary';
 import { showOnboarding } from './Onboarding';
 import { RecordPanel, TtsPanel } from './VoicePanels';
+import { AdvancedToggle, ColorPanel, KeyframesPanel, OverlayPanel } from './AdvancedPanels';
 
 const TITLES: Record<PanelId, string> = {
   media: 'Agregar videos y fotos',
@@ -29,6 +30,9 @@ const TITLES: Record<PanelId, string> = {
   record: 'Grabar tu voz',
   tts: 'Texto a voz',
   export: 'Guardar video',
+  overlay: 'Superposición',
+  color: 'Corrección de color',
+  keyframes: 'Fotogramas clave',
   help: 'Cómo usar Clipo',
 };
 
@@ -54,6 +58,9 @@ export function Sheet() {
     record: <RecordPanel />,
     tts: <TtsPanel />,
     export: <ExportPanel />,
+    overlay: <OverlayPanel />,
+    color: <ColorPanel />,
+    keyframes: <KeyframesPanel />,
     help: <HelpPanel />,
   };
   return (
@@ -73,7 +80,7 @@ export function Sheet() {
 
 // ---------- helpers ----------
 
-export function useSelected<T extends Clip | TextItem | AudioItem | StickerItem>(kind: SelectionKind) {
+export function useSelected<T extends Clip | TextItem | AudioItem | StickerItem | OverlayItem>(kind: SelectionKind) {
   return useStore((s) => {
     if (s.selection?.kind !== kind) return undefined;
     return (itemsOf(s.project!, kind) as T[]).find((x) => x.id === s.selection!.id);
@@ -81,12 +88,12 @@ export function useSelected<T extends Clip | TextItem | AudioItem | StickerItem>
 }
 
 /** Change the selected item without a history step (call checkpoint() first). */
-export function editSelected(fn: (item: Clip & TextItem & AudioItem & StickerItem) => void) {
+export function editSelected(fn: (item: Clip & TextItem & AudioItem & StickerItem & OverlayItem) => void) {
   const s = useStore.getState();
   const sel = s.selection;
   if (!sel) return;
   s.live((p) => {
-    const it = (itemsOf(p, sel.kind) as (Clip & TextItem & AudioItem & StickerItem)[]).find((x) => x.id === sel.id);
+    const it = (itemsOf(p, sel.kind) as (Clip & TextItem & AudioItem & StickerItem & OverlayItem)[]).find((x) => x.id === sel.id);
     if (it) fn(it);
   });
 }
@@ -232,7 +239,9 @@ const POSITIONS = [
 
 function TextPanel() {
   const text = useSelected<TextItem>('text');
+  useStore((s) => s.time); // size and position follow keyframes at the playhead
   if (!text) return <NeedsSelection what="un texto" />;
+  const pose = poseNow('text', text.id) ?? text;
   return (
     <>
       <textarea
@@ -256,11 +265,11 @@ function TextPanel() {
           </button>
         ))}
       </div>
-      <Slider label="Tamaño" value={text.size} min={0.03} max={0.2} step={0.005} format={(v) => `${Math.round(v * 1000)}`} onChange={(v) => editSelected((t) => void (t.size = v))} />
+      <Slider label="Tamaño" value={pose.size} min={0.03} max={0.2} step={0.005} format={(v) => `${Math.round(v * 1000)}`} onChange={(v) => editPose('text', text.id, { size: v })} />
       <p className="label">Posición</p>
       <div className="chips">
         {POSITIONS.map((pos) => (
-          <button key={pos.label} className="chip" onClick={() => { checkpoint(); editSelected((t) => { t.x = 0.5; t.y = pos.y; }); }}>
+          <button key={pos.label} className="chip" onClick={() => { checkpoint(); editPose('text', text.id, { x: 0.5, y: pos.y }); }}>
             {pos.label}
           </button>
         ))}
@@ -466,9 +475,11 @@ function fmtLeft(sec: number) {
 function HelpPanel() {
   return (
     <div className="help">
+      <AdvancedToggle />
       <button className="btn-ghost" onClick={() => { useStore.getState().setPanel(null); showOnboarding(); }}>
         Ver la introducción otra vez
       </button>
+
       <h4>Lo básico</h4>
       <ul>
         <li><b>Moverte:</b> desliza la línea de tiempo. La línea blanca del centro es el momento actual.</li>

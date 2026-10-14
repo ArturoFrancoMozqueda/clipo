@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeftRight, Blend, Columns2, Image as ImageIcon, MoveLeft, Music, Plus, Smile, Sparkles, Type, ZoomIn } from 'lucide-react';
-import type { AudioItem, Clip, Project, SelectionKind, StickerItem, TextItem, TransitionId } from '../types';
+import { ArrowLeftRight, Blend, Columns2, Diamond, Image as ImageIcon, Layers, MoveLeft, Music, Plus, Smile, Sparkles, Type, ZoomIn } from 'lucide-react';
+import type { AudioItem, Clip, Keyframe, OverlayItem, Project, SelectionKind, StickerItem, TextItem, TransitionId } from '../types';
 import { itemsOf, useStore } from '../store';
 import { engine } from '../engine';
-import { IMAGE_MAX, audioDur, clamp, fmtTime, lanes, layout, mainDuration, totalDuration } from '../model';
+import { IMAGE_MAX, audioDur, clamp, fmtTime, lanes, layout, mainDuration, overlayDur, overlaysOf, totalDuration } from '../model';
+import { keyframeAt } from '../keyframes';
+import { toggleKeyframe, useAnimated } from './AdvancedPanels';
 import { addText } from '../ops';
 import { getFilter } from '../filters';
 import { effectName, stickersOf, transitionName } from '../visuals';
@@ -14,12 +16,30 @@ const ROW_CLIP = 60;
 const ROW_TEXT = 30;
 const ROW_AUDIO = 34;
 const ROW_STICKER = 30;
+const ROW_OVERLAY = 40;
 
 type Mode = 'l' | 'r' | 'body';
 
 /** Apply a horizontal drag of `ds` seconds to an item, starting from its original values. */
-function applyDrag(p: Project, kind: SelectionKind, id: string, mode: Mode, ds: number, o: Clip | TextItem | AudioItem | StickerItem) {
-  if (kind === 'clip') {
+function applyDrag(p: Project, kind: SelectionKind, id: string, mode: Mode, ds: number, o: Clip | TextItem | AudioItem | StickerItem | OverlayItem) {
+  if (kind === 'overlay') {
+    const v = p.overlays?.find((x) => x.id === id);
+    const ov = o as OverlayItem;
+    if (!v) return;
+    if (mode === 'body') v.start = Math.max(0, ov.start + ds);
+    else if (p.assets[v.assetId]?.kind === 'image') {
+      // Photos: both edges change how long it shows.
+      if (mode === 'l') {
+        const d = clamp(ds, -ov.start, ov.out - 0.3);
+        v.start = ov.start + d;
+        v.out = ov.out - d;
+      } else v.out = clamp(ov.out + ds, 0.3, IMAGE_MAX);
+    } else if (mode === 'l') {
+      const d = clamp(ds, -Math.min(ov.in, ov.start), ov.out - ov.in - 0.2);
+      v.in = ov.in + d;
+      v.start = ov.start + d;
+    } else v.out = clamp(ov.out + ds, ov.in + 0.2, p.assets[v.assetId]?.duration ?? ov.out);
+  } else if (kind === 'clip') {
     const c = p.clips.find((x) => x.id === id);
     const oc = o as Clip;
     if (!c) return;
@@ -56,7 +76,7 @@ function startDrag(e: React.PointerEvent, kind: SelectionKind, id: string, mode:
   e.stopPropagation();
   const s = useStore.getState();
   const p = s.project!;
-  const found = (itemsOf(p, kind) as (Clip | TextItem | AudioItem | StickerItem)[]).find((x) => x.id === id);
+  const found = (itemsOf(p, kind) as (Clip | TextItem | AudioItem | StickerItem | OverlayItem)[]).find((x) => x.id === id);
   if (!found) return;
   engine.pause();
   const orig = structuredClone(found);
@@ -82,6 +102,40 @@ function startDrag(e: React.PointerEvent, kind: SelectionKind, id: string, mode:
   target.addEventListener('pointermove', move);
   target.addEventListener('pointerup', up);
   target.addEventListener('pointercancel', up);
+}
+
+/** Small diamonds where an item has keyframes. */
+function KfMarks({ kf, pps }: { kf?: Keyframe[]; pps: number }) {
+  if (!kf?.length) return null;
+  return (
+    <>
+      {kf.map((k, i) => (
+        <span key={i} className="tl-kf" style={{ left: k.t * pps }} />
+      ))}
+    </>
+  );
+}
+
+/** Diamond at the playhead: adds (or removes) a keyframe on the selected item. */
+function KeyframeButton() {
+  const a = useAnimated();
+  const advanced = useStore((s) => s.advanced);
+  if (!a || !advanced) return null;
+  const on = keyframeAt(a.item, a.local) >= 0 && a.inside;
+  const label = on ? 'Quitar fotograma clave' : 'Agregar fotograma clave aquí';
+  return (
+    <button
+      className={`tl-kf-btn ${on ? 'on' : ''} ${a.inside ? '' : 'off'}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleKeyframe();
+      }}
+      aria-label={label}
+      title={label}
+    >
+      <Diamond size={16} fill={on ? 'currentColor' : 'none'} />
+    </button>
+  );
 }
 
 function Handles({ kind, id }: { kind: SelectionKind; id: string }) {
@@ -181,12 +235,50 @@ export function Timeline() {
   const stickers = stickersOf(project);
   const stickerLanes = lanes(stickers.map((t) => ({ id: t.id, start: t.start, end: t.start + t.duration })));
   const audioLanes = lanes(project.audios.map((a) => ({ id: a.id, start: a.start, end: a.start + audioDur(a) })));
+  const overlays = overlaysOf(project);
+  const overlayLanes = lanes(overlays.map((o) => ({ id: o.id, start: o.start, end: o.start + overlayDur(o) })));
+  const advanced = useStore((s) => s.advanced);
 
   return (
     <div className="timeline">
       <div className="tl-scroll" ref={ref} onScroll={onScroll} onClick={() => useStore.getState().select(null)}>
         <div className="tl-content" style={{ width }}>
           <Ruler dur={dur} pps={pps} pad={pad} />
+
+          {(advanced || overlays.length > 0) && (
+            <div className="tl-row tl-overlays" style={{ height: Math.max(1, overlayLanes.count) * ROW_OVERLAY }}>
+              {overlays.length === 0 && (
+                <button className="tl-ghost" style={{ left: pad + 8 }} onClick={(e) => { e.stopPropagation(); useStore.getState().setPanel('overlay'); }}>
+                  <Layers size={14} /> Superponer video o foto
+                </button>
+              )}
+              {overlays.map((o) => {
+                const a = project.assets[o.assetId];
+                const sel = isSel('overlay', o.id);
+                return (
+                  <div
+                    key={o.id}
+                    className={`tl-item overlay ${sel ? 'selected' : ''}`}
+                    style={{
+                      left: pad + o.start * pps,
+                      width: Math.max(2, overlayDur(o) * pps),
+                      top: overlayLanes.map[o.id] * ROW_OVERLAY,
+                      height: ROW_OVERLAY - 4,
+                      backgroundImage: a?.thumb ? `url(${a.thumb})` : undefined,
+                    }}
+                    onClick={select('overlay', o.id)}
+                    onPointerDown={sel ? (e) => startDrag(e, 'overlay', o.id, 'body') : undefined}
+                    onDoubleClick={() => useStore.getState().setPanel('overlay')}
+                    title={a?.name}
+                  >
+                    <Layers size={12} /> <span>{a?.name ?? 'Superposición'}</span>
+                    <KfMarks kf={o.keyframes} pps={pps} />
+                    {sel && <Handles kind="overlay" id={o.id} />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="tl-row" style={{ height: ROW_CLIP }}>
             {placed.map(({ clip, start, end }) => {
@@ -271,6 +363,7 @@ export function Timeline() {
                   onDoubleClick={() => useStore.getState().setPanel('text')}
                 >
                   <Type size={12} /> <span>{t.text}</span>
+                  <KfMarks kf={t.keyframes} pps={pps} />
                   {sel && <Handles kind="text" id={t.id} />}
                 </div>
               );
@@ -297,6 +390,7 @@ export function Timeline() {
                 >
                   {thumb ? <img src={thumb} alt="" /> : <span className="tl-emoji">{st.emoji}</span>}
                   <span>Sticker</span>
+                  <KfMarks kf={st.keyframes} pps={pps} />
                   {sel && <Handles kind="sticker" id={st.id} />}
                 </div>
               );
@@ -328,6 +422,8 @@ export function Timeline() {
         </div>
       </div>
       <div className="playhead" />
+      <KeyframeButton />
+
     </div>
   );
 }

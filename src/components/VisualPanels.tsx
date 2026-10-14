@@ -8,7 +8,7 @@ import { useStore } from '../store';
 import { engine } from '../engine';
 import { clipDur, layout } from '../model';
 import { importFiles } from '../media';
-import { addImageStickers, addSticker } from '../ops';
+import { addImageStickers, addSticker, editPose, poseNow } from '../ops';
 import {
   EFFECTS, EFFECT_DEFAULT_INTENSITY, EMOJI_GROUPS, NO_ANIM, TEXT_IN, TEXT_LOOP, TEXT_OUT, TRANSITIONS, TRANSITION_DEFAULT,
   TRANSITION_MAX, TRANSITION_MIN, transitionLength,
@@ -212,6 +212,8 @@ const deg = (r: number) => Math.round((r * 180) / Math.PI);
 
 export function StickersPanel() {
   const sticker = useSelected<StickerItem>('sticker');
+  useStore((s) => s.time); // size and turn follow keyframes at the playhead
+  const pose = sticker ? poseNow('sticker', sticker.id) ?? sticker : null;
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
@@ -231,21 +233,22 @@ export function StickersPanel() {
 
   return (
     <>
-      {sticker && (
+      {sticker && pose && (
         <div className="sticker-edit">
-          <Slider label="Tamaño" value={sticker.size} min={0.05} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}`} onChange={(v) => editSelected((s) => void (s.size = v))} />
+          <Slider label="Tamaño" value={pose.size} min={0.05} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}`} onChange={(v) => editPose('sticker', sticker.id, { size: v })} />
           <Slider
             label="Giro"
-            value={deg(sticker.rotation)}
+            value={deg(pose.rotation ?? 0)}
             min={-180}
             max={180}
             step={1}
             format={(v) => `${v}°`}
-            onChange={(v) => editSelected((s) => void (s.rotation = (v * Math.PI) / 180))}
+            onChange={(v) => editPose('sticker', sticker.id, { rotation: (v * Math.PI) / 180 })}
           />
           <Slider label="Se muestra durante" value={sticker.duration} min={0.5} max={30} step={0.5} format={(v) => `${v.toFixed(1)} s`} onChange={(v) => editSelected((s) => void (s.duration = v))} />
           <div className="chips">
-            <button className="chip" onClick={() => { checkpoint(); editSelected((s) => void (s.rotation = 0)); }}>
+            <button className="chip" onClick={() => { checkpoint(); editPose('sticker', sticker.id, { rotation: 0 }); }}>
+
               <RotateCw size={16} /> Enderezar
             </button>
           </div>

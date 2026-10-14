@@ -1,8 +1,8 @@
 import type { VideoCodec, VideoSample, VideoSampleSink } from 'mediabunny';
-import { engine, renderFrame, type FrameImage } from './engine';
-import { audioDur, canvasSize, clamp, clipDur, layout, totalDuration } from './model';
+import { engine, renderFrame, type FrameImage, type MediaRef } from './engine';
+import { audioDur, canvasSize, clamp, clipDur, layout, overlayDur, overlaysOf, totalDuration } from './model';
 import { useStore } from './store';
-import type { Clip, Project } from './types';
+import type { Project } from './types';
 
 export interface ExportProgress {
   /** 0..100 */
@@ -130,7 +130,7 @@ async function fastExport(
   const images = new Map<string, FrameImage>();
   const readers = new Map<string, ClipReader>();
   const blank: FrameImage = { src: canvas, w: 0, h: 0 };
-  const getReader = async (clip: Clip) => {
+  const getReader = async (clip: MediaRef) => {
     let r = readers.get(clip.id);
     if (!r) {
       const input = new mb.Input({ source: new mb.BlobSource(await blobOf(clip.assetId)), formats: mb.ALL_FORMATS });
@@ -141,7 +141,8 @@ async function fastExport(
     }
     return r;
   };
-  for (const c of p.clips) {
+  // Photos on the main track and on the overlay track.
+  for (const c of [...p.clips, ...overlaysOf(p)]) {
     const a = p.assets[c.assetId];
     if (a?.kind === 'image' && !images.has(a.id)) {
       const img = new Image();
@@ -180,8 +181,8 @@ async function fastExport(
       check();
       const t = i / FPS;
       // Whatever renderFrame asks for that isn't decoded yet gets fetched, then it draws again.
-      const wanted: [Clip, number][] = [];
-      const lookup = (clip: Clip, asset: Project['assets'][string], srcTime: number): FrameImage | null => {
+      const wanted: [MediaRef, number][] = [];
+      const lookup = (clip: MediaRef, asset: Project['assets'][string], srcTime: number): FrameImage | null => {
         if (asset.kind === 'image') return images.get(asset.id) ?? blank;
         const r = readers.get(clip.id);
         if (r && r.at === srcTime) return r.frame() ?? blank;
@@ -204,6 +205,13 @@ async function fastExport(
         if (r && l.end < t) {
           r.close();
           readers.delete(l.clip.id);
+        }
+      }
+      for (const o of overlaysOf(p)) {
+        const r = readers.get(o.id);
+        if (r && o.start + overlayDur(o) < t) {
+          r.close();
+          readers.delete(o.id);
         }
       }
 
@@ -399,8 +407,26 @@ async function mixAudio(p: Project, dur: number, blobOf: (id: string) => Promise
     src.stop(l.start + clipDur(c));
   }
 
+  // Sound of overlay videos (picture-in-picture), like the preview plays it.
+  for (const o of overlaysOf(p)) {
+    if (p.assets[o.assetId]?.kind !== 'video' || o.volume <= 0) continue;
+    const d = overlayDur(o);
+    if (d <= 0) continue;
+    const buf = await decode(o.assetId);
+    check();
+    if (!buf) continue;
+    const src = octx.createBufferSource();
+    src.buffer = buf;
+    const g = octx.createGain();
+    g.gain.value = o.volume;
+    src.connect(g).connect(octx.destination);
+    src.start(o.start, o.in);
+    src.stop(o.start + d);
+  }
+
   for (const a of p.audios) {
     if (a.volume <= 0) continue;
+
     const buf = await decode(a.assetId);
     check();
     if (!buf) continue;

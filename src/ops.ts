@@ -1,9 +1,10 @@
 // Editing actions shared by the toolbar, panels and keyboard shortcuts.
-import type { AspectId, Asset, Project, StickerItem } from './types';
-import { DEFAULT_IMAGE_SECONDS, audioDur, layout } from './model';
+import type { AspectId, Asset, OverlayItem, Project, SelectionKind, StickerItem } from './types';
+import { DEFAULT_IMAGE_SECONDS, audioDur, clamp, layout, overlayDur } from './model';
 import { itemsOf, uid, useStore } from './store';
 import { engine } from './engine';
 import { EFFECT_DEFAULT_INTENSITY, STICKER_DEFAULT_SIZE } from './visuals';
+import { poseAt, setPose, shiftKeyframes, type Animatable, type Pose } from './keyframes';
 
 const get = () => useStore.getState();
 
@@ -55,8 +56,9 @@ export function splitAtPlayhead() {
     s.commit((q) => {
       const it = q.texts.find((i) => i.id === sel.id)!;
       const rest = it.start + it.duration - t;
+      const keyframes = shiftKeyframes(it.keyframes, t - it.start);
       it.duration = t - it.start;
-      q.texts.push({ ...it, id, start: t, duration: rest });
+      q.texts.push({ ...it, id, start: t, duration: rest, ...(keyframes ? { keyframes } : {}) });
     });
     s.select({ kind: 'text', id });
     return s.notify('Texto dividido');
@@ -69,11 +71,34 @@ export function splitAtPlayhead() {
     s.commit((q) => {
       const it = q.stickers!.find((i) => i.id === sel.id)!;
       const rest = it.start + it.duration - t;
+      const keyframes = shiftKeyframes(it.keyframes, t - it.start);
       it.duration = t - it.start;
-      q.stickers!.push({ ...it, id, start: t, duration: rest });
+      q.stickers!.push({ ...it, id, start: t, duration: rest, ...(keyframes ? { keyframes } : {}) });
     });
     s.select({ kind: 'sticker', id });
     return s.notify('Sticker dividido');
+  }
+
+  if (sel?.kind === 'overlay') {
+    const o = (p.overlays ?? []).find((i) => i.id === sel.id);
+    if (!o || t <= o.start + MIN || t >= o.start + overlayDur(o) - MIN) return s.notify('Mueve la línea blanca sobre la superposición para dividirla');
+    const id = uid();
+    s.commit((q) => {
+      const it = q.overlays!.find((i) => i.id === sel.id)!;
+      const local = t - it.start;
+      const keyframes = shiftKeyframes(it.keyframes, local);
+      const second: OverlayItem = { ...it, id, start: t, ...(keyframes ? { keyframes } : {}) };
+      if (q.assets[it.assetId]?.kind === 'image') {
+        second.out = it.out - local;
+        it.out = local;
+      } else {
+        second.in = it.in + local;
+        it.out = it.in + local;
+      }
+      q.overlays!.push(second);
+    });
+    s.select({ kind: 'overlay', id });
+    return s.notify('Superposición dividida');
   }
 
   if (sel?.kind === 'audio') {
@@ -114,6 +139,7 @@ export function deleteSelected() {
     if (sel.kind === 'text') p.texts = p.texts.filter((c) => c.id !== sel.id);
     if (sel.kind === 'audio') p.audios = p.audios.filter((c) => c.id !== sel.id);
     if (sel.kind === 'sticker') p.stickers = (p.stickers ?? []).filter((c) => c.id !== sel.id);
+    if (sel.kind === 'overlay') p.overlays = (p.overlays ?? []).filter((c) => c.id !== sel.id);
   });
   s.select(null);
   s.setPanel(null);
@@ -136,6 +162,9 @@ export function duplicateSelected() {
       const x = p.stickers?.find((c) => c.id === sel.id);
       // Offset the copy so both are visible right away.
       if (x) p.stickers!.push({ ...x, id, x: Math.min(0.9, x.x + 0.06), y: Math.min(0.9, x.y + 0.06) });
+    } else if (sel.kind === 'overlay') {
+      const x = p.overlays?.find((c) => c.id === sel.id);
+      if (x) p.overlays!.push({ ...x, id, start: x.start + overlayDur(x) });
     } else {
       const x = p.audios.find((c) => c.id === sel.id);
       if (x) p.audios.push({ ...x, id, start: x.start + audioDur(x) });
@@ -204,7 +233,69 @@ export function addSticker(what: Pick<StickerItem, 'emoji' | 'assetId'>, asset?:
   s.select({ kind: 'sticker', id });
 }
 
+/** Put videos or photos on the overlay track (picture-in-picture) at the playhead. */
+export function addOverlays(assets: Asset[]) {
+  const s = get();
+  const list = assets.filter((a) => a.kind === 'video' || a.kind === 'image');
+  if (!s.project || !list.length) return;
+  engine.pause();
+  const t = s.time;
+  let last = '';
+  const n = (s.project.overlays ?? []).length;
+  s.commit((p) => {
+    list.forEach((a, i) => {
+      p.assets[a.id] ??= a;
+      last = uid();
+      (p.overlays ??= []).push({
+        id: last,
+        assetId: a.id,
+        start: t,
+        in: 0,
+        out: a.kind === 'image' ? DEFAULT_IMAGE_SECONDS : a.duration,
+        volume: 1,
+        // A corner picture, like a reaction video; a few added at once fan out.
+        x: 0.7 - ((n + i) % 3) * 0.2,
+        y: 0.28 + (Math.floor((n + i) / 3) % 3) * 0.2,
+        size: 0.42,
+        rotation: 0,
+        opacity: 1,
+        blend: 'normal',
+      });
+    });
+  });
+  s.select({ kind: 'overlay', id: last });
+}
+
+type Posable = Animatable & { id: string; start: number };
+
+const durOf = (p: Project, kind: SelectionKind, it: Posable) =>
+  kind === 'overlay' ? overlayDur(it as unknown as OverlayItem) : (it as unknown as { duration: number }).duration;
+
+/** Seconds into the item at the playhead, kept inside the item. */
+export function localTime(p: Project, kind: SelectionKind, it: Posable, time = get().time) {
+  return clamp(time - it.start, 0, Math.max(0, durOf(p, kind, it) - 1e-3));
+}
+
+/** The item's pose at the playhead (after keyframes). */
+export function poseNow(kind: SelectionKind, id: string): Pose | null {
+  const p = get().project;
+  const it = p && (itemsOf(p, kind) as Posable[]).find((x) => x.id === id);
+  return it ? poseAt(it, localTime(p, kind, it)) : null;
+}
+
+/**
+ * Change the pose of an overlay, sticker or text at the playhead without a history step (call
+ * checkpoint() first). With keyframes it edits or adds the keyframe at the playhead.
+ */
+export function editPose(kind: SelectionKind, id: string, patch: Partial<Pose>) {
+  get().live((p) => {
+    const it = (itemsOf(p, kind) as Posable[]).find((x) => x.id === id);
+    if (it) setPose(it, localTime(p, kind, it), patch);
+  });
+}
+
 /** Add imported image assets as stickers (kept out of the media library). */
+
 export function addImageStickers(assets: Asset[]) {
   for (const a of assets) addSticker({ assetId: a.id }, a);
 }

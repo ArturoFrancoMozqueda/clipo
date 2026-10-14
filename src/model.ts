@@ -1,4 +1,4 @@
-import type { AspectId, AudioItem, Clip, Project } from './types';
+import type { AspectId, AudioItem, Clip, OverlayItem, Project } from './types';
 
 /** Longest an image clip can be stretched, in seconds. */
 export const IMAGE_MAX = 600;
@@ -21,6 +21,9 @@ export function canvasSize(aspect: AspectId, short = 720): [number, number] {
 
 export const clipDur = (c: Clip) => (c.out - c.in) / c.speed;
 export const audioDur = (a: AudioItem) => a.out - a.in;
+export const overlayDur = (o: OverlayItem) => o.out - o.in;
+/** Picture-in-picture items; missing in projects saved before they existed. */
+export const overlaysOf = (p: Project) => p.overlays ?? [];
 
 export interface Placed {
   clip: Clip;
@@ -49,6 +52,7 @@ export function totalDuration(p: Project) {
   for (const x of p.texts) d = Math.max(d, x.start + x.duration);
   for (const a of p.audios) d = Math.max(d, a.start + audioDur(a));
   for (const x of p.stickers ?? []) d = Math.max(d, x.start + x.duration);
+  for (const o of overlaysOf(p)) d = Math.max(d, o.start + overlayDur(o));
   return d;
 }
 

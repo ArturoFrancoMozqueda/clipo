@@ -293,3 +293,22 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
 .ci-notes li { font-size: 14px; color: var(--muted); padding-left: 14px; position: relative; }
 .ci-notes li::before { content: '•'; position: absolute; left: 2px; }
 .capcut-import .full-ghost { width: 100%; margin-top: 4px; }
+
+/* ---------- advanced mode: overlays, keyframes, color ---------- */
+.tl-item.overlay { background-color: #2d6b73; background-size: auto 100%; background-repeat: repeat-x; text-shadow: 0 1px 2px #000; }
+.tl-item.overlay.selected { touch-action: none; cursor: grab; }
+.tl-kf { position: absolute; top: 50%; width: 9px; height: 9px; margin: -5px 0 0 -5px; background: #ffd34d; border: 1px solid #000; transform: rotate(45deg); pointer-events: none; z-index: 3; }
+.tl-kf-btn { position: absolute; top: 2px; left: calc(50% + 8px); z-index: 6; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: #2a2a36; color: #ffd34d; border: 1px solid #ffd34d; }
+.tl-kf-btn.on { background: #ffd34d; color: #000; }
+.tl-kf-btn.off { opacity: .45; }
+.adv-toggle { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.adv-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.adv-toggle .adv-switch { flex: none; width: 44px; height: 26px; border-radius: 13px; background: #44445a; position: relative; transition: background .15s; margin-top: 2px; }
+.adv-toggle .adv-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.adv-toggle input:checked + .adv-switch { background: var(--accent, #7c6cff); }
+.adv-toggle input:checked + .adv-switch::after { transform: translateX(18px); }
+.adv-toggle input:focus-visible + .adv-switch { outline: 2px solid #fff; outline-offset: 2px; }
+.adv-toggle span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.adv-toggle small { color: var(--muted); font-size: 12px; }
+.kf-row { align-items: center; justify-content: center; }
+.kf-toggle.on { background: #ffd34d; color: #000; }
