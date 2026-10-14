@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Captions, CheckCircle2, Download, Share2, TriangleAlert, VolumeX } from 'lucide-react';
 import type { AudioItem, Clip, PanelId, TextItem } from '../types';
 import { useStore } from '../store';
-import { engine, canExport } from '../engine';
+import { canExport, exportVideo, type ExportProgress } from '../exporter';
 import { FILTERS } from '../filters';
 import { TEXT_STYLES, styleToCss } from '../textStyles';
 import { clipDur, fmtTime, totalDuration } from '../model';
@@ -349,18 +349,20 @@ function CaptionsPanel() {
 
 type ExportState =
   | { kind: 'idle' }
-  | { kind: 'running' }
+  | { kind: 'running'; progress: ExportProgress | null }
   | { kind: 'done'; url: string; file: File }
   | { kind: 'error'; message: string };
 
 function ExportPanel() {
   const project = useStore((s) => s.project!);
-  const time = useStore((s) => s.time);
   const [quality, setQuality] = useState<720 | 1080>(720);
   const [state, setState] = useState<ExportState>({ kind: 'idle' });
   const dur = totalDuration(project);
 
+  const abort = useRef<AbortController | null>(null);
+
   useEffect(() => () => void (state.kind === 'done' && URL.revokeObjectURL(state.url)), [state]);
+  useEffect(() => () => abort.current?.abort(), []);
 
   if (!canExport()) {
     return <Hint>Tu navegador no puede guardar videos. Usa Chrome, Edge o Safari actualizados.</Hint>;
@@ -368,9 +370,11 @@ function ExportPanel() {
   if (!project.clips.length) return <Hint>Primero agrega al menos un video o una foto.</Hint>;
 
   const start = async () => {
-    setState({ kind: 'running' });
+    const ac = new AbortController();
+    abort.current = ac;
+    setState({ kind: 'running', progress: null });
     try {
-      const { blob, ext } = await engine.exportVideo(quality);
+      const { blob, ext } = await exportVideo(quality, (progress) => !ac.signal.aborted && setState({ kind: 'running', progress }), ac.signal);
       const safe = project.name.replace(/[\\/:*?"<>|]+/g, '').trim() || 'video';
       const file = new File([blob], `${safe}.${ext}`, { type: blob.type });
       setState({ kind: 'done', url: URL.createObjectURL(file), file });
@@ -381,15 +385,18 @@ function ExportPanel() {
   };
 
   if (state.kind === 'running') {
-    const pct = dur ? Math.min(100, (time / dur) * 100) : 0;
+    const pr = state.progress;
+    const pct = pr?.pct ?? 0;
     return (
       <div className="export-running">
         <div className="progress"><span style={{ width: `${pct}%` }} /></div>
         <p>
-          Guardando… <b>{Math.round(pct)} %</b> (tarda lo mismo que dura el video: {fmtTime(dur)})
+          Guardando… <b>{Math.floor(pct)} %</b>
+          {pr && (pr.eta == null ? ' · calculando el tiempo…' : ` · quedan unos ${fmtLeft(pr.eta)}`)}
         </p>
+        {pr && !pr.fast && <Hint>Tu navegador guarda el video en tiempo real: tarda lo mismo que dura ({fmtTime(dur)}).</Hint>}
         <Hint>No cierres ni cambies de pestaña o de app mientras se guarda.</Hint>
-        <button className="btn-ghost" onClick={() => engine.cancelExport()}>Cancelar</button>
+        <button className="btn-ghost" onClick={() => abort.current?.abort()}>Cancelar</button>
       </div>
     );
   }
@@ -434,6 +441,14 @@ function ExportPanel() {
       <Hint>Sin marca de agua. Se procesa en tu dispositivo: nada se sube a internet.</Hint>
     </>
   );
+}
+
+/** "45 s" or "2 min 10 s". */
+function fmtLeft(sec: number) {
+  const s = Math.max(1, Math.ceil(sec));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  return s % 60 ? `${m} min ${s % 60} s` : `${m} min`;
 }
 
 function HelpPanel() {

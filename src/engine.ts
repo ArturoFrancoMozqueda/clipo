@@ -1,6 +1,6 @@
 import { useStore } from './store';
-import type { FitMode, Project, Selection } from './types';
-import { activeClip, audioDur, canvasSize, clamp, layout, totalDuration } from './model';
+import type { Asset, Clip, FitMode, Project, Selection } from './types';
+import { activeClip, audioDur, canvasSize, clamp, layout, totalDuration, type Placed } from './model';
 import { applyFallback, getFilter, supportsCanvasFilter } from './filters';
 import { drawText, type Box } from './textStyles';
 
@@ -37,7 +37,6 @@ class Engine {
   private master: GainNode | null = null;
   private monitor: GainNode | null = null;
   private recDest: MediaStreamAudioDestinationNode | null = null;
-  private small = document.createElement('canvas');
   private playWall = 0;
   private playT = 0;
   private lastNow = 0;
@@ -46,6 +45,8 @@ class Engine {
   /** Bounding boxes of the visible texts, for tapping and dragging in the preview. */
   textBoxes: Box[] = [];
   exporting = false;
+  /** Set by the fast exporter so the preview stops redrawing and leaves it the processor. */
+  holdPreview = false;
 
   constructor() {
     this.host = document.createElement('div');
@@ -213,7 +214,7 @@ class Engine {
     const p = s.project;
     const dt = now - this.lastNow;
     this.lastNow = now;
-    if (!p || !this.ctx || !this.canvas) return;
+    if (!p || !this.ctx || !this.canvas || this.holdPreview) return;
 
     const placed = layout(p);
     let t = s.time;
@@ -293,40 +294,14 @@ class Engine {
     const ctx = this.ctx!;
     const W = this.canvas!.width;
     const H = this.canvas!.height;
-    const cur = activeClip(p, t, placed);
+    // The preview's media elements are already seeked by updateMedia, so the source time is not needed here.
+    const boxes = renderFrame(ctx, p, t, W, H, (clip, asset) => this.frameOf(clip, asset), placed);
+    if (!boxes) return; // keep the previous frame until this one is decoded
 
-    let source: CanvasImageSource | null = null;
-    let sw = 0;
-    let sh = 0;
-    if (cur) {
-      const asset = p.assets[cur.clip.assetId];
-      if (asset?.kind === 'video') {
-        const el = this.videos.get(cur.clip.id)?.el;
-        if (!el || el.readyState < 2) return; // keep the previous frame until this one is decoded
-        source = el;
-        sw = el.videoWidth;
-        sh = el.videoHeight;
-      } else if (asset?.kind === 'image') {
-        const img = this.images.get(asset.id);
-        if (!img || !img.complete || !img.naturalWidth) return;
-        source = img;
-        sw = img.naturalWidth;
-        sh = img.naturalHeight;
-      }
-    }
-
-    ctx.save();
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
-    if (cur && source && sw && sh) this.drawFrame(ctx, source, sw, sh, W, H, cur.clip.fit, cur.clip.filter);
-    ctx.restore();
-
-    const boxes: Box[] = [];
-    for (const item of p.texts) {
-      if (t < item.start || t >= item.start + item.duration || !item.text.trim()) continue;
-      const box = drawText(ctx, item, W, H);
-      boxes.push(box);
-      if (!this.exporting && selection?.kind === 'text' && selection.id === item.id) {
+    if (!this.exporting && selection?.kind === 'text') {
+      const i = p.texts.filter((x) => t >= x.start && t < x.start + x.duration && x.text.trim()).findIndex((x) => x.id === selection.id);
+      const box = boxes[i];
+      if (box) {
         ctx.save();
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = Math.max(2, W / 360);
@@ -338,43 +313,13 @@ class Engine {
     this.textBoxes = boxes;
   }
 
-  private drawFrame(
-    ctx: CanvasRenderingContext2D,
-    src: CanvasImageSource,
-    sw: number,
-    sh: number,
-    W: number,
-    H: number,
-    fit: FitMode,
-    filterId: string,
-  ) {
-    if (fit === 'fit') {
-      // Blurred, darkened copy behind the picture instead of black bars.
-      const bw = Math.max(8, Math.round(W / 24));
-      const bh = Math.max(8, Math.round(H / 24));
-      if (this.small.width !== bw || this.small.height !== bh) {
-        this.small.width = bw;
-        this.small.height = bh;
-      }
-      const sc = this.small.getContext('2d')!;
-      const k = Math.max(bw / sw, bh / sh);
-      sc.drawImage(src, (bw - sw * k) / 2, (bh - sh * k) / 2, sw * k, sh * k);
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(this.small, 0, 0, W, H);
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.fillRect(0, 0, W, H);
+  private frameOf(clip: Clip, asset: Asset): FrameImage | null {
+    if (asset.kind === 'video') {
+      const el = this.videos.get(clip.id)?.el;
+      return el && el.readyState >= 2 ? { src: el, w: el.videoWidth, h: el.videoHeight } : null;
     }
-    const k = fit === 'fit' ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
-    const dw = sw * k;
-    const dh = sh * k;
-    const dx = (W - dw) / 2;
-    const dy = (H - dh) / 2;
-    const f = getFilter(filterId);
-    if (f.id !== 'none' && supportsCanvasFilter) ctx.filter = f.css;
-    ctx.drawImage(src, dx, dy, dw, dh);
-    ctx.filter = 'none';
-    if (f.id !== 'none' && !supportsCanvasFilter) applyFallback(ctx, f, src, dx, dy, dw, dh);
+    const img = this.images.get(asset.id);
+    return img && img.complete && img.naturalWidth ? { src: img, w: img.naturalWidth, h: img.naturalHeight } : null;
   }
 
   // ---------- export ----------
@@ -449,6 +394,98 @@ class Engine {
     useStore.getState().setPlaying(false);
     this.abortExport?.();
   }
+}
+
+/** A decoded picture of a clip, ready to draw. */
+export interface FrameImage {
+  src: CanvasImageSource;
+  w: number;
+  h: number;
+}
+
+/** Returns the picture of `clip` at source time `srcTime` (seconds), or null while it isn't ready. */
+export type FrameLookup = (clip: Clip, asset: Asset, srcTime: number) => FrameImage | null;
+
+/** Position inside the source file that the main track shows at time t. */
+export const sourceTime = (l: Placed, t: number) => clamp(l.clip.in + (t - l.start) * l.clip.speed, l.clip.in, l.clip.out);
+
+const small = document.createElement('canvas');
+
+/**
+ * Draws the whole project at time t: picture, filter and texts. Shared by the live preview and the
+ * fast export so both look identical. Returns the text boxes, or null (nothing drawn) when a
+ * picture it needs isn't ready yet.
+ */
+export function renderFrame(
+  ctx: CanvasRenderingContext2D,
+  p: Project,
+  t: number,
+  W: number,
+  H: number,
+  lookup: FrameLookup,
+  placed = layout(p),
+): Box[] | null {
+  const cur = activeClip(p, t, placed);
+  let frame: FrameImage | null = null;
+  if (cur) {
+    const asset = p.assets[cur.clip.assetId];
+    if (asset?.kind === 'video' || asset?.kind === 'image') {
+      frame = lookup(cur.clip, asset, sourceTime(cur, t));
+      if (!frame) return null;
+    }
+  }
+
+  ctx.save();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  if (cur && frame && frame.w && frame.h) drawFrame(ctx, frame.src, frame.w, frame.h, W, H, cur.clip.fit, cur.clip.filter);
+  ctx.restore();
+
+  const boxes: Box[] = [];
+  for (const item of p.texts) {
+    if (t < item.start || t >= item.start + item.duration || !item.text.trim()) continue;
+    boxes.push(drawText(ctx, item, W, H));
+  }
+  return boxes;
+}
+
+function drawFrame(
+  ctx: CanvasRenderingContext2D,
+  src: CanvasImageSource,
+  sw: number,
+  sh: number,
+  W: number,
+  H: number,
+  fit: FitMode,
+  filterId: string,
+) {
+  if (fit === 'fit') {
+    // Blurred, darkened copy behind the picture instead of black bars.
+    const bw = Math.max(8, Math.round(W / 24));
+    const bh = Math.max(8, Math.round(H / 24));
+    if (small.width !== bw || small.height !== bh) {
+      small.width = bw;
+      small.height = bh;
+    }
+    const sc = small.getContext('2d')!;
+    const k = Math.max(bw / sw, bh / sh);
+    sc.drawImage(src, (bw - sw * k) / 2, (bh - sh * k) / 2, sw * k, sh * k);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(small, 0, 0, W, H);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(0, 0, W, H);
+  }
+  const k = fit === 'fit' ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
+  const dw = sw * k;
+  const dh = sh * k;
+  const dx = (W - dw) / 2;
+  const dy = (H - dh) / 2;
+  const f = getFilter(filterId);
+  if (f.id !== 'none' && supportsCanvasFilter) ctx.filter = f.css;
+  ctx.drawImage(src, dx, dy, dw, dh);
+  ctx.filter = 'none';
+  if (f.id !== 'none' && !supportsCanvasFilter) applyFallback(ctx, f, src, dx, dy, dw, dh);
 }
 
 export const engine = new Engine();
