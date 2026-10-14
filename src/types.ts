@@ -12,6 +12,31 @@ export interface Asset {
   height: number;
   /** Small JPEG data URL used in the timeline and library. */
   thumb?: string;
+  /** Imported as a sticker image; hidden from the media library. */
+  sticker?: boolean;
+}
+
+export type TransitionId = 'none' | 'fade' | 'slide' | 'zoom' | 'wipe';
+export interface Transition {
+  type: TransitionId;
+  /** Seconds, 0.2..1.5. Centered on the cut, so the timeline length does not change. */
+  duration: number;
+}
+
+export type EffectId = 'none' | 'glitch' | 'blur' | 'vignette' | 'shake' | 'kenburns';
+export interface Effect {
+  id: EffectId;
+  /** 0..1 */
+  intensity: number;
+}
+
+export type TextInAnim = 'none' | 'fade' | 'pop' | 'slideUp' | 'typewriter';
+export type TextOutAnim = 'none' | 'fade' | 'pop';
+export type TextLoopAnim = 'none' | 'bounce' | 'pulse';
+export interface TextAnim {
+  in: TextInAnim;
+  out: TextOutAnim;
+  loop: TextLoopAnim;
 }
 
 /** A piece of the main (magnetic) track. Clips play back to back. */
@@ -25,6 +50,9 @@ export interface Clip {
   volume: number;
   filter: string;
   fit: FitMode;
+  /** Transition into the next main-track clip. */
+  transition?: Transition;
+  effect?: Effect;
 }
 
 export interface TextItem {
@@ -40,6 +68,24 @@ export interface TextItem {
   styleId: string;
   /** Made by automatic captions; regenerating replaces these. */
   caption?: boolean;
+  anim?: TextAnim;
+}
+
+/** An emoji or image drawn over the video, like a text. */
+export interface StickerItem {
+  id: string;
+  start: number;
+  duration: number;
+  /** Center position as a fraction of the frame (0..1). */
+  x: number;
+  y: number;
+  /** Width as a fraction of the frame's short side. */
+  size: number;
+  /** Radians, clockwise. */
+  rotation: number;
+  emoji?: string;
+  /** Image asset (kind 'image', marked `sticker`). */
+  assetId?: string;
 }
 
 export interface AudioItem {
@@ -61,11 +107,13 @@ export interface Project {
   clips: Clip[];
   texts: TextItem[];
   audios: AudioItem[];
+  /** Missing in projects saved before stickers existed. */
+  stickers?: StickerItem[];
   createdAt: number;
   updatedAt: number;
 }
 
-export type SelectionKind = 'clip' | 'text' | 'audio';
+export type SelectionKind = 'clip' | 'text' | 'audio' | 'sticker';
 export type Selection = { kind: SelectionKind; id: string } | null;
 
 export type PanelId =
@@ -77,5 +125,8 @@ export type PanelId =
   | 'filters'
   | 'text'
   | 'captions'
+  | 'transition'
+  | 'effects'
+  | 'stickers'
   | 'export'
   | 'help';

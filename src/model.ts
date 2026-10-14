@@ -48,6 +48,7 @@ export function totalDuration(p: Project) {
   let d = mainDuration(p);
   for (const x of p.texts) d = Math.max(d, x.start + x.duration);
   for (const a of p.audios) d = Math.max(d, a.start + audioDur(a));
+  for (const x of p.stickers ?? []) d = Math.max(d, x.start + x.duration);
   return d;
 }
 

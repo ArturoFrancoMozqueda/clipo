@@ -1,6 +1,6 @@
 import {
   ArrowLeft, ArrowRight, Captions, Copy, Gauge, Maximize, Minimize, Music, Palette, Pencil, Plus,
-  RectangleHorizontal, Scissors, Trash2, Type, Undo2, Volume2, type LucideIcon,
+  RectangleHorizontal, Scissors, Trash2, Type, Undo2, Volume2, ArrowLeftRight, Smile, Sparkles, type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { addText, deleteSelected, duplicateSelected, moveClip, splitAtPlayhead } from '../ops';
@@ -20,6 +20,7 @@ export function Toolbar() {
   const sel = useStore((s) => s.selection);
   const clip = useStore((s) => (s.selection?.kind === 'clip' ? s.project!.clips.find((c) => c.id === s.selection!.id) : undefined));
   const kind = useStore((s) => (clip ? s.project!.assets[clip.assetId]?.kind : undefined));
+  const isLast = useStore((s) => !!clip && s.project!.clips[s.project!.clips.length - 1]?.id === clip.id);
   const deselect = () => useStore.getState().select(null);
 
   let title = '';
@@ -29,6 +30,7 @@ export function Toolbar() {
       { icon: Plus, label: 'Agregar', run: open('media') },
       { icon: Type, label: 'Texto', run: addText },
       { icon: Captions, label: 'Subtítulos', run: open('captions') },
+      { icon: Smile, label: 'Stickers', run: open('stickers') },
       { icon: Music, label: 'Música', run: open('audio') },
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
       { icon: RectangleHorizontal, label: 'Formato', run: open('format') },
@@ -40,6 +42,8 @@ export function Toolbar() {
       ...(kind === 'video' ? [{ icon: Gauge, label: 'Velocidad', run: open('speed') }] : []),
       ...(kind === 'video' ? [{ icon: Volume2, label: 'Volumen', run: open('volume') }] : []),
       { icon: Palette, label: 'Filtros', run: open('filters') },
+      { icon: Sparkles, label: 'Efectos', run: open('effects') },
+      ...(!isLast ? [{ icon: ArrowLeftRight, label: 'Transición', run: open('transition') }] : []),
       {
         icon: clip?.fit === 'fill' ? Minimize : Maximize,
         label: clip?.fit === 'fill' ? 'Ajustar' : 'Rellenar',
@@ -61,6 +65,15 @@ export function Toolbar() {
     title = 'Texto';
     tools = [
       { icon: Pencil, label: 'Editar', run: open('text') },
+      { icon: Sparkles, label: 'Animación', run: open('text') },
+      { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
+      { icon: Copy, label: 'Duplicar', run: duplicateSelected },
+      { icon: Trash2, label: 'Eliminar', run: deleteSelected, danger: true },
+    ];
+  } else if (sel.kind === 'sticker') {
+    title = 'Sticker';
+    tools = [
+      { icon: Pencil, label: 'Editar', run: open('stickers') },
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
       { icon: Copy, label: 'Duplicar', run: duplicateSelected },
       { icon: Trash2, label: 'Eliminar', run: deleteSelected, danger: true },

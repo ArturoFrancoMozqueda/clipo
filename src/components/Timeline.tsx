@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Image as ImageIcon, Music, Plus, Type } from 'lucide-react';
-import type { AudioItem, Clip, Project, SelectionKind, TextItem } from '../types';
-import { useStore } from '../store';
+import { ArrowLeftRight, Blend, Columns2, Image as ImageIcon, MoveLeft, Music, Plus, Smile, Sparkles, Type, ZoomIn } from 'lucide-react';
+import type { AudioItem, Clip, Project, SelectionKind, StickerItem, TextItem, TransitionId } from '../types';
+import { itemsOf, useStore } from '../store';
 import { engine } from '../engine';
 import { IMAGE_MAX, audioDur, clamp, fmtTime, lanes, layout, mainDuration, totalDuration } from '../model';
 import { addText } from '../ops';
 import { getFilter } from '../filters';
+import { effectName, stickersOf, transitionName } from '../visuals';
+
+const JUNCTION_ICONS: Record<TransitionId, typeof Blend> = { none: ArrowLeftRight, fade: Blend, slide: MoveLeft, zoom: ZoomIn, wipe: Columns2 };
 
 const ROW_CLIP = 60;
 const ROW_TEXT = 30;
 const ROW_AUDIO = 34;
+const ROW_STICKER = 30;
 
 type Mode = 'l' | 'r' | 'body';
 
 /** Apply a horizontal drag of `ds` seconds to an item, starting from its original values. */
-function applyDrag(p: Project, kind: SelectionKind, id: string, mode: Mode, ds: number, o: Clip | TextItem | AudioItem) {
+function applyDrag(p: Project, kind: SelectionKind, id: string, mode: Mode, ds: number, o: Clip | TextItem | AudioItem | StickerItem) {
   if (kind === 'clip') {
     const c = p.clips.find((x) => x.id === id);
     const oc = o as Clip;
@@ -25,8 +29,8 @@ function applyDrag(p: Project, kind: SelectionKind, id: string, mode: Mode, ds: 
       c.out = clamp(oc.out + (mode === 'l' ? -ds : ds), 0.3, IMAGE_MAX);
     } else if (mode === 'l') c.in = clamp(oc.in + ds * oc.speed, 0, oc.out - 0.1);
     else if (mode === 'r') c.out = clamp(oc.out + ds * oc.speed, oc.in + 0.1, a?.duration ?? oc.out);
-  } else if (kind === 'text') {
-    const t = p.texts.find((x) => x.id === id);
+  } else if (kind === 'text' || kind === 'sticker') {
+    const t = (itemsOf(p, kind) as (TextItem | StickerItem)[]).find((x) => x.id === id);
     const ot = o as TextItem;
     if (!t) return;
     const end = ot.start + ot.duration;
@@ -52,8 +56,7 @@ function startDrag(e: React.PointerEvent, kind: SelectionKind, id: string, mode:
   e.stopPropagation();
   const s = useStore.getState();
   const p = s.project!;
-  const list: (Clip | TextItem | AudioItem)[] = kind === 'clip' ? p.clips : kind === 'text' ? p.texts : p.audios;
-  const found = list.find((x) => x.id === id);
+  const found = (itemsOf(p, kind) as (Clip | TextItem | AudioItem | StickerItem)[]).find((x) => x.id === id);
   if (!found) return;
   engine.pause();
   const orig = structuredClone(found);
@@ -175,6 +178,8 @@ export function Timeline() {
   const pad = vw / 2;
   const width = dur * pps + vw;
   const textLanes = lanes(project.texts.map((t) => ({ id: t.id, start: t.start, end: t.start + t.duration })));
+  const stickers = stickersOf(project);
+  const stickerLanes = lanes(stickers.map((t) => ({ id: t.id, start: t.start, end: t.start + t.duration })));
   const audioLanes = lanes(project.audios.map((a) => ({ id: a.id, start: a.start, end: a.start + audioDur(a) })));
 
   return (
@@ -204,10 +209,34 @@ export function Timeline() {
                     {a?.kind === 'image' && <ImageIcon size={12} />}
                     {clip.speed !== 1 && <em>{clip.speed}×</em>}
                     {f.id !== 'none' && <em>{f.name}</em>}
+                    {clip.effect && clip.effect.id !== 'none' && <em><Sparkles size={10} /> {effectName(clip.effect.id)}</em>}
                     <em>{fmtTime(end - start, true)}</em>
                   </span>
                   {sel && <Handles kind="clip" id={clip.id} />}
                 </div>
+              );
+            })}
+            {placed.slice(0, -1).map(({ clip, end }) => {
+              const type = clip.transition?.type ?? 'none';
+              const Icon = JUNCTION_ICONS[type];
+              const label = type === 'none' ? 'Agregar transición' : `Transición: ${transitionName(type)}`;
+              return (
+                <button
+                  key={`j-${clip.id}`}
+                  className={`tl-junction ${type !== 'none' ? 'set' : ''}`}
+                  style={{ left: pad + end * pps }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    engine.pause();
+                    const s = useStore.getState();
+                    s.select({ kind: 'clip', id: clip.id });
+                    s.setPanel('transition');
+                  }}
+                  aria-label={label}
+                  title={label}
+                >
+                  <Icon size={14} />
+                </button>
               );
             })}
             <button
@@ -243,6 +272,32 @@ export function Timeline() {
                 >
                   <Type size={12} /> <span>{t.text}</span>
                   {sel && <Handles kind="text" id={t.id} />}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="tl-row" style={{ height: Math.max(1, stickerLanes.count) * ROW_STICKER }}>
+            {stickers.length === 0 && (
+              <button className="tl-ghost" style={{ left: pad + 8 }} onClick={(e) => { e.stopPropagation(); useStore.getState().setPanel('stickers'); }}>
+                <Smile size={14} /> Agregar sticker
+              </button>
+            )}
+            {stickers.map((st) => {
+              const sel = isSel('sticker', st.id);
+              const thumb = st.assetId ? project.assets[st.assetId]?.thumb : undefined;
+              return (
+                <div
+                  key={st.id}
+                  className={`tl-item sticker ${sel ? 'selected' : ''}`}
+                  style={{ left: pad + st.start * pps, width: Math.max(2, st.duration * pps), top: stickerLanes.map[st.id] * ROW_STICKER, height: ROW_STICKER - 4 }}
+                  onClick={select('sticker', st.id)}
+                  onPointerDown={sel ? (e) => startDrag(e, 'sticker', st.id, 'body') : undefined}
+                  onDoubleClick={() => useStore.getState().setPanel('stickers')}
+                >
+                  {thumb ? <img src={thumb} alt="" /> : <span className="tl-emoji">{st.emoji}</span>}
+                  <span>Sticker</span>
+                  {sel && <Handles kind="sticker" id={st.id} />}
                 </div>
               );
             })}

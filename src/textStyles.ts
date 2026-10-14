@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { TextItem } from './types';
+import type { TextPose } from './visuals';
 
 export interface TextStyle {
   id: string;
@@ -67,8 +68,8 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-/** Draw a text item and return its bounding box in canvas pixels. */
-export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: number, H: number): Box {
+/** Draw a text item and return its (resting) bounding box in canvas pixels. */
+export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: number, H: number, pose?: TextPose): Box {
   const st = getTextStyle(item.styleId);
   const fs = Math.max(8, item.size * Math.min(W, H));
   ctx.save();
@@ -86,13 +87,34 @@ export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: numbe
   const padX = fs * 0.45;
   const padY = fs * 0.2;
   const box = { id: item.id, x: cx - tw / 2 - padX, y: cy - th / 2 - padY, w: tw + padX * 2, h: th + padY * 2 };
+  if (pose) {
+    if (pose.alpha <= 0.001 || pose.scale <= 0.001) {
+      ctx.restore();
+      return box;
+    }
+    ctx.globalAlpha *= Math.min(1, pose.alpha);
+    ctx.translate(cx, cy + pose.dy * H);
+    ctx.scale(pose.scale, pose.scale);
+    ctx.translate(-cx, -cy);
+  }
+  // Typewriter: reveal characters one by one, keeping each line where it will end up.
+  let budget = pose?.chars ?? Infinity;
 
-  if (st.bg) {
+  if (st.bg && budget > 0) {
     ctx.fillStyle = st.bg;
     roundRect(ctx, box.x, box.y, box.w, box.h, fs * 0.25);
     ctx.fill();
   }
-  lines.forEach((line, i) => {
+  lines.forEach((full, i) => {
+    if (budget <= 0) return;
+    let line = full;
+    let x = cx;
+    if (budget < Infinity) {
+      line = full.slice(0, budget);
+      budget -= full.length + 1;
+      ctx.textAlign = 'left';
+      x = cx - ctx.measureText(full).width / 2;
+    }
     const y = cy - th / 2 + lh * (i + 0.5);
     if (st.shadow) {
       ctx.shadowColor = st.shadow;
@@ -101,11 +123,11 @@ export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: numbe
     if (st.stroke) {
       ctx.strokeStyle = st.stroke;
       ctx.lineWidth = (st.strokeW ?? 0.14) * fs;
-      ctx.strokeText(line, cx, y);
+      ctx.strokeText(line, x, y);
       ctx.shadowColor = 'transparent';
     }
     ctx.fillStyle = st.fill;
-    ctx.fillText(line, cx, y);
+    ctx.fillText(line, x, y);
     ctx.shadowColor = 'transparent';
   });
   ctx.restore();

@@ -4,6 +4,11 @@ import { useStore } from '../store';
 import { engine } from '../engine';
 import { ASPECTS, canvasSize, clamp, fmtTime, totalDuration } from '../model';
 import { ImportButton } from './ImportButton';
+import { hitSticker, stickerHandle, stickerHandleRadius, stickersOf } from '../visuals';
+
+type Gesture =
+  | { kind: 'text' | 'sticker'; id: string; ox: number; oy: number; sx: number; sy: number; moved: boolean; wasSelected: boolean }
+  | { kind: 'handle' | 'pinch'; id: string; d0: number; a0: number; size0: number; rot0: number; moved: boolean };
 
 export function Preview() {
   const aspect = useStore((s) => s.project!.aspect);
@@ -11,7 +16,8 @@ export function Preview() {
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
-  const drag = useRef<{ id: string; ox: number; oy: number; sx: number; sy: number; moved: boolean; wasSelected: boolean } | null>(null);
+  const drag = useRef<Gesture | null>(null);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
 
   useEffect(() => {
     const c = canvas.current!;
@@ -48,56 +54,149 @@ export function Preview() {
     return () => ro.disconnect();
   }, [aspect]);
 
-  const toCanvas = (e: React.PointerEvent) => {
+  const toCanvas = (e: { clientX: number; clientY: number }) => {
     const c = canvas.current!;
     const r = c.getBoundingClientRect();
     return { x: ((e.clientX - r.left) * c.width) / r.width, y: ((e.clientY - r.top) * c.height) / r.height, r };
   };
 
+  /** Start resizing/rotating a sticker around its center, from a reference distance and angle. */
+  const startTransform = (id: string, kind: 'handle' | 'pinch', d0: number, a0: number, moved: boolean) => {
+    const st = stickersOf(useStore.getState().project!).find((i) => i.id === id);
+    if (!st) return;
+    drag.current = { kind, id, d0: Math.max(1, d0), a0, size0: st.size, rot0: st.rotation, moved };
+  };
+
+  const stickerCenter = (id: string) => {
+    const c = canvas.current!;
+    const r = c.getBoundingClientRect();
+    const b = engine.stickerBoxes.find((x) => x.id === id);
+    return b ? { x: r.left + (b.cx * r.width) / c.width, y: r.top + (b.cy * r.height) / c.height } : null;
+  };
+
+  const pinchGeom = () => {
+    const [p1, p2] = [...pointers.current.values()];
+    return { d: Math.hypot(p2.x - p1.x, p2.y - p1.y), a: Math.atan2(p2.y - p1.y, p2.x - p1.x) };
+  };
+
   const onDown = (e: React.PointerEvent) => {
     const s = useStore.getState();
     if (s.exporting || empty) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    canvas.current!.setPointerCapture(e.pointerId);
+    const g = drag.current;
+
+    // Second finger on a sticker: pinch to resize and rotate.
+    if (pointers.current.size === 2 && g && g.kind !== 'text') {
+      if (!g.moved) s.checkpoint();
+      const { d, a } = pinchGeom();
+      startTransform(g.id, 'pinch', d, a, true);
+      return;
+    }
+    if (pointers.current.size > 1) return;
+
     const { x, y } = toCanvas(e);
+    const W = canvas.current!.width;
+    const sel = s.selection;
+    if (sel?.kind === 'sticker') {
+      const b = engine.stickerBoxes.find((i) => i.id === sel.id);
+      const h = b && stickerHandle(b);
+      if (b && h && Math.hypot(x - h.x, y - h.y) < stickerHandleRadius(W) * 1.8) {
+        engine.pause();
+        const c = stickerCenter(sel.id)!;
+        startTransform(sel.id, 'handle', Math.hypot(e.clientX - c.x, e.clientY - c.y), Math.atan2(e.clientY - c.y, e.clientX - c.x), false);
+        return;
+      }
+    }
+
     const hit = [...engine.textBoxes].reverse().find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
     if (hit) {
       engine.pause();
       const t = s.project!.texts.find((i) => i.id === hit.id)!;
-      const wasSelected = s.selection?.kind === 'text' && s.selection.id === hit.id;
+      const wasSelected = sel?.kind === 'text' && sel.id === hit.id;
       s.select({ kind: 'text', id: hit.id });
-      drag.current = { id: hit.id, ox: t.x, oy: t.y, sx: e.clientX, sy: e.clientY, moved: false, wasSelected };
-      canvas.current!.setPointerCapture(e.pointerId);
-    } else if (s.selection) {
-      s.select(null);
-    } else {
-      engine.toggle();
+      drag.current = { kind: 'text', id: hit.id, ox: t.x, oy: t.y, sx: e.clientX, sy: e.clientY, moved: false, wasSelected };
+      return;
     }
+    const sHit = [...engine.stickerBoxes].reverse().find((b) => hitSticker(b, x, y, W / 80));
+    if (sHit) {
+      engine.pause();
+      const st = stickersOf(s.project!).find((i) => i.id === sHit.id)!;
+      const wasSelected = sel?.kind === 'sticker' && sel.id === sHit.id;
+      s.select({ kind: 'sticker', id: sHit.id });
+      drag.current = { kind: 'sticker', id: sHit.id, ox: st.x, oy: st.y, sx: e.clientX, sy: e.clientY, moved: false, wasSelected };
+      return;
+    }
+    if (sel) s.select(null);
+    else engine.toggle();
   };
 
   const onMove = (e: React.PointerEvent) => {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const d = drag.current;
     if (!d) return;
+    const store = useStore.getState();
+
+    if (d.kind === 'handle' || d.kind === 'pinch') {
+      let dist: number;
+      let ang: number;
+      if (d.kind === 'pinch') {
+        if (pointers.current.size < 2) return;
+        ({ d: dist, a: ang } = pinchGeom());
+      } else {
+        const c = stickerCenter(d.id);
+        if (!c) return;
+        dist = Math.hypot(e.clientX - c.x, e.clientY - c.y);
+        ang = Math.atan2(e.clientY - c.y, e.clientX - c.x);
+      }
+      if (!d.moved) {
+        d.moved = true;
+        store.checkpoint();
+      }
+      // Snap to straight when close, since that's what people usually want.
+      let rot = d.rot0 + ang - d.a0;
+      rot = Math.atan2(Math.sin(rot), Math.cos(rot));
+      if (Math.abs(rot) < 0.06) rot = 0;
+      const size = clamp((d.size0 * dist) / d.d0, 0.04, 1.5);
+      store.live((p) => {
+        const st = p.stickers?.find((i) => i.id === d.id);
+        if (st) {
+          st.size = size;
+          st.rotation = rot;
+        }
+      });
+      return;
+    }
+
+    if (d.kind !== 'text' && d.kind !== 'sticker') return;
     const { r } = toCanvas(e);
     const dx = (e.clientX - d.sx) / r.width;
     const dy = (e.clientY - d.sy) / r.height;
     if (!d.moved) {
       if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
       d.moved = true;
-      useStore.getState().checkpoint();
+      store.checkpoint();
     }
-    // Snap to the center lines, which is where people usually want text.
+    // Snap to the center lines, which is where people usually want things.
     const snap = (v: number) => (Math.abs(v - 0.5) < 0.025 ? 0.5 : v);
-    useStore.getState().live((p) => {
-      const t = p.texts.find((i) => i.id === d.id);
-      if (!t) return;
-      t.x = snap(clamp(d.ox + dx, 0.03, 0.97));
-      t.y = snap(clamp(d.oy + dy, 0.03, 0.97));
+    store.live((p) => {
+      const it = d.kind === 'text' ? p.texts.find((i) => i.id === d.id) : p.stickers?.find((i) => i.id === d.id);
+      if (!it) return;
+      it.x = snap(clamp(d.ox + dx, 0.03, 0.97));
+      it.y = snap(clamp(d.oy + dy, 0.03, 0.97));
     });
   };
 
-  const onUp = () => {
+  const onUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
     const d = drag.current;
+    if (d?.kind === 'pinch' && pointers.current.size === 1) {
+      drag.current = null; // lifting one finger ends the pinch; don't jump into a drag
+      return;
+    }
+    if (pointers.current.size) return;
     drag.current = null;
-    if (d && !d.moved && d.wasSelected) useStore.getState().setPanel('text');
+    if (d && (d.kind === 'text' || d.kind === 'sticker') && !d.moved && d.wasSelected) useStore.getState().setPanel(d.kind === 'text' ? 'text' : 'stickers');
   };
 
   return (

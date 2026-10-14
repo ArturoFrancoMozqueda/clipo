@@ -10,7 +10,7 @@ const ICON: Record<MediaKind, typeof Film> = { video: Film, image: ImageIcon, au
 /** Imported files of this project. Tapping one adds it to the video again. */
 export function MediaLibrary({ only }: { only?: 'audio' }) {
   const assetsMap = useStore((s) => s.project!.assets);
-  const assets = Object.values(assetsMap).filter((a) => (only ? a.kind === only : true));
+  const assets = Object.values(assetsMap).filter((a) => !a.sticker && (only ? a.kind === only : true));
 
   return (
     <div className="library">

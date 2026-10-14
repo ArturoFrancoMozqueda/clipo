@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { PanelId, Project, Selection } from './types';
+import type { PanelId, Project, Selection, SelectionKind } from './types';
 import { clamp } from './model';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -45,8 +45,16 @@ interface State {
 
 function selectionExists(p: Project | null, s: Selection): Selection {
   if (!p || !s) return null;
-  const list = s.kind === 'clip' ? p.clips : s.kind === 'text' ? p.texts : p.audios;
+  const list = itemsOf(p, s.kind);
   return list.some((x) => x.id === s.id) ? s : null;
+}
+
+/** The list holding items of a selection kind. */
+export function itemsOf(p: Project, kind: SelectionKind): { id: string }[] {
+  if (kind === 'clip') return p.clips;
+  if (kind === 'text') return p.texts;
+  if (kind === 'audio') return p.audios;
+  return p.stickers ?? [];
 }
 
 function mutate(p: Project, fn: (p: Project) => void) {
@@ -73,7 +81,7 @@ export const useStore = create<State>()((set, get) => ({
   captioning: false,
 
   open: (p, urls) =>
-    set({ project: p, urls, selection: null, time: 0, playing: false, panel: null, past: [], future: [] }),
+    set({ project: p.stickers ? p : { ...p, stickers: [] }, urls, selection: null, time: 0, playing: false, panel: null, past: [], future: [] }),
   close: () => {
     for (const u of Object.values(get().urls)) URL.revokeObjectURL(u);
     set({ project: null, urls: {}, selection: null, time: 0, playing: false, panel: null, past: [], future: [] });

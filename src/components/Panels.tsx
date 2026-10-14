@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Captions, CheckCircle2, Download, Share2, TriangleAlert, VolumeX } from 'lucide-react';
-import type { AudioItem, Clip, PanelId, TextItem } from '../types';
-import { useStore } from '../store';
+import type { AudioItem, Clip, PanelId, SelectionKind, StickerItem, TextItem } from '../types';
+import { itemsOf, useStore } from '../store';
 import { engine, canExport } from '../engine';
 import { FILTERS } from '../filters';
 import { TEXT_STYLES, styleToCss } from '../textStyles';
@@ -9,6 +9,7 @@ import { clipDur, fmtTime, totalDuration } from '../model';
 import { setAspect } from '../ops';
 import { CAPTION_LANGUAGES, captionDownloadMB, cancelCaptions, generateCaptions, type CaptionProgress, type CaptionQuality } from '../captions';
 import { FormatPicker } from './FormatPicker';
+import { EffectsPanel, StickersPanel, TextAnimSection, TransitionPanel } from './VisualPanels';
 import { MediaLibrary } from './MediaLibrary';
 import { showOnboarding } from './Onboarding';
 
@@ -21,6 +22,9 @@ const TITLES: Record<PanelId, string> = {
   filters: 'Filtros',
   text: 'Texto',
   captions: 'Subtítulos automáticos',
+  transition: 'Transición',
+  effects: 'Efectos de video',
+  stickers: 'Stickers y emojis',
   export: 'Guardar video',
   help: 'Cómo usar Clipo',
 };
@@ -41,6 +45,9 @@ export function Sheet() {
     filters: <FiltersPanel />,
     text: <TextPanel />,
     captions: <CaptionsPanel />,
+    transition: <TransitionPanel />,
+    effects: <EffectsPanel />,
+    stickers: <StickersPanel />,
     export: <ExportPanel />,
     help: <HelpPanel />,
   };
@@ -61,28 +68,27 @@ export function Sheet() {
 
 // ---------- helpers ----------
 
-function useSelected<T extends Clip | TextItem | AudioItem>(kind: 'clip' | 'text' | 'audio') {
+export function useSelected<T extends Clip | TextItem | AudioItem | StickerItem>(kind: SelectionKind) {
   return useStore((s) => {
     if (s.selection?.kind !== kind) return undefined;
-    const list = (kind === 'clip' ? s.project!.clips : kind === 'text' ? s.project!.texts : s.project!.audios) as T[];
-    return list.find((x) => x.id === s.selection!.id);
+    return (itemsOf(s.project!, kind) as T[]).find((x) => x.id === s.selection!.id);
   });
 }
 
-function editSelected(fn: (item: Clip & TextItem & AudioItem) => void) {
+/** Change the selected item without a history step (call checkpoint() first). */
+export function editSelected(fn: (item: Clip & TextItem & AudioItem & StickerItem) => void) {
   const s = useStore.getState();
   const sel = s.selection;
   if (!sel) return;
   s.live((p) => {
-    const list = (sel.kind === 'clip' ? p.clips : sel.kind === 'text' ? p.texts : p.audios) as (Clip & TextItem & AudioItem)[];
-    const it = list.find((x) => x.id === sel.id);
+    const it = (itemsOf(p, sel.kind) as (Clip & TextItem & AudioItem & StickerItem)[]).find((x) => x.id === sel.id);
     if (it) fn(it);
   });
 }
 
-const checkpoint = () => useStore.getState().checkpoint();
+export const checkpoint = () => useStore.getState().checkpoint();
 
-function Slider(props: {
+export function Slider(props: {
   label: string;
   value: number;
   min: number;
@@ -110,11 +116,11 @@ function Slider(props: {
   );
 }
 
-function Hint({ children }: { children: ReactNode }) {
+export function Hint({ children }: { children: ReactNode }) {
   return <p className="muted small">{children}</p>;
 }
 
-function NeedsSelection({ what }: { what: string }) {
+export function NeedsSelection({ what }: { what: string }) {
   return <Hint>Toca {what} en la línea de tiempo para cambiar esto.</Hint>;
 }
 
@@ -255,6 +261,7 @@ function TextPanel() {
         ))}
       </div>
       <Slider label="Se muestra durante" value={text.duration} min={0.5} max={30} step={0.5} format={(v) => `${v.toFixed(1)} s`} onChange={(v) => editSelected((t) => void (t.duration = v))} />
+      <TextAnimSection text={text} />
       <Hint>También puedes arrastrar el texto sobre el video para moverlo.</Hint>
     </>
   );
