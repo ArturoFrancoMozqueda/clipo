@@ -149,7 +149,11 @@ export interface Voice {
   id: string;
   name: string;
   desc: string;
+  /** Approximate first-time download, in MB. */
+  mb: number;
+  engine?: 'piper';
   model: string;
+  speaker?: string;
   voice?: string;
   lang?: string;
 }
@@ -157,15 +161,23 @@ export interface Voice {
 const SUPERTONIC = 'onnx-community/Supertonic-TTS-2-ONNX';
 const voiceUrl = (v: string) => `https://huggingface.co/${SUPERTONIC}/resolve/main/voices/${v}.bin`;
 
+// Piper voices first: natural sounding, light, and each one an actual Spanish speaker.
+// Licenses (model cards): claude Apache-2.0, ald Unlicense, daniela CC BY-SA 4.0, davefx CC0, sharvard CC BY 3.0.
+const piper = (id: string, name: string, desc: string, path: string, mb: number, speaker?: string): Voice => ({ id, name, desc, mb, engine: 'piper', model: path, speaker });
+
 export const VOICES: Voice[] = [
-  { id: 'F1', name: 'Sofía', desc: 'Mujer · cálida', model: SUPERTONIC, voice: voiceUrl('F1'), lang: 'es' },
-  { id: 'M1', name: 'Mateo', desc: 'Hombre · claro', model: SUPERTONIC, voice: voiceUrl('M1'), lang: 'es' },
-  { id: 'F2', name: 'Valeria', desc: 'Mujer · enérgica', model: SUPERTONIC, voice: voiceUrl('F2'), lang: 'es' },
-  { id: 'mms', name: 'Voz ligera', desc: 'Básica · para teléfonos', model: 'Xenova/mms-tts-spa' },
+  piper('claude', 'Claudia', 'México · natural', 'es/es_MX/claude/high/es_MX-claude-high', 63),
+  piper('ald', 'Aldo', 'México · natural', 'es/es_MX/ald/medium/es_MX-ald-medium', 63),
+  piper('daniela', 'Daniela', 'Argentina · natural', 'es/es_AR/daniela/high/es_AR-daniela-high', 114),
+  piper('davefx', 'David', 'España · natural', 'es/es_ES/davefx/medium/es_ES-davefx-medium', 63),
+  piper('sharvard-f', 'Lucía', 'España · natural', 'es/es_ES/sharvard/medium/es_ES-sharvard-medium', 77, 'F'),
+  piper('sharvard-m', 'Martín', 'España · natural', 'es/es_ES/sharvard/medium/es_ES-sharvard-medium', 77, 'M'),
+  { id: 'F1', name: 'Sofía', desc: 'Estudio · expresiva, pesada', mb: 260, model: SUPERTONIC, voice: voiceUrl('F1'), lang: 'es' },
+  { id: 'M1', name: 'Mateo', desc: 'Estudio · expresiva, pesada', mb: 260, model: SUPERTONIC, voice: voiceUrl('M1'), lang: 'es' },
 ];
 
 /** Approximate first-time download in MB. */
-export const voiceDownloadMB = (v: Voice) => (v.model === SUPERTONIC ? 260 : 40);
+export const voiceDownloadMB = (v: Voice) => v.mb;
 
 export const SPEEDS = [
   { label: 'Lenta', value: 0.85 },
@@ -232,7 +244,7 @@ export function synthesize(text: string, voice: Voice, speed: number, onProgress
   const id = nextId++;
   return new Promise<{ samples: Float32Array; sampleRate: number }>((resolve, reject) => {
     pending.set(id, { onProgress, resolve, reject });
-    const msg: TtsIn = { type: 'speak', id, model: voice.model, voice: voice.voice, lang: voice.lang, speed, parts };
+    const msg: TtsIn = { type: 'speak', id, engine: voice.engine, model: voice.model, speaker: voice.speaker, voice: voice.voice, lang: voice.lang, speed, parts };
     getWorker().postMessage(msg);
   });
 }

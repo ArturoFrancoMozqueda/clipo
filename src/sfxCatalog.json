@@ -1,0 +1,478 @@
+[
+ {
+  "id": "glitch-002",
+  "name": "Glitch",
+  "use": "Corte con falla digital",
+  "category": "Transiciones",
+  "file": "glitch-002.ogg"
+ },
+ {
+  "id": "glitch-004",
+  "name": "Glitch corto",
+  "use": "Cambio rápido de escena",
+  "category": "Transiciones",
+  "file": "glitch-004.ogg"
+ },
+ {
+  "id": "phaserup1",
+  "name": "Subida",
+  "use": "Algo aparece",
+  "category": "Transiciones",
+  "file": "phaserup1.ogg"
+ },
+ {
+  "id": "phaserdown1",
+  "name": "Bajada",
+  "use": "Algo desaparece",
+  "category": "Transiciones",
+  "file": "phaserdown1.ogg"
+ },
+ {
+  "id": "scratch-002",
+  "name": "Raspón",
+  "use": "Pausa con humor",
+  "category": "Transiciones",
+  "file": "scratch-002.ogg"
+ },
+ {
+  "id": "maximize-006",
+  "name": "Abrir",
+  "use": "Zoom hacia adentro",
+  "category": "Transiciones",
+  "file": "maximize-006.ogg"
+ },
+ {
+  "id": "minimize-006",
+  "name": "Cerrar",
+  "use": "Zoom hacia afuera",
+  "category": "Transiciones",
+  "file": "minimize-006.ogg"
+ },
+ {
+  "id": "impactpunch-heavy-000",
+  "name": "Puñetazo",
+  "use": "Golpe fuerte",
+  "category": "Impactos",
+  "file": "impactpunch-heavy-000.ogg"
+ },
+ {
+  "id": "impactpunch-medium-002",
+  "name": "Golpe",
+  "use": "Golpe medio",
+  "category": "Impactos",
+  "file": "impactpunch-medium-002.ogg"
+ },
+ {
+  "id": "impactsoft-heavy-001",
+  "name": "Caída",
+  "use": "Algo cae al suelo",
+  "category": "Impactos",
+  "file": "impactsoft-heavy-001.ogg"
+ },
+ {
+  "id": "impactmetal-heavy-002",
+  "name": "Metal",
+  "use": "Golpe metálico",
+  "category": "Impactos",
+  "file": "impactmetal-heavy-002.ogg"
+ },
+ {
+  "id": "impactwood-heavy-001",
+  "name": "Madera",
+  "use": "Golpe en madera",
+  "category": "Impactos",
+  "file": "impactwood-heavy-001.ogg"
+ },
+ {
+  "id": "impactglass-heavy-002",
+  "name": "Vidrio",
+  "use": "Golpe de vidrio",
+  "category": "Impactos",
+  "file": "impactglass-heavy-002.ogg"
+ },
+ {
+  "id": "impactplate-heavy-001",
+  "name": "Plato",
+  "use": "Plato que choca",
+  "category": "Impactos",
+  "file": "impactplate-heavy-001.ogg"
+ },
+ {
+  "id": "impactbell-heavy-000",
+  "name": "Campanazo",
+  "use": "Momento importante",
+  "category": "Impactos",
+  "file": "impactbell-heavy-000.ogg"
+ },
+ {
+  "id": "explosioncrunch-000",
+  "name": "Explosión",
+  "use": "Revelación explosiva",
+  "category": "Impactos",
+  "file": "explosioncrunch-000.ogg"
+ },
+ {
+  "id": "lowfrequency-explosion-000",
+  "name": "Explosión grave",
+  "use": "Impacto dramático",
+  "category": "Impactos",
+  "file": "lowfrequency-explosion-000.ogg"
+ },
+ {
+  "id": "click-001",
+  "name": "Clic",
+  "use": "Tocar un botón",
+  "category": "Interfaz",
+  "file": "click-001.ogg"
+ },
+ {
+  "id": "mouseclick1",
+  "name": "Clic de ratón",
+  "use": "Tutoriales en PC",
+  "category": "Interfaz",
+  "file": "mouseclick1.ogg"
+ },
+ {
+  "id": "confirmation-001",
+  "name": "Confirmar",
+  "use": "Algo salió bien",
+  "category": "Interfaz",
+  "file": "confirmation-001.ogg"
+ },
+ {
+  "id": "confirmation-003",
+  "name": "Listo",
+  "use": "Tarea completada",
+  "category": "Interfaz",
+  "file": "confirmation-003.ogg"
+ },
+ {
+  "id": "error-004",
+  "name": "Error suave",
+  "use": "Algo no salió",
+  "category": "Interfaz",
+  "file": "error-004.ogg"
+ },
+ {
+  "id": "question-001",
+  "name": "Pregunta",
+  "use": "Duda o pregunta",
+  "category": "Interfaz",
+  "file": "question-001.ogg"
+ },
+ {
+  "id": "select-005",
+  "name": "Seleccionar",
+  "use": "Elegir una opción",
+  "category": "Interfaz",
+  "file": "select-005.ogg"
+ },
+ {
+  "id": "scroll-003",
+  "name": "Desplazar",
+  "use": "Pasar una lista",
+  "category": "Interfaz",
+  "file": "scroll-003.ogg"
+ },
+ {
+  "id": "toggle-002",
+  "name": "Interruptor",
+  "use": "Activar algo",
+  "category": "Interfaz",
+  "file": "toggle-002.ogg"
+ },
+ {
+  "id": "rollover1",
+  "name": "Pasar por encima",
+  "use": "Resaltar algo",
+  "category": "Interfaz",
+  "file": "rollover1.ogg"
+ },
+ {
+  "id": "pluck-001",
+  "name": "Pluck",
+  "use": "Aparece un texto",
+  "category": "Interfaz",
+  "file": "pluck-001.ogg"
+ },
+ {
+  "id": "bong-001",
+  "name": "Bong",
+  "use": "Dato curioso",
+  "category": "Interfaz",
+  "file": "bong-001.ogg"
+ },
+ {
+  "id": "powerup1",
+  "name": "Power up",
+  "use": "Subir de nivel",
+  "category": "Juegos",
+  "file": "powerup1.ogg"
+ },
+ {
+  "id": "powerup7",
+  "name": "Power up 2",
+  "use": "Mejora o bonus",
+  "category": "Juegos",
+  "file": "powerup7.ogg"
+ },
+ {
+  "id": "threetone1",
+  "name": "Logro",
+  "use": "Logro desbloqueado",
+  "category": "Juegos",
+  "file": "threetone1.ogg"
+ },
+ {
+  "id": "highdown",
+  "name": "Perdiste",
+  "use": "Fallo divertido",
+  "category": "Juegos",
+  "file": "highdown.ogg"
+ },
+ {
+  "id": "highup",
+  "name": "Ganaste",
+  "use": "Victoria rápida",
+  "category": "Juegos",
+  "file": "highup.ogg"
+ },
+ {
+  "id": "pepsound1",
+  "name": "Pep",
+  "use": "Saltito",
+  "category": "Juegos",
+  "file": "pepsound1.ogg"
+ },
+ {
+  "id": "zap1",
+  "name": "Zap",
+  "use": "Descarga",
+  "category": "Juegos",
+  "file": "zap1.ogg"
+ },
+ {
+  "id": "dice-throw-1",
+  "name": "Dados",
+  "use": "Suerte, azar",
+  "category": "Juegos",
+  "file": "dice-throw-1.ogg"
+ },
+ {
+  "id": "card-shuffle",
+  "name": "Barajar",
+  "use": "Cartas, sorpresa",
+  "category": "Juegos",
+  "file": "card-shuffle.ogg"
+ },
+ {
+  "id": "chips-stack-1",
+  "name": "Fichas",
+  "use": "Apuesta, dinero",
+  "category": "Juegos",
+  "file": "chips-stack-1.ogg"
+ },
+ {
+  "id": "laserretro-000",
+  "name": "Láser retro",
+  "use": "Disparo de juguete",
+  "category": "Ciencia ficción y magia",
+  "file": "laserretro-000.ogg"
+ },
+ {
+  "id": "laserlarge-000",
+  "name": "Láser",
+  "use": "Rayo potente",
+  "category": "Ciencia ficción y magia",
+  "file": "laserlarge-000.ogg"
+ },
+ {
+  "id": "forcefield-000",
+  "name": "Campo de fuerza",
+  "use": "Escudo mágico",
+  "category": "Ciencia ficción y magia",
+  "file": "forcefield-000.ogg"
+ },
+ {
+  "id": "computernoise-000",
+  "name": "Computadora",
+  "use": "Tecnología, datos",
+  "category": "Ciencia ficción y magia",
+  "file": "computernoise-000.ogg"
+ },
+ {
+  "id": "dooropen-000",
+  "name": "Puerta futurista",
+  "use": "Entrada épica",
+  "category": "Ciencia ficción y magia",
+  "file": "dooropen-000.ogg"
+ },
+ {
+  "id": "thrusterfire-000",
+  "name": "Propulsor",
+  "use": "Despegue",
+  "category": "Ciencia ficción y magia",
+  "file": "thrusterfire-000.ogg"
+ },
+ {
+  "id": "slime-000",
+  "name": "Slime",
+  "use": "Algo asqueroso",
+  "category": "Ciencia ficción y magia",
+  "file": "slime-000.ogg"
+ },
+ {
+  "id": "dooropen-1",
+  "name": "Abrir puerta",
+  "use": "Llegar a un lugar",
+  "category": "Objetos",
+  "file": "dooropen-1.ogg"
+ },
+ {
+  "id": "doorclose-1",
+  "name": "Cerrar puerta",
+  "use": "Salir de un lugar",
+  "category": "Objetos",
+  "file": "doorclose-1.ogg"
+ },
+ {
+  "id": "creak1",
+  "name": "Crujido",
+  "use": "Suspenso, casa vieja",
+  "category": "Objetos",
+  "file": "creak1.ogg"
+ },
+ {
+  "id": "bookflip1",
+  "name": "Pasar página",
+  "use": "Siguiente paso",
+  "category": "Objetos",
+  "file": "bookflip1.ogg"
+ },
+ {
+  "id": "handlecoins",
+  "name": "Monedas",
+  "use": "Dinero, ahorro",
+  "category": "Tiempo y dinero",
+  "file": "handlecoins.ogg"
+ },
+ {
+  "id": "knifeslice",
+  "name": "Cuchillo",
+  "use": "Cocina, cortar",
+  "category": "Objetos",
+  "file": "knifeslice.ogg"
+ },
+ {
+  "id": "chop",
+  "name": "Picar",
+  "use": "Recetas",
+  "category": "Objetos",
+  "file": "chop.ogg"
+ },
+ {
+  "id": "metalpot1",
+  "name": "Olla",
+  "use": "Cocina",
+  "category": "Objetos",
+  "file": "metalpot1.ogg"
+ },
+ {
+  "id": "cloth1",
+  "name": "Ropa",
+  "use": "Moda, vestirse",
+  "category": "Objetos",
+  "file": "cloth1.ogg"
+ },
+ {
+  "id": "footstep-concrete-000",
+  "name": "Pasos",
+  "use": "Caminar",
+  "category": "Objetos",
+  "file": "footstep-concrete-000.ogg"
+ },
+ {
+  "id": "footstep-grass-000",
+  "name": "Pasos en pasto",
+  "use": "Naturaleza",
+  "category": "Objetos",
+  "file": "footstep-grass-000.ogg"
+ },
+ {
+  "id": "footstep-snow-000",
+  "name": "Pasos en nieve",
+  "use": "Invierno",
+  "category": "Objetos",
+  "file": "footstep-snow-000.ogg"
+ },
+ {
+  "id": "jingles-hit00",
+  "name": "Cortinilla pop",
+  "use": "Inicio de video",
+  "category": "Cortinillas",
+  "file": "jingles-hit00.ogg"
+ },
+ {
+  "id": "jingles-hit05",
+  "name": "Cortinilla pop 2",
+  "use": "Final de video",
+  "category": "Cortinillas",
+  "file": "jingles-hit05.ogg"
+ },
+ {
+  "id": "jingles-nes00",
+  "name": "Cortinilla 8-bit",
+  "use": "Gamer, retro",
+  "category": "Cortinillas",
+  "file": "jingles-nes00.ogg"
+ },
+ {
+  "id": "jingles-nes08",
+  "name": "Cortinilla 8-bit 2",
+  "use": "Nivel completado",
+  "category": "Cortinillas",
+  "file": "jingles-nes08.ogg"
+ },
+ {
+  "id": "jingles-pizzi00",
+  "name": "Pizzicato",
+  "use": "Divertido, travieso",
+  "category": "Cortinillas",
+  "file": "jingles-pizzi00.ogg"
+ },
+ {
+  "id": "jingles-pizzi03",
+  "name": "Pizzicato 2",
+  "use": "Sorpresa",
+  "category": "Cortinillas",
+  "file": "jingles-pizzi03.ogg"
+ },
+ {
+  "id": "jingles-sax00",
+  "name": "Saxofón",
+  "use": "Elegante, jazz",
+  "category": "Cortinillas",
+  "file": "jingles-sax00.ogg"
+ },
+ {
+  "id": "jingles-sax04",
+  "name": "Saxofón 2",
+  "use": "Romántico",
+  "category": "Cortinillas",
+  "file": "jingles-sax04.ogg"
+ },
+ {
+  "id": "jingles-steel00",
+  "name": "Steel drum",
+  "use": "Verano, playa",
+  "category": "Cortinillas",
+  "file": "jingles-steel00.ogg"
+ },
+ {
+  "id": "jingles-steel06",
+  "name": "Steel drum 2",
+  "use": "Vacaciones",
+  "category": "Cortinillas",
+  "file": "jingles-steel06.ogg"
+ }
+]

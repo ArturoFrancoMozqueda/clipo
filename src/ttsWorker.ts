@@ -1,11 +1,17 @@
 // Turns text into speech on the device. Loaded only when the user asks for a
 // narration, so the voice models never weigh on normal editing.
 import { pipeline, type ProgressInfo, type TextToAudioPipeline } from '@huggingface/transformers';
+import { piperSpeak } from './piperEngine';
 
 export type TtsIn = {
   type: 'speak';
   id: number;
+  /** 'piper' voices run on our own Piper engine; otherwise a transformers.js model. */
+  engine?: 'piper';
+  /** Model id, or for Piper the voice path inside rhasspy/piper-voices. */
   model: string;
+  /** Piper speaker name for multi-speaker voices. */
+  speaker?: string;
   /** Supertonic voice file (URL); omitted for single-voice models. */
   voice?: string;
   /** Supertonic language tag, e.g. "es". */
@@ -102,9 +108,10 @@ async function speak(msg: TtsIn) {
     const pieces: Float32Array[] = [];
     let sampleRate = 0;
     for (let i = 0; i < msg.parts.length; i++) {
-      const text = msg.lang ? `<${msg.lang}>${msg.parts[i]}</${msg.lang}>` : msg.parts[i];
-      const opts = msg.voice ? { speaker_embeddings: msg.voice, num_inference_steps: 8, speed: msg.speed } : {};
-      const out = await run(msg, text, opts);
+      const out =
+        msg.engine === 'piper'
+          ? await piperSpeak(msg.model, msg.parts[i], msg.speed, msg.speaker, (loaded, total) => post({ type: 'download', id: msg.id, loaded, total }))
+          : await run(msg, msg.lang ? `<${msg.lang}>${msg.parts[i]}</${msg.lang}>` : msg.parts[i], msg.voice ? { speaker_embeddings: msg.voice, num_inference_steps: 16, speed: msg.speed } : {});
       sampleRate = out.sampling_rate;
       pieces.push(out.audio);
       post({ type: 'part', id: msg.id, done: i + 1, total: msg.parts.length });

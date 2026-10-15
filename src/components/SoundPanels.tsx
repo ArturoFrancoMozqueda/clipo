@@ -2,12 +2,17 @@ import { useEffect, useState } from 'react';
 import { Pause, Play, Plus, RefreshCw } from 'lucide-react';
 import { useStore } from '../store';
 import { mainDuration } from '../model';
-import { MOODS, SFX, addGenerated, playPreview, renderSfx, renderSong, stopPreview, type Mood, type Sfx } from '../sound';
+import { MOODS, SFX, SFX_CATEGORIES, addGenerated, playPreview, renderSfx, renderSong, stopPreview, type Mood, type Sfx, type SfxCategory } from '../sound';
 
-/** Sound effects placed at the white line. */
+/** Sound effects placed at the white line, browsable by category or by search. */
 export function SfxPanel() {
   const [busy, setBusy] = useState<string | null>(null);
+  const [cat, setCat] = useState<SfxCategory | 'Todos'>('Todos');
+  const [query, setQuery] = useState('');
   useEffect(() => stopPreview, []);
+
+  const q = query.trim().toLowerCase();
+  const list = SFX.filter((s) => (cat === 'Todos' || s.category === cat) && (!q || `${s.name} ${s.use} ${s.category}`.toLowerCase().includes(q)));
 
   const listen = async (s: Sfx) => playPreview(await renderSfx(s));
   const add = async (s: Sfx) => {
@@ -23,24 +28,38 @@ export function SfxPanel() {
 
   return (
     <>
-      <p className="muted small">Toca ▶ para escuchar y + para ponerlo donde está la línea blanca.</p>
+      <input
+        className="sfx-search"
+        type="search"
+        placeholder={`Buscar entre ${SFX.length} sonidos (ej. aplausos, golpe, moneda)`}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <div className="chips sfx-cats">
+        {(['Todos', ...SFX_CATEGORIES] as const).map((c) => (
+          <button key={c} className={`chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>
+            {c}
+          </button>
+        ))}
+      </div>
       <div className="sound-list">
-        {SFX.map((s) => (
+        {list.map((s) => (
           <div key={s.id} className="sound-row">
             <button className="icon-btn round" onClick={() => listen(s)} aria-label={`Escuchar ${s.name}`}>
               <Play size={18} />
             </button>
             <div className="sound-text">
               <strong>{s.name}</strong>
-              <small>{s.use}</small>
+              <small>{s.use}{cat === 'Todos' ? ` · ${s.category}` : ''}</small>
             </div>
             <button className="btn-ghost small-btn" disabled={busy === s.id} onClick={() => add(s)}>
               <Plus size={16} /> Agregar
             </button>
           </div>
         ))}
+        {!list.length && <p className="muted small">No hay sonidos con ese nombre. Prueba otra palabra.</p>}
       </div>
-      <p className="muted small">Creados por Clipo: puedes usarlos en cualquier video, también con fines comerciales.</p>
+      <p className="muted small">Hechos por Clipo y por Kenney (dominio público, CC0): puedes usarlos en cualquier video, también con fines comerciales.</p>
     </>
   );
 }

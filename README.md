@@ -70,7 +70,7 @@ npm run app:dist    # crear el instalador en release/
 npm run app:smoke   # prueba automática: abre la app oculta y comprueba que carga
 ```
 
-`npm run app:dist` crea dos archivos en `release/`:
+`npm run app:dist` crea dos archivos en `release/<versión>/` (se compila fuera de OneDrive para evitar bloqueos):
 
 - `Clipo-Setup-<versión>.exe`: instalador con acceso directo en el escritorio y el menú Inicio.
 - `Clipo-Portable-<versión>.exe`: se ejecuta sin instalar (por ejemplo, desde una USB).

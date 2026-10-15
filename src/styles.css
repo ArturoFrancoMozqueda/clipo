@@ -344,3 +344,6 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
 .mood-negocio { background: linear-gradient(135deg, #0ea5e9, #1e3a8a); }
 .mood-romantico { background: linear-gradient(135deg, #ec4899, #831843); }
 .mood-energia { background: linear-gradient(135deg, #22c55e, #065f46); }
+.sfx-search { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 16px; margin-bottom: 8px; }
+.sfx-cats { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; margin-bottom: 6px; scrollbar-width: thin; }
+.sfx-cats .chip { flex: 0 0 auto; }

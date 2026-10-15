@@ -18,7 +18,8 @@ conseguir más.
 | Estilos rápidos de texto | 12 | Combinaciones propias de fuente + color + animación | Propias |
 | Stickers | 152 | [Microsoft Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (estilo plano) | MIT. Aviso en `public/stickers/fluent/LICENSE.txt` |
 | Filtros | 22 | Valores propios | Propios |
-| Efectos de sonido | 16 | Sintetizados por Clipo en el dispositivo (`src/sound.ts`) | Propios: sin atribución |
+| Efectos de sonido | 115 en 11 categorías | 47 sintetizados por Clipo (`src/sound.ts`) + 68 grabaciones de [Kenney](https://kenney.nl/assets/category:Audio) | Propios + CC0 (dominio público) |
+| Voces de texto a voz | 6 naturales + 2 de estudio | [Piper](https://github.com/rhasspy/piper) (`rhasspy/piper-voices`), se descargan la primera vez | Ver abajo |
 | Música | 6 estilos, versiones ilimitadas | Compuesta por Clipo en el dispositivo, del largo del video | Propia: sin atribución |
 
 ### Tipografías incluidas
@@ -35,6 +36,33 @@ Para agregar otra: `npm install @fontsource/<nombre>`, importa su CSS en
 `node scripts/fetch-fluent-emoji.mjs` vuelve a descargar los stickers. Para
 agregar más, añade el nombre en inglés del emoji (como aparece en la carpeta
 `assets/` del repositorio de Fluent Emoji) a la lista `GROUPS` del script.
+
+### Efectos de sonido
+
+`node scripts/fetch-kenney-sfx.mjs` vuelve a descargar los paquetes de Kenney
+y copia la selección a `public/sfx/kenney/`. Para agregar más, añade el
+archivo a la lista `PICKS` del script. Los efectos sintetizados están en
+`src/sound.ts` (lista `SYNTH`).
+
+No hay risas, voces ni sonidos de animales: no se pueden sintetizar con buena
+calidad y los paquetes CC0 no los traen. Para eso, importa un archivo propio
+(ver "Para importar tú").
+
+### Voces de texto a voz
+
+| Voz en Clipo | Modelo Piper | Licencia del modelo |
+| --- | --- | --- |
+| Claudia | es_MX-claude-high | Apache 2.0 |
+| Aldo | es_MX-ald-medium | Unlicense (dominio público) |
+| Daniela | es_AR-daniela-high | CC BY-SA 4.0: requiere atribución |
+| David | es_ES-davefx-medium | CC0 |
+| Lucía y Martín | es_ES-sharvard-medium | CC BY 3.0: requiere atribución |
+| Sofía y Mateo | Supertonic TTS 2 | Licencia del modelo en Hugging Face |
+
+El motor que convierte texto en fonemas (`@diffusionstudio/piper-wasm`) incluye
+datos de **espeak-ng, licencia GPL-3.0**. Para uso personal no hay problema; si
+distribuyes Clipo, incluye el aviso de espeak-ng y un enlace a su código fuente
+(https://github.com/espeak-ng/espeak-ng).
 
 ## Para importar tú (no se incluyen en la app)
 

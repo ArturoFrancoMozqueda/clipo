@@ -184,7 +184,7 @@ export function TtsPanel() {
     console.error(e);
     setError(
       `No se pudo preparar la voz. Revisa tu conexión a internet (solo se necesita la primera vez) e intenta otra vez.${
-        voice.id !== 'mms' ? ' Si tu dispositivo tiene poca memoria, prueba la “Voz ligera”.' : ''
+        voice.engine !== 'piper' ? ' Si tu dispositivo tiene poca memoria, prueba una voz natural (Claudia, Aldo…), que son más ligeras.' : ''
       }`,
     );
   };
@@ -300,7 +300,7 @@ export function TtsPanel() {
           <button
             key={sp.value}
             className={`chip ${speed === sp.value ? 'active' : ''}`}
-            disabled={!!busy || voice.id === 'mms'}
+            disabled={!!busy}
             onClick={() => setSpeed(sp.value)}
           >
             {sp.label}

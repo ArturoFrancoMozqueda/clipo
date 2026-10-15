@@ -1,7 +1,7 @@
 {
   "name": "clipo",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -14,12 +14,13 @@
     "cap:ios": "npm run build && cap sync ios && cap open ios",
     "app:dev": "npm run build && electron .",
     "app:smoke": "npm run build && node scripts/app-smoke.mjs",
-    "app:dist": "npm run build && electron-builder --win"
+    "app:dist": "npm run build && node scripts/dist.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.3",
     "@capacitor/core": "^8.4.3",
     "@capacitor/ios": "^8.4.3",
+    "@diffusionstudio/piper-wasm": "^1.0.0",
     "@fontsource/anton": "^5.3.0",
     "@fontsource/bangers": "^5.3.0",
     "@fontsource/bebas-neue": "^5.3.0",
@@ -38,6 +39,7 @@
     "@mediapipe/tasks-vision": "1.0.1",
     "lucide-react": "^0.468.0",
     "mediabunny": "1.61.3",
+    "onnxruntime-web": "^1.30.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.2"
@@ -60,7 +62,7 @@
     "appId": "app.clipo.editor",
     "productName": "Clipo",
     "directories": {
-      "output": "release"
+      "output": "release/build"
     },
     "files": [
       "dist/**/*",
