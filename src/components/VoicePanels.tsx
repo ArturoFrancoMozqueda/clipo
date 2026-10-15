@@ -12,12 +12,6 @@ import './voice.css';
 import { deleteProfile, listProfiles, warmUpClone, type VoiceProfile } from '../myVoice';
 import { MyVoiceSetup } from './MyVoiceSetup';
 
-const LIVELINESS = [
-  { label: 'Tranquila', value: 0.3 },
-  { label: 'Normal', value: 0.5 },
-  { label: 'Animada', value: 0.8 },
-];
-
 function useProfiles() {
   const [list, setList] = useState<VoiceProfile[]>(listProfiles);
   useEffect(() => {
@@ -185,12 +179,10 @@ export function TtsPanel() {
   const myVoices = profiles.map(profileVoice);
   const [voice, setVoice] = useState<Voice>(() => myVoices[0] ?? VOICES[0]);
   const [speed, setSpeed] = useState(1);
-  const [liveliness, setLiveliness] = useState(0.5);
   const [setup, setSetup] = useState(false);
   const isClone = voice.engine === 'clone';
-  // Cloned voices take their liveliness from the panel; the others ignore it.
-  const effective = (v: Voice): Voice => (v.engine === 'clone' ? { ...v, exaggeration: liveliness } : v);
-  // Your voice needs a few minutes to get ready: start while the user is still typing.
+  const effective = (v: Voice): Voice => v;
+  // Download the tone converter while the user is still typing.
   useEffect(() => {
     if (isClone) warmUpClone();
   }, [isClone]);
@@ -227,7 +219,7 @@ export function TtsPanel() {
     setPlaying(null);
     setVoice(v);
     setError('');
-    const key = `${v.id}@${speed}@${liveliness}`;
+    const key = `${v.id}@${speed}`;
     let url = samples.current.get(key);
     if (!url) {
       setBusy(v.id);
@@ -354,20 +346,8 @@ export function TtsPanel() {
           </div>
         ))}
       </div>
-      {isClone && (
-        <>
-          <p className="label">Expresión</p>
-          <div className="chips">
-            {LIVELINESS.map((l) => (
-              <button key={l.value} className={`chip ${liveliness === l.value ? 'active' : ''}`} disabled={!!busy} onClick={() => setLiveliness(l.value)}>
-                {l.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-      {!isClone && <p className="label">Velocidad</p>}
-      {!isClone && (
+      <p className="label">Velocidad</p>
+      {(
       <div className="chips">
         {SPEEDS.map((sp) => (
           <button
@@ -396,7 +376,7 @@ export function TtsPanel() {
       <p className="muted small">
         {source ? 'La voz empezará donde empieza el texto seleccionado. ' : 'La voz empezará donde está la línea blanca. '}
         Se crea en tu dispositivo; la primera vez se descarga la voz (unos {voiceDownloadMB(voice)} MB) y queda guardada.
-        {isClone && ' Con tu voz, la primera narración de cada sesión tarda unos minutos en prepararse y cada frase alrededor de un minuto. Puedes seguir editando mientras tanto.'}
+        {isClone && ' Con tu voz, Clipo lee el texto con una voz natural y le pone el timbre de tu grabación: tarda unos segundos por frase.'}
       </p>
       {setup && (
         <MyVoiceSetup

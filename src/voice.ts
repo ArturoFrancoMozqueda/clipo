@@ -183,7 +183,7 @@ export const VOICES: Voice[] = [
 ];
 
 /** A saved "Mi voz" recording as a voice the narration panel can use. */
-export const profileVoice = (p: VoiceProfile): Voice => ({ id: `my-${p.id}`, name: p.name, desc: 'Tu voz · clonada', mb: CLONE_DOWNLOAD_MB, engine: 'clone', model: 'chatterbox', profileId: p.id });
+export const profileVoice = (p: VoiceProfile): Voice => ({ id: `my-${p.id}`, name: p.name, desc: 'Tu voz', mb: CLONE_DOWNLOAD_MB, engine: 'clone', model: 'chatterbox', profileId: p.id });
 
 /** Approximate first-time download in MB. */
 export const voiceDownloadMB = (v: Voice) => v.mb;
@@ -250,8 +250,7 @@ export function splitSentences(text: string, max = 220): string[] {
 export function synthesize(text: string, voice: Voice, speed: number, onProgress?: (p: TtsProgress) => void) {
   const parts = splitSentences(text);
   if (!parts.length) return Promise.reject(new Error('empty'));
-  // The cloning model speaks ~15 s per call at most, so its sentences are kept shorter.
-  if (voice.engine === 'clone' && voice.profileId) return speakAs(voice.profileId, splitSentences(text, 160), voice.exaggeration ?? 0.5, onProgress);
+  if (voice.engine === 'clone' && voice.profileId) return speakAs(voice.profileId, text, speed, onProgress);
   const id = nextId++;
   return new Promise<{ samples: Float32Array; sampleRate: number }>((resolve, reject) => {
     pending.set(id, { onProgress, resolve, reject });

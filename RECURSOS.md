@@ -59,12 +59,15 @@ calidad y los paquetes CC0 no los traen. Para eso, importa un archivo propio
 | Lucía y Martín | es_ES-sharvard-medium | CC BY 3.0: requiere atribución |
 | Sofía y Mateo | Supertonic TTS 2 | Licencia del modelo en Hugging Face |
 
-### Mi voz (clonación de tu propia voz)
+### Mi voz (tu propia voz)
 
-Usa [Chatterbox Multilingual](https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX)
-de Resemble AI (**licencia MIT**), que funciona en el dispositivo con Transformers.js. La primera vez
-descarga unos 1.5 GB. Con tarjeta gráfica (WebGPU) una frase tarda segundos; sin ella, puede tardar
-más de un minuto.
+Clipo lee el texto con una voz natural de Piper (Claudia o Aldo, según el tono de tu grabación) y
+le cambia el timbre por el tuyo con el convertidor de tono de
+[OpenVoice V2](https://github.com/myshell-ai/OpenVoice) de MyShell (**licencia MIT**), en versión
+ONNX ([seasonstudio/openvoice_tone_clone_onnx](https://huggingface.co/seasonstudio/openvoice_tone_clone_onnx)).
+Pesa 131 MB, se descarga la primera vez y tarda unos segundos por frase en el dispositivo.
+
+Conserva la entonación de la voz base: suena a tu timbre, pero con el ritmo de la voz de Clipo.
 
 Reglas de uso que Clipo aplica:
 

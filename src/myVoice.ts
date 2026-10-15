@@ -1,24 +1,16 @@
 // "Mi voz": the user records their own voice once, with explicit consent, and Clipo can then
-// narrate any text in that voice (cloneWorker.ts, Chatterbox Multilingual). The recording never
-// leaves the device: it is stored in IndexedDB next to the project media.
+// narrate any text in that voice. A natural Clipo voice (Piper) speaks the text and the OpenVoice
+// tone converter (toneWorker.ts) gives it the user's timbre: light (131 MB) and fast. The
+// recording never leaves the device: it is stored in IndexedDB next to the project media.
 import { getBlob, putBlob } from './db';
 import { uid } from './store';
-import { encodeWav } from './voice';
-import type { CloneIn, CloneOut, Prefer } from './cloneWorker';
-
-/** Where the cloning model runs; 'auto' unless overridden (localStorage "clipo.cloneDevice") for testing. */
-const prefer = (): Prefer => {
-  try {
-    const v = localStorage.getItem('clipo.cloneDevice');
-    return v === 'webgpu' || v === 'wasm' ? v : 'auto';
-  } catch {
-    return 'auto';
-  }
-};
+import { VOICES, encodeWav, synthesize, type TtsProgress } from './voice';
+import type { ToneIn, ToneOut } from './toneWorker';
+import { TONE_RATE } from './toneConvert';
 
 export const CLONE_RATE = 24000;
-/** Rough first-time download of the cloning model, in MB. */
-export const CLONE_DOWNLOAD_MB = 1550;
+/** Rough first-time download for "Mi voz" (tone converter + base voice), in MB. */
+export const CLONE_DOWNLOAD_MB = 195;
 export const MIN_SECONDS = 6;
 export const MAX_SECONDS = 25;
 
@@ -189,35 +181,67 @@ export async function recordSample(): Promise<VoiceRecording> {
   };
 }
 
-// ---------- speaking in the cloned voice ----------
+// ---------- speaking in the user's voice ----------
 
-export type CloneProgress = { phase: 'download'; pct: number; loaded: number; total: number } | { phase: 'speak'; pct: number };
+async function resample(samples: Float32Array, from: number, to: number) {
+  if (from === to) return samples;
+  const ctx = new OfflineAudioContext(1, Math.ceil((samples.length * to) / from), to);
+  const buf = ctx.createBuffer(1, samples.length, from);
+  buf.copyToChannel(new Float32Array(samples), 0);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start();
+  return (await ctx.startRendering()).getChannelData(0);
+}
+
+/** Median pitch in Hz (autocorrelation over voiced frames), 0 if none. */
+export function medianPitch(s: Float32Array, sr: number) {
+  const n = Math.round(sr * 0.046);
+  const f0s: number[] = [];
+  for (let o = 0; o + n < s.length; o += n * 2) {
+    let e = 0;
+    for (let i = o; i < o + n; i++) e += s[i] * s[i];
+    if (e / n < 0.001) continue;
+    let best = 0;
+    let lagBest = 0;
+    for (let lag = Math.floor(sr / 400); lag < Math.floor(sr / 70); lag++) {
+      let c = 0;
+      for (let i = o; i + lag < o + n; i++) c += s[i] * s[i + lag];
+      if (c > best) {
+        best = c;
+        lagBest = lag;
+      }
+    }
+    if (lagBest) f0s.push(sr / lagBest);
+  }
+  f0s.sort((a, b) => a - b);
+  return f0s[f0s.length >> 1] ?? 0;
+}
+
+/** The converter keeps the base voice's pitch, so start from a voice of the same register. */
+const baseVoiceFor = (pitch: number) => VOICES.find((v) => v.id === (pitch > 165 ? 'claude' : 'ald'))!;
+const SAMPLE_TEXT = 'Hola, esta es una muestra de mi voz. Me gusta hablar con calma y con claridad para que todos me entiendan bien.';
+
+const reference22 = new Map<string, Float32Array>();
+const baseSamples = new Map<string, Float32Array>();
 
 let worker: Worker | null = null;
 let nextId = 1;
-const pending = new Map<number, { onProgress?: (p: CloneProgress) => void; resolve: (r: { samples: Float32Array; sampleRate: number }) => void; reject: (e: Error) => void }>();
+const pending = new Map<number, { onProgress?: (p: TtsProgress) => void; resolve: (s: Float32Array) => void; reject: (e: Error) => void }>();
 
 function getWorker() {
   if (worker) return worker;
-  worker = new Worker(new URL('./cloneWorker.ts', import.meta.url), { type: 'module' });
-  worker.onmessage = (e: MessageEvent<CloneOut>) => {
+  worker = new Worker(new URL('./toneWorker.ts', import.meta.url), { type: 'module' });
+  worker.onmessage = (e: MessageEvent<ToneOut>) => {
     const m = e.data;
-    // Loading stages are useful when diagnosing a slow or stuck first run.
-    if (m.type === 'stage' || m.type === 'ready') return console.info('[clipo-clone]', m.type === 'stage' ? m.stage : `ready on ${m.device}, cached=${m.cached}`);
-    if (m.type === 'download') {
-      const pct = m.total ? (m.loaded / m.total) * 100 : 0;
-      for (const p of pending.values()) p.onProgress?.({ phase: 'download', pct, loaded: m.loaded, total: m.total });
-      return;
-    }
     const p = pending.get(m.id);
     if (!p) return;
-    if (m.type === 'part') p.onProgress?.({ phase: 'speak', pct: (m.done / m.total) * 100 });
-    else if (m.type === 'audio') {
+    if (m.type === 'download') p.onProgress?.({ phase: 'download', pct: m.total ? (m.loaded / m.total) * 100 : 0, loaded: m.loaded, total: m.total });
+    else {
       pending.delete(m.id);
-      p.resolve({ samples: m.samples, sampleRate: m.sampleRate });
-    } else if (m.type === 'error') {
-      pending.delete(m.id);
-      p.reject(new Error(m.message));
+      if (m.type === 'audio') p.resolve(m.samples);
+      else p.reject(new Error(m.message));
     }
   };
   worker.onerror = (e) => {
@@ -229,23 +253,36 @@ function getWorker() {
   return worker;
 }
 
-let warmed = false;
-/** Start downloading and preparing the cloning model in the background (it takes minutes). */
-export function warmUpClone() {
-  if (warmed) return;
-  warmed = true;
-  const msg: CloneIn = { type: 'load', id: nextId++, prefer: prefer() };
-  getWorker().postMessage(msg);
+/** Speak `text` in a saved voice: a natural Clipo voice re-timbred to the user's recording. */
+export async function speakAs(profileId: string, text: string, speed: number, onProgress?: (p: TtsProgress) => void) {
+  let ref = reference22.get(profileId);
+  if (!ref) {
+    ref = await resample(await loadReference(profileId), CLONE_RATE, TONE_RATE);
+    reference22.set(profileId, ref);
+  }
+  const base = baseVoiceFor(medianPitch(ref, TONE_RATE));
+  // Speech first (Piper, 22.05 kHz), then the timbre swap.
+  const spoken = await synthesize(text, base, speed, (p) => onProgress?.({ ...p, pct: p.pct * 0.5 }));
+  let sample = baseSamples.get(base.id);
+  if (!sample) {
+    sample = (await synthesize(SAMPLE_TEXT, base, 1)).samples;
+    baseSamples.set(base.id, sample);
+  }
+  const audio = await resample(spoken.samples, spoken.sampleRate, TONE_RATE);
+  const id = nextId++;
+  const samples = await new Promise<Float32Array>((resolve, reject) => {
+    pending.set(id, { onProgress: (p) => onProgress?.(p.phase === 'download' ? p : { phase: 'speak', pct: 50 + p.pct / 2 }), resolve, reject });
+    const msg: ToneIn = { type: 'convert', id, audio, srcKey: base.id, srcSample: sample.slice(), destKey: profileId, dest: ref.slice(), tau: 0.3 };
+    getWorker().postMessage(msg, [audio.buffer]);
+  });
+  onProgress?.({ phase: 'speak', pct: 100 });
+  return { samples, sampleRate: TONE_RATE };
 }
 
-/** Speak `parts` (already split into short sentences) in a saved voice. */
-export async function speakAs(profileId: string, parts: string[], exaggeration: number, onProgress?: (p: CloneProgress) => void) {
-  const reference = await loadReference(profileId);
+/** Start downloading the tone converter early, so the first narration is quicker. */
+export function warmUpClone() {
   const id = nextId++;
-  return new Promise<{ samples: Float32Array; sampleRate: number }>((resolve, reject) => {
-    pending.set(id, { onProgress, resolve, reject });
-    // The reference is copied (not transferred) so the cache keeps its own.
-    const msg: CloneIn = { type: 'speak', id, prefer: prefer(), voiceKey: profileId, reference: reference.slice(), parts, exaggeration, lang: 'es' };
-    getWorker().postMessage(msg);
-  });
+  pending.set(id, { resolve: () => {}, reject: () => {} });
+  // An empty conversion just loads the models; its error (no audio) is ignored.
+  getWorker().postMessage({ type: 'convert', id, audio: new Float32Array(0), srcKey: '', srcSample: new Float32Array(0), destKey: '', dest: new Float32Array(0), tau: 0.3 } satisfies ToneIn);
 }
