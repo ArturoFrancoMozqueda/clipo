@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { useStore } from './store';
 import { requestPersistence, saveProject } from './db';
+import { startPublishing } from './publish/store';
 import './styles.css';
 
 // Autosave: every edit is written to the device shortly after it happens.
@@ -19,6 +20,8 @@ window.addEventListener('pagehide', () => {
   if (p) saveProject(p).catch(() => {});
 });
 requestPersistence();
+// Desktop app only: reload the publish queue and its local scheduler.
+void startPublishing();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

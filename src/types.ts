@@ -335,6 +335,7 @@ export type PanelId =
   | 'record'
   | 'tts'
   | 'export'
+  | 'publish'
   | 'overlay'
   | 'color'
   | 'keyframes'
