@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   LUT_MAX_SIZE, applyLutToPixels, base64ToBytes, bytesToBase64, lutBytes, lutFromCube, lutToBytes, parseCube,
 } from '../src/lut.ts';
-import { CROP_MIN, cropEdges, cropForAspect, cropRect, hasFraming, normCrop, setCropEdge } from '../src/framing.ts';
+import { CROP_MIN, cropEdges, cropForAspect, cropRect, hasFraming, normCrop, pointInFrame, setCropEdge } from '../src/framing.ts';
 import { coverScale, grainValues, hash, irisRadius, peak, pixelBlock, pushOffsets, smoothNoise } from '../src/fxmath.ts';
 
 const near = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -219,4 +219,13 @@ test('through-color transitions peak at the cut, iris reaches the corners', () =
 test('pixel blocks scale with the frame size', () => {
   near(pixelBlock(0.5, 1080, 1920) / pixelBlock(0.5, 720, 1280), 1.5);
   assert.ok(pixelBlock(0, 100, 100) >= 2);
+});
+
+test('automatic reframe follows the person through crop and flip', () => {
+  const clip = { crop: { x: 0.5, y: 0, w: 0.5, h: 1 }, flipH: true } as Parameters<typeof pointInFrame>[0];
+  // A person at 3/4 of the original width is the middle of the right half, and stays there flipped.
+  assert.deepEqual(pointInFrame(clip, { x: 0.75, y: 0.4 }), { x: 0.5, y: 0.4 });
+  // Outside the crop it clamps to the edge (flipped: right edge of the original crop = left side).
+  assert.deepEqual(pointInFrame(clip, { x: 0.2, y: 0.4 }), { x: 1, y: 0.4 });
+  assert.deepEqual(pointInFrame({} as Parameters<typeof pointInFrame>[0], { x: 0.3, y: 0.6 }), { x: 0.3, y: 0.6 });
 });

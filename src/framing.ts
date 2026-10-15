@@ -93,3 +93,14 @@ export function framed<F extends Frame>(clip: Pick<Clip, 'id' | 'crop' | 'flipH'
   ctx.drawImage(f.src, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
   return { src: c, w: r.w, h: r.h };
 }
+
+/**
+ * A point of the whole source picture (fractions 0..1) as seen in the cropped and flipped picture,
+ * so the automatic reframe, measured on the original video, still follows the person.
+ */
+export function pointInFrame(clip: Clip, pt: { x: number; y: number }) {
+  const n = normCrop(clip.crop) ?? { x: 0, y: 0, w: 1, h: 1 };
+  const x = c01((pt.x - n.x) / n.w);
+  const y = c01((pt.y - n.y) / n.h);
+  return { x: clip.flipH ? 1 - x : x, y: clip.flipV ? 1 - y : y };
+}

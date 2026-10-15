@@ -11,7 +11,7 @@ import { applyColorPixels, colorCss, drawVignette } from './color';
 import { poseAt, type Pose } from './keyframes';
 import { maskFor, maskImageOf, type Mask } from './segmentation';
 import { applyLut } from './lut';
-import { framed, hasFraming } from './framing';
+import { framed, hasFraming, pointInFrame } from './framing';
 import { analyzeAsset, buildVoiceFx, mixOf, projectDuckCurve, voiceAssets, type FxChain } from './audioFx';
 import { audioRole, curveAt, type ActivityByAsset } from './audioDsp';
 import type { VoiceFxId } from './types';
@@ -872,7 +872,8 @@ function drawClip(
   ctx.fillRect(0, 0, W, H);
   applyEffectTransform(ctx, l.clip, local, W, H);
   // "Reencuadre automático": the saved path of the person, at this moment of the source.
-  const focus = l.clip.reframe?.points.length ? trackAt(l.clip.reframe.points, l.clip.in + local * l.clip.speed) : undefined;
+  const at = l.clip.freeze ?? l.clip.in + local * l.clip.speed;
+  const focus = l.clip.reframe?.points.length ? pointInFrame(l.clip, trackAt(l.clip.reframe.points, at)) : undefined;
   drawFrame(ctx, f.src, f.w, f.h, W, H, l.clip, effectCss(l.clip, W), cut?.mask ? cut : undefined, focus);
   ctx.restore();
   if (lut) applyLut(ctx, lut.data, lut.amount, W, H);
