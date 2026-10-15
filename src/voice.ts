@@ -50,7 +50,7 @@ export async function addVoiceToTimeline(samples: Float32Array, sampleRate: numb
   const itemId = uid();
   s.commit((p) => {
     p.assets[id] = asset;
-    p.audios.push({ id: itemId, assetId: id, start, in: 0, out: duration, volume: 1, fadeIn: 0, fadeOut: 0 });
+    p.audios.push({ id: itemId, assetId: id, start, in: 0, out: duration, volume: 1, fadeIn: 0, fadeOut: 0, role: 'voice' });
   });
   s.select({ kind: 'audio', id: itemId });
   if (!saved) s.notify('No hay espacio para guardar el audio: podrás editarlo, pero no se guardará al cerrar.');

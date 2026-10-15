@@ -3,7 +3,7 @@ import {
   ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Diamond, Eraser, Gauge, Layers,
   Maximize, Mic, Minimize, Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors,
   SlidersHorizontal, Smile, Sparkles, Trash2, Type, Undo2,
-  Volume2, type LucideIcon,
+  Volume2, WandSparkles, type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { addText, deleteSelected, duplicateSelected, moveClip, splitAtPlayhead } from '../ops';
@@ -47,6 +47,7 @@ export function Toolbar() {
       { icon: BellRing, label: 'Sonidos', run: open('sfx') },
       { icon: Mic, label: 'Grabar voz', run: open('record') },
       { icon: AudioLines, label: 'Texto a voz', run: open('tts') },
+      { icon: WandSparkles, label: 'Audio inteligente', run: open('smartAudio') },
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
       { icon: RectangleHorizontal, label: 'Formato', run: open('format') },
     ];

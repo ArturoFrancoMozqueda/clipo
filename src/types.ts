@@ -127,6 +127,8 @@ export interface Clip {
   effect?: Effect;
   color?: ColorAdjust;
   bgRemoval?: BgRemoval;
+  /** Voice effect on the clip's own sound. Missing = none. */
+  voiceFx?: VoiceFxId;
 }
 
 export interface TextItem {
@@ -181,6 +183,21 @@ export interface AudioItem {
   volume: number;
   fadeIn: number;
   fadeOut: number;
+  /** Voice, music or sound effect (for automatic ducking). Missing in older projects: guessed from the name. */
+  role?: AudioRole;
+  voiceFx?: VoiceFxId;
+}
+
+export type AudioRole = 'voice' | 'music' | 'sfx';
+/** Voice effects made with Web Audio, the same in the preview and in the saved video. */
+export type VoiceFxId = 'none' | 'robot' | 'deep' | 'high' | 'phone' | 'radio' | 'echo' | 'room';
+
+/** Project-wide sound settings. Missing in older projects: no ducking, no normalization. */
+export interface AudioMix {
+  /** dB the music goes down while someone talks; 0 = off. */
+  duck: number;
+  /** Bring the saved video to -14 LUFS with a peak limiter. */
+  normalize: boolean;
 }
 
 export interface Project {
@@ -195,6 +212,8 @@ export interface Project {
   stickers?: StickerItem[];
   /** Picture-in-picture track (advanced mode). Missing in older projects. */
   overlays?: OverlayItem[];
+  /** Ducking and loudness. Missing in older projects. */
+  audioMix?: AudioMix;
   createdAt: number;
   updatedAt: number;
 }
@@ -222,4 +241,5 @@ export type PanelId =
   | 'color'
   | 'keyframes'
   | 'sfx'
+  | 'smartAudio'
   | 'help';

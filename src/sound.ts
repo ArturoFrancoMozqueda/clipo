@@ -1,7 +1,7 @@
 // Sound effects and background music synthesized on the device with Web Audio.
 // Everything here is generated from scratch, so it is ours: no licenses, no attribution,
 // works offline, and each music render can be as long as the video.
-import type { Asset } from './types';
+import type { Asset, AudioRole } from './types';
 import { putBlob } from './db';
 import { uid, useStore } from './store';
 import { encodeWav } from './voice';
@@ -500,7 +500,7 @@ export function stopPreview() {
 }
 
 /** Save generated audio on the device and put it on the audio track, as one undoable step. */
-export async function addGenerated(samples: Float32Array, name: string, start: number, opts: { volume?: number; fadeIn?: number; fadeOut?: number } = {}) {
+export async function addGenerated(samples: Float32Array, name: string, start: number, opts: { volume?: number; fadeIn?: number; fadeOut?: number; role?: AudioRole } = {}) {
   const s = useStore.getState();
   if (!s.project) return;
   const blob = encodeWav(samples, SR);
@@ -513,7 +513,7 @@ export async function addGenerated(samples: Float32Array, name: string, start: n
   const itemId = uid();
   s.commit((p) => {
     p.assets[id] = asset;
-    p.audios.push({ id: itemId, assetId: id, start, in: 0, out: duration, volume: opts.volume ?? 1, fadeIn: opts.fadeIn ?? 0, fadeOut: opts.fadeOut ?? 0 });
+    p.audios.push({ id: itemId, assetId: id, start, in: 0, out: duration, volume: opts.volume ?? 1, fadeIn: opts.fadeIn ?? 0, fadeOut: opts.fadeOut ?? 0, ...(opts.role ? { role: opts.role } : {}) });
   });
   if (!saved) s.notify('No hay espacio para guardar el audio: podrás editarlo, pero no se guardará al cerrar.');
 }
