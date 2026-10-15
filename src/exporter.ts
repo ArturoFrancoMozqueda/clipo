@@ -5,9 +5,10 @@ import { loadProjectFonts } from './fonts';
 import { preloadEmojis } from './stickers';
 import { audioDur, canvasSize, clamp, clipDur, layout, overlayDur, overlaysOf, totalDuration } from './model';
 import { useStore } from './store';
-import type { Project, VoiceFxId } from './types';
+import type { AspectId, Project, VoiceFxId } from './types';
 import { FRAME, audioRole, integratedLoudness, normalizeLoudness, peak, type ActivityByAsset } from './audioDsp';
 import { LOUDNESS_TARGET, analyzeBuffer, buildVoiceFx, mixOf, projectDuckCurve } from './audioFx';
+import { AUDIO_BITRATE, audioLevels, exportBitrate, type AudioLevels } from './platforms';
 
 export interface ExportProgress {
   /** 0..100 */
@@ -43,10 +44,17 @@ const cancelled = () => new Error('cancelled');
  * Saves the project as a video file. Uses WebCodecs to render faster than real time and falls back
  * to recording the preview in real time when that isn't available or fails.
  */
-export async function exportVideo(short: number, onProgress: (p: ExportProgress) => void, signal: AbortSignal): Promise<ExportResult> {
+export async function exportVideo(
+  short: number,
+  onProgress: (p: ExportProgress) => void,
+  signal: AbortSignal,
+  opts: { aspect?: AspectId } = {},
+): Promise<ExportResult> {
   const s = useStore.getState();
-  const p = s.project;
-  if (!p) throw new Error('No hay proyecto abierto');
+  const open = s.project;
+  if (!open) throw new Error('No hay proyecto abierto');
+  // Another format ("varias versiones") renders a copy; the open project doesn't change.
+  const p = opts.aspect && opts.aspect !== open.aspect ? { ...open, aspect: opts.aspect } : open;
   // "Quitar fondo" must be ready before the first frame, or the export would show the original background.
   if (usesBgRemoval(p)) await loadSegmenter();
   await loadProjectFonts(p);
@@ -65,6 +73,8 @@ export async function exportVideo(short: number, onProgress: (p: ExportProgress)
     }
   }
   if (!hasRecorder()) throw new Error('unsupported');
+  // The real-time recorder films the preview, which only shows the project's own format.
+  if (p !== open) throw new Error('unsupported-aspect');
   return recordExport(p, short, onProgress, signal);
 }
 
@@ -130,9 +140,9 @@ async function fastExport(
 
   const output = new mb.Output({ format: new mb.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new mb.BufferTarget() });
   // Explicit bitrates: `quality` maps to a quantizer mode that some hardware H.264 encoders never answer.
-  const video = new mb.CanvasSource(canvas, { codec: videoCodec, bitrate: short >= 1080 ? 8_000_000 : 5_000_000 });
+  const video = new mb.CanvasSource(canvas, { codec: videoCodec, bitrate: exportBitrate(short) });
   output.addVideoTrack(video, { frameRate: FPS });
-  const audio = mix && audioCodec ? new mb.AudioBufferSource({ codec: audioCodec, bitrate: 160_000 }) : null;
+  const audio = mix && audioCodec ? new mb.AudioBufferSource({ codec: audioCodec, bitrate: AUDIO_BITRATE }) : null;
   if (audio) output.addAudioTrack(audio);
 
   // Picture sources.
@@ -250,6 +260,28 @@ async function fastExport(
   const buf = (output.target as InstanceType<typeof mb.BufferTarget>).buffer;
   if (!buf) throw new Error('empty output');
   return { blob: new Blob([buf], { type: 'video/mp4' }), ext: 'mp4' };
+}
+
+/**
+ * Level of the final sound, mixed exactly like the export does ("Revisar antes de publicar").
+ * Null when the device can't mix offline.
+ */
+export async function measureAudio(p: Project, signal?: AbortSignal): Promise<AudioLevels | null> {
+  if (typeof OfflineAudioContext === 'undefined') return null;
+  const dur = totalDuration(p);
+  if (dur <= 0) return null;
+  const urls = useStore.getState().urls;
+  const blobs = new Map<string, Promise<Blob>>();
+  const blobOf = (id: string) => {
+    let b = blobs.get(id);
+    if (!b) blobs.set(id, (b = urls[id] ? fetch(urls[id]).then((r) => r.blob()) : Promise.reject(new Error('missing media'))));
+    return b;
+  };
+  const mix = await mixAudio(p, dur, blobOf, () => {
+    if (signal?.aborted) throw cancelled();
+  });
+  const chans = Array.from({ length: mix.buffer.numberOfChannels }, (_, i) => mix.buffer.getChannelData(i));
+  return audioLevels(chans);
 }
 
 /** Rejects if the encoder stops making progress, so a stuck encoder falls back instead of hanging forever. */

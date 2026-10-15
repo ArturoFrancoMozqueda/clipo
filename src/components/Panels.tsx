@@ -17,6 +17,7 @@ import { AdvancedToggle, ColorPanel, KeyframesPanel, OverlayPanel } from './Adva
 import { BackgroundPanel } from './BackgroundPanel';
 import { BgError } from '../segmentation';
 import { AudioRoleSection, NormalizeOption, SmartAudioPanel, VoiceFxSection } from './AudioPanels';
+import { ReframeSection, SocialPanel } from './SocialPanel';
 
 const TITLES: Record<PanelId, string> = {
   media: 'Agregar videos y fotos',
@@ -40,6 +41,7 @@ const TITLES: Record<PanelId, string> = {
   sfx: 'Efectos de sonido',
   crop: 'Recortar y voltear',
   smartAudio: 'Audio inteligente',
+  social: 'Adaptar a redes',
   help: 'Cómo usar Clipo',
 };
 
@@ -72,6 +74,7 @@ export function Sheet() {
     sfx: <SfxPanel />,
     crop: <CropPanel />,
     smartAudio: <SmartAudioPanel />,
+    social: <SocialPanel />,
     help: <HelpPanel />,
   };
   return (
@@ -155,6 +158,7 @@ function FormatPanel() {
     <>
       <FormatPicker value={aspect} onPick={setAspect} />
       <Hint>Si un video no tiene la misma forma, se muestra completo con un fondo difuminado. Para que llene la pantalla, tócalo y elige “Rellenar”.</Hint>
+      <ReframeSection />
     </>
   );
 }

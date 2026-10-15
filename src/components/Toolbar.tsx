@@ -2,7 +2,7 @@ import {
   BellRing,
   ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Crop, Diamond, Eraser, Gauge, Layers,
   Maximize, Mic, Minimize, Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors,
-  SlidersHorizontal, Smile, Snowflake, Sparkles, Trash2, Type, Undo2,
+  Send, SlidersHorizontal, Smile, Snowflake, Sparkles, Trash2, Type, Undo2,
   Volume2, WandSparkles, type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../store';
@@ -51,6 +51,7 @@ export function Toolbar() {
       { icon: WandSparkles, label: 'Audio inteligente', run: open('smartAudio') },
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
       { icon: RectangleHorizontal, label: 'Formato', run: open('format') },
+      { icon: Send, label: 'Redes', run: open('social') },
     ];
   } else if (sel.kind === 'clip') {
     const frozen = clip?.freeze != null;

@@ -145,6 +145,8 @@ export interface Clip {
   crop?: Crop;
   /** Freeze frame: always shows this source time (seconds), silent. `in` is 0 and `out` its length. */
   freeze?: number;
+  /** "Reencuadre automático": where the person is over time, so a cropped frame follows them. */
+  reframe?: Reframe;
 }
 
 export interface Crop {
@@ -168,6 +170,12 @@ export interface LutData {
   size: number;
   /** Base64 of size³ RGB bytes, red changing fastest (the .cube order). */
   data: string;
+}
+
+/** Smoothed subject center over the clip's source time; used when the clip fills the frame. */
+export interface Reframe {
+  /** Sorted by t. t = seconds in the source file; x, y = center as a fraction of the source picture. */
+  points: { t: number; x: number; y: number }[];
 }
 
 export interface TextItem {
@@ -275,8 +283,37 @@ export interface Project {
   luts?: Record<string, LutData>;
   /** Ducking and loudness. Missing in older projects. */
   audioMix?: AudioMix;
+  /** Cover, text and target networks for publishing. Missing in older projects. */
+  publish?: PublishInfo;
   createdAt: number;
   updatedAt: number;
+}
+
+/** Social networks Clipo adapts videos for (ids shared with the publishing center). */
+export type PlatformId = 'tiktok' | 'instagram_reels' | 'youtube_shorts' | 'youtube' | 'facebook' | 'x' | 'linkedin';
+
+/** Post text for one network. */
+export interface PostText {
+  /** Only networks with a title field (YouTube). */
+  title?: string;
+  description: string;
+  /** As typed by the user; read it with parseHashtags(). */
+  hashtags: string;
+}
+
+export interface PublishTarget {
+  platform: PlatformId;
+  aspect: AspectId;
+}
+
+export interface PublishInfo {
+  /** Networks the video is for and the format chosen for each. */
+  targets?: PublishTarget[];
+  /** Timeline second used as the cover. */
+  coverTime?: number;
+  /** Small JPEG data URL of the cover, for showing it. */
+  coverThumb?: string;
+  posts?: Partial<Record<PlatformId, PostText>>;
 }
 
 export type SelectionKind = 'clip' | 'text' | 'audio' | 'sticker' | 'overlay';
@@ -304,4 +341,5 @@ export type PanelId =
   | 'sfx'
   | 'crop'
   | 'smartAudio'
+  | 'social'
   | 'help';
