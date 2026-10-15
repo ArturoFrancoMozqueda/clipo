@@ -11,9 +11,11 @@ const NEEDS = 1.7e9;
 const CONFIG_FROM = 'onnx-community/chatterbox-ONNX';
 export const CLONE_SAMPLE_RATE = 24000;
 
+export type Prefer = 'auto' | 'webgpu' | 'wasm';
+
 export type CloneIn =
-  | { type: 'load'; id: number }
-  | { type: 'speak'; id: number; voiceKey: string; reference: Float32Array; parts: string[]; exaggeration: number; lang: string };
+  | { type: 'load'; id: number; prefer?: Prefer }
+  | { type: 'speak'; id: number; prefer?: Prefer; voiceKey: string; reference: Float32Array; parts: string[]; exaggeration: number; lang: string };
 
 export type CloneOut =
   | { type: 'download'; id: number; loaded: number; total: number }
@@ -118,10 +120,13 @@ async function hasWebGPU() {
   }
 }
 
-function load(id: number) {
+function load(id: number, prefer: Prefer = 'auto') {
   if (loading) return loading;
   loading = (async () => {
-    const device = (await hasWebGPU()) ? 'webgpu' : 'wasm';
+    const device = prefer === 'wasm' ? 'wasm' : prefer === 'webgpu' || (await hasWebGPU()) ? 'webgpu' : 'wasm';
+    // With cross-origin isolation (desktop app) WebAssembly can use several cores.
+    if (env.backends.onnx.wasm) env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 2) - 2)) : 1;
+    post({ type: 'stage', id, stage: `threads ${env.backends.onnx.wasm?.numThreads}, isolated ${self.crossOriginIsolated}` });
     // Writing 1.5 GB into a cache that has no room for it stalls the download, so skip the cache then.
     const est = await navigator.storage?.estimate?.().catch(() => undefined);
     const cached = !est?.quota || est.quota - (est.usage ?? 0) > NEEDS;
@@ -215,7 +220,7 @@ type Encode = (audio: Tensor) => Promise<Record<string, Tensor>>;
 type Generate = (inputs: Record<string, unknown>) => Promise<Tensor>;
 
 async function speak(msg: Extract<CloneIn, { type: 'speak' }>) {
-  const { model, tokenizer } = await load(msg.id);
+  const { model, tokenizer } = await load(msg.id, msg.prefer);
   let speaker = speakers.get(msg.voiceKey);
   if (!speaker) {
     const ref = new Tensor('float32', msg.reference, [1, msg.reference.length]);
@@ -254,7 +259,7 @@ self.onmessage = (e: MessageEvent<CloneIn>) => {
   queue = queue.then(async () => {
     try {
       if (msg.type === 'load') {
-        const { device, cached } = await load(msg.id);
+        const { device, cached } = await load(msg.id, msg.prefer);
         post({ type: 'ready', id: msg.id, device, cached });
       } else await speak(msg);
     } catch (err) {

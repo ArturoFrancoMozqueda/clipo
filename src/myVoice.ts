@@ -4,7 +4,17 @@
 import { getBlob, putBlob } from './db';
 import { uid } from './store';
 import { encodeWav } from './voice';
-import type { CloneIn, CloneOut } from './cloneWorker';
+import type { CloneIn, CloneOut, Prefer } from './cloneWorker';
+
+/** Where the cloning model runs; 'auto' unless overridden (localStorage "clipo.cloneDevice") for testing. */
+const prefer = (): Prefer => {
+  try {
+    const v = localStorage.getItem('clipo.cloneDevice');
+    return v === 'webgpu' || v === 'wasm' ? v : 'auto';
+  } catch {
+    return 'auto';
+  }
+};
 
 export const CLONE_RATE = 24000;
 /** Rough first-time download of the cloning model, in MB. */
@@ -224,7 +234,7 @@ let warmed = false;
 export function warmUpClone() {
   if (warmed) return;
   warmed = true;
-  const msg: CloneIn = { type: 'load', id: nextId++ };
+  const msg: CloneIn = { type: 'load', id: nextId++, prefer: prefer() };
   getWorker().postMessage(msg);
 }
 
@@ -235,7 +245,7 @@ export async function speakAs(profileId: string, parts: string[], exaggeration: 
   return new Promise<{ samples: Float32Array; sampleRate: number }>((resolve, reject) => {
     pending.set(id, { onProgress, resolve, reject });
     // The reference is copied (not transferred) so the cache keeps its own.
-    const msg: CloneIn = { type: 'speak', id, voiceKey: profileId, reference: reference.slice(), parts, exaggeration, lang: 'es' };
+    const msg: CloneIn = { type: 'speak', id, prefer: prefer(), voiceKey: profileId, reference: reference.slice(), parts, exaggeration, lang: 'es' };
     getWorker().postMessage(msg);
   });
 }

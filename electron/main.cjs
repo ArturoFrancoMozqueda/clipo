@@ -28,7 +28,14 @@ function serve(request) {
   let file = path.normalize(path.join(DIST, decodeURIComponent(pathname)));
   if (!file.startsWith(DIST)) return new Response('Not found', { status: 404 });
   if (pathname.endsWith('/') || !fs.existsSync(file)) file = path.join(DIST, 'index.html');
-  return net.fetch(pathToFileURL(file).toString());
+  return net.fetch(pathToFileURL(file).toString()).then((res) => {
+    // Cross-origin isolation lets the AI models use every CPU core (WebAssembly threads).
+    // "credentialless" keeps cross-origin downloads (models, CDNs) working without extra headers.
+    const headers = new Headers(res.headers);
+    headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+    headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
+    return new Response(res.body, { status: res.status, headers });
+  });
 }
 
 function createWindow() {
@@ -70,7 +77,7 @@ function createWindow() {
       await new Promise((r) => setTimeout(r, 2500));
       const probe = await win.webContents.executeJavaScript(
         `({ title: document.title, heading: document.querySelector('.hero h2')?.textContent ?? null,
-            secure: window.isSecureContext, idb: !!window.indexedDB, webcodecs: typeof VideoEncoder === 'function',
+            secure: window.isSecureContext, isolated: window.crossOriginIsolated, threads: navigator.hardwareConcurrency, idb: !!window.indexedDB, webcodecs: typeof VideoEncoder === 'function',
             fonts: document.fonts.size })`,
       );
       console.log('SMOKE', JSON.stringify(probe));
