@@ -731,7 +731,7 @@ export function renderFrame(
       ctx.rotate(pose.rotation);
       ctx.translate(-pose.x * W, -pose.y * H);
     }
-    texts.push(drawText(ctx, { ...item, x: pose.x, y: pose.y, size: pose.size }, W, H, item.anim ? textPose(item, t - item.start) : undefined));
+    texts.push(drawText(ctx, { ...item, x: pose.x, y: pose.y, size: pose.size }, W, H, item.anim ? textPose(item, t - item.start) : undefined, t - item.start));
     ctx.restore();
   }
   return { texts, stickers, overlays };

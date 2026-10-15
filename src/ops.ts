@@ -5,6 +5,8 @@ import { itemsOf, uid, useStore } from './store';
 import { engine } from './engine';
 import { EFFECT_DEFAULT_INTENSITY, STICKER_DEFAULT_SIZE } from './visuals';
 import { poseAt, setPose, shiftKeyframes, type Animatable, type Pose } from './keyframes';
+import { shiftWords } from './subtitles';
+import { applyBrand } from './brand';
 
 const get = () => useStore.getState();
 
@@ -58,7 +60,8 @@ export function splitAtPlayhead() {
       const rest = it.start + it.duration - t;
       const keyframes = shiftKeyframes(it.keyframes, t - it.start);
       it.duration = t - it.start;
-      q.texts.push({ ...it, id, start: t, duration: rest, ...(keyframes ? { keyframes } : {}) });
+      const words = shiftWords(it.words, t - it.start);
+      q.texts.push({ ...it, id, start: t, duration: rest, ...(keyframes ? { keyframes } : {}), ...(words ? { words } : {}) });
     });
     s.select({ kind: 'text', id });
     return s.notify('Texto dividido');
@@ -197,7 +200,7 @@ export function addText() {
   engine.pause();
   const id = uid();
   s.commit((p) => {
-    p.texts.push({ id, text: 'Tu texto aquí', start: s.time, duration: 3, x: 0.5, y: 0.75, size: 0.075, styleId: 'clasico' });
+    p.texts.push(applyBrand({ id, text: 'Tu texto aquí', start: s.time, duration: 3, x: 0.5, y: 0.75, size: 0.075, styleId: 'clasico' }));
   });
   s.select({ kind: 'text', id });
   s.setPanel('text');

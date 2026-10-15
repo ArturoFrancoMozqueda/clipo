@@ -12,7 +12,8 @@ export type WorkerIn = { type: 'run'; model: string; language: string; windows: 
 export type WorkerOut =
   | { type: 'download'; loaded: number; total: number }
   | { type: 'ready'; device: 'webgpu' | 'wasm' }
-  | { type: 'window'; id: number; chunks: { text: string; start: number; end: number | null }[] }
+  /** `words`: each chunk is one word (karaoke timing); otherwise chunks are phrases. */
+  | { type: 'window'; id: number; words: boolean; chunks: { text: string; start: number; end: number | null }[] }
   | { type: 'done' }
   | { type: 'error'; message: string };
 
@@ -62,15 +63,28 @@ self.onmessage = async (e: MessageEvent<WorkerIn>) => {
   try {
     const { asr, device } = await load(msg.model);
     post({ type: 'ready', device });
+    // Word times come from the model's attention; if this model or device can't give them,
+    // fall back to phrase times for the rest of the run (captions still work, just not per word).
+    let words = true;
     for (const w of msg.windows) {
-      const out = await asr(w.samples, { language: msg.language, task: 'transcribe', return_timestamps: true });
+      const run = (mode: 'word' | true) => asr(w.samples, { language: msg.language, task: 'transcribe', return_timestamps: mode });
+      let out;
+      if (words) {
+        try {
+          out = await run('word');
+        } catch (err) {
+          console.warn('Sin marcas por palabra, usando frases', err);
+          words = false;
+        }
+      }
+      out ??= await run(true);
       const res = (Array.isArray(out) ? out[0] : out) as { text: string; chunks?: { text: string; timestamp: [number, number | null] }[] };
       const chunks = (res.chunks ?? [{ text: res.text, timestamp: [0, null] }]).map((c) => ({
         text: c.text,
         start: c.timestamp[0] ?? 0,
         end: c.timestamp[1] ?? null,
       }));
-      post({ type: 'window', id: w.id, chunks });
+      post({ type: 'window', id: w.id, words: words && !!res.chunks, chunks });
     }
     post({ type: 'done' });
   } catch (err) {

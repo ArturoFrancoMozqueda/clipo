@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react';
 import type { TextItem } from './types';
 import type { TextPose } from './visuals';
-import { fontCss, getFont } from './fonts';
+import { ensureFont, fontCss, getFont } from './fonts';
+import { activeWord, wordTimings } from './subtitles';
 
 export interface TextStyle {
   id: string;
@@ -70,11 +71,12 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 /** Draw a text item and return its (resting) bounding box in canvas pixels. */
-export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: number, H: number, pose?: TextPose): Box {
+export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: number, H: number, pose?: TextPose, local?: number): Box {
   const st = getTextStyle(item.styleId);
   const fs = Math.max(8, item.size * Math.min(W, H));
   ctx.save();
   const face = getFont(item.font);
+  if (face) void ensureFont(face.id); // first use registers and downloads it
   ctx.font = face ? fontCss(face, fs, st.italic) : `${st.italic ? 'italic ' : ''}${st.weight} ${fs}px ${st.font}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -101,14 +103,60 @@ export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: numbe
   }
   // Typewriter: reveal characters one by one, keeping each line where it will end up.
   let budget = pose?.chars ?? Infinity;
+  const fill = item.fill ?? st.fill;
+  const paint = (s: string, x: number, y: number, color: string) => {
+    if (st.shadow) {
+      ctx.shadowColor = st.shadow;
+      ctx.shadowBlur = (st.shadowBlur ?? 0.2) * fs;
+    }
+    if (st.stroke) {
+      ctx.strokeStyle = st.stroke;
+      ctx.lineWidth = (st.strokeW ?? 0.14) * fs;
+      ctx.strokeText(s, x, y);
+      ctx.shadowColor = 'transparent';
+    }
+    ctx.fillStyle = color;
+    ctx.fillText(s, x, y);
+    ctx.shadowColor = 'transparent';
+  };
 
   if (st.bg && budget > 0) {
     ctx.fillStyle = st.bg;
     roundRect(ctx, box.x, box.y, box.w, box.h, fs * 0.25);
     ctx.fill();
   }
+  // Karaoke: the word being said gets a color, a box or grows a little.
+  const kara = item.karaoke && local !== undefined && budget === Infinity ? item.karaoke : undefined;
+  const active = kara ? activeWord(wordTimings(raw, item.words, item.duration), local!) : -1;
+  let k = 0;
   lines.forEach((full, i) => {
     if (budget <= 0) return;
+    const y = cy - th / 2 + lh * (i + 0.5);
+    if (kara) {
+      const toks = full.split(/\s+/).filter(Boolean);
+      const space = ctx.measureText(' ').width;
+      const widths = toks.map((t) => ctx.measureText(t).width);
+      let x = cx - (widths.reduce((a, b) => a + b, 0) + space * Math.max(0, toks.length - 1)) / 2;
+      toks.forEach((tok, j) => {
+        const on = k++ === active;
+        const wx = x + widths[j] / 2;
+        x += widths[j] + space;
+        if (!on) return paint(tok, wx, y, fill);
+        ctx.save();
+        if (kara.mode === 'box') {
+          ctx.fillStyle = kara.color;
+          roundRect(ctx, wx - widths[j] / 2 - fs * 0.14, y - fs * 0.6, widths[j] + fs * 0.28, fs * 1.2, fs * 0.22);
+          ctx.fill();
+        } else if (kara.mode === 'scale') {
+          ctx.translate(wx, y);
+          ctx.scale(1.2, 1.2);
+          ctx.translate(-wx, -y);
+        }
+        paint(tok, wx, y, kara.mode === 'box' ? fill : kara.color);
+        ctx.restore();
+      });
+      return;
+    }
     let line = full;
     let x = cx;
     if (budget < Infinity) {
@@ -117,20 +165,7 @@ export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: numbe
       ctx.textAlign = 'left';
       x = cx - ctx.measureText(full).width / 2;
     }
-    const y = cy - th / 2 + lh * (i + 0.5);
-    if (st.shadow) {
-      ctx.shadowColor = st.shadow;
-      ctx.shadowBlur = (st.shadowBlur ?? 0.2) * fs;
-    }
-    if (st.stroke) {
-      ctx.strokeStyle = st.stroke;
-      ctx.lineWidth = (st.strokeW ?? 0.14) * fs;
-      ctx.strokeText(line, x, y);
-      ctx.shadowColor = 'transparent';
-    }
-    ctx.fillStyle = st.fill;
-    ctx.fillText(line, x, y);
-    ctx.shadowColor = 'transparent';
+    paint(line, x, y, fill);
   });
   ctx.restore();
   return box;
