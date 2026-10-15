@@ -11,7 +11,10 @@
     "icons": "node scripts/icons.mjs",
     "cap:sync": "npm run build && cap sync",
     "cap:android": "npm run build && cap sync android && cap open android",
-    "cap:ios": "npm run build && cap sync ios && cap open ios"
+    "cap:ios": "npm run build && cap sync ios && cap open ios",
+    "app:dev": "npm run build && electron .",
+    "app:smoke": "npm run build && node scripts/app-smoke.mjs",
+    "app:dist": "npm run build && electron-builder --win"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.3",
@@ -44,8 +47,61 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
     "sharp": "^0.34.5",
     "typescript": "^5.6.3",
     "vite": "^6.0.3"
+  },
+  "description": "Editor de video fácil para móvil y PC",
+  "author": "Clipo",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "app.clipo.editor",
+    "productName": "Clipo",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon-512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Clipo",
+      "artifactName": "Clipo-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Clipo-Portable-${version}.${ext}"
+    },
+    "npmRebuild": false,
+    "electronLanguages": [
+      "es",
+      "es-419",
+      "en-US"
+    ]
   }
 }

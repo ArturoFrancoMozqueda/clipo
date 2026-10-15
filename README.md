@@ -58,3 +58,28 @@ y políticas de las tiendas) está en [PUBLICAR.md](PUBLICAR.md).
   admitan (Safari, y Chrome/Edge en equipos con soporte HEVC).
 - El ícono es SVG; para que se vea perfecto en la pantalla de inicio del
   iPhone, agrega un PNG de 180×180 como `apple-touch-icon`.
+
+## App de escritorio (Windows)
+
+Clipo también funciona como programa de Windows, en su propia ventana y sin
+navegador (Electron). Todo se guarda en tu PC.
+
+```bash
+npm run app:dev     # abrir la app de escritorio desde el código
+npm run app:dist    # crear el instalador en release/
+npm run app:smoke   # prueba automática: abre la app oculta y comprueba que carga
+```
+
+`npm run app:dist` crea dos archivos en `release/`:
+
+- `Clipo-Setup-<versión>.exe`: instalador con acceso directo en el escritorio y el menú Inicio.
+- `Clipo-Portable-<versión>.exe`: se ejecuta sin instalar (por ejemplo, desde una USB).
+
+Los proyectos de la app de escritorio se guardan en `%APPDATA%\clipo` y son
+independientes de los de la versión web. El instalador no está firmado
+digitalmente, así que Windows SmartScreen mostrará un aviso la primera vez:
+"Más información" → "Ejecutar de todas formas". Para quitar el aviso hace falta
+un certificado de firma de código.
+
+Para una prueba completa (crear video, editar y exportar) dentro de la app:
+`CLIPO_SMOKE_SCRIPT=scripts/smoke-scenario.js npm run app:smoke`.
