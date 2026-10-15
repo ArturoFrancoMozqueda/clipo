@@ -16,14 +16,22 @@ export interface Asset {
   sticker?: boolean;
 }
 
-export type TransitionId = 'none' | 'fade' | 'slide' | 'zoom' | 'wipe';
+export type TransitionId =
+  | 'none' | 'fade' | 'slide' | 'zoom' | 'wipe'
+  | 'fadeBlack' | 'fadeWhite' | 'push' | 'iris' | 'flash' | 'spin' | 'blur' | 'glitch';
+/** Direction the new clip comes from (push transition). */
+export type Direction = 'left' | 'right' | 'up' | 'down';
 export interface Transition {
   type: TransitionId;
   /** Seconds, 0.2..1.5. Centered on the cut, so the timeline length does not change. */
   duration: number;
+  /** For 'push'; 'left' when missing. */
+  dir?: Direction;
 }
 
-export type EffectId = 'none' | 'glitch' | 'blur' | 'vignette' | 'shake' | 'kenburns';
+export type EffectId =
+  | 'none' | 'glitch' | 'blur' | 'vignette' | 'shake' | 'kenburns'
+  | 'grain' | 'vhs' | 'rgb' | 'pixelate' | 'mirror' | 'glow' | 'lightleak' | 'bwdrama';
 export interface Effect {
   id: EffectId;
   /** 0..1 */
@@ -127,6 +135,37 @@ export interface Clip {
   effect?: Effect;
   color?: ColorAdjust;
   bgRemoval?: BgRemoval;
+  /** Imported 3D LUT (id in `Project.luts`) applied after the filter and color. */
+  lut?: ClipLut;
+  flipH?: boolean;
+  flipV?: boolean;
+  /** Part of the source picture that is shown (fractions 0..1); the whole picture when missing. */
+  crop?: Crop;
+  /** Freeze frame: always shows this source time (seconds), silent. `in` is 0 and `out` its length. */
+  freeze?: number;
+}
+
+export interface Crop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface ClipLut {
+  id: string;
+  /** 0..1 mix with the uncorrected picture. */
+  amount: number;
+}
+
+/** A .cube look imported by the user, stored with the project (resampled to at most 33³). */
+export interface LutData {
+  id: string;
+  name: string;
+  /** Points per side. */
+  size: number;
+  /** Base64 of size³ RGB bytes, red changing fastest (the .cube order). */
+  data: string;
 }
 
 export interface TextItem {
@@ -195,6 +234,8 @@ export interface Project {
   stickers?: StickerItem[];
   /** Picture-in-picture track (advanced mode). Missing in older projects. */
   overlays?: OverlayItem[];
+  /** Imported LUTs by id. Missing in older projects. */
+  luts?: Record<string, LutData>;
   createdAt: number;
   updatedAt: number;
 }
@@ -222,4 +263,5 @@ export type PanelId =
   | 'color'
   | 'keyframes'
   | 'sfx'
+  | 'crop'
   | 'help';

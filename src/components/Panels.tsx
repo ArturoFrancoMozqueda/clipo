@@ -11,7 +11,7 @@ import { clipDur, fmtTime, totalDuration } from '../model';
 import { editPose, poseNow, setAspect } from '../ops';
 import { CAPTION_LANGUAGES, captionDownloadMB, cancelCaptions, generateCaptions, type CaptionProgress, type CaptionQuality } from '../captions';
 import { FormatPicker } from './FormatPicker';
-import { EffectsPanel, StickersPanel, TextAnimSection, TransitionPanel } from './VisualPanels';
+import { CropPanel, EffectsPanel, LutSection, StickersPanel, TextAnimSection, TransitionPanel } from './VisualPanels';
 import { MediaLibrary } from './MediaLibrary';
 import { SfxPanel } from './SoundPanels';
 import { showOnboarding } from './Onboarding';
@@ -40,6 +40,7 @@ const TITLES: Record<PanelId, string> = {
   color: 'Corrección de color',
   keyframes: 'Fotogramas clave',
   sfx: 'Efectos de sonido',
+  crop: 'Recortar y voltear',
   help: 'Cómo usar Clipo',
 };
 
@@ -70,6 +71,7 @@ export function Sheet() {
     color: <ColorPanel />,
     keyframes: <KeyframesPanel />,
     sfx: <SfxPanel />,
+    crop: <CropPanel />,
     help: <HelpPanel />,
   };
   return (
@@ -236,6 +238,7 @@ function FiltersPanel() {
       >
         Aplicar a todos los clips
       </button>
+      <LutSection clip={clip} />
     </>
   );
 }

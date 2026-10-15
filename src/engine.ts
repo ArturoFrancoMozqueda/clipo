@@ -10,6 +10,8 @@ import {
 import { applyColorPixels, colorCss, drawVignette } from './color';
 import { poseAt, type Pose } from './keyframes';
 import { maskFor, maskImageOf, type Mask } from './segmentation';
+import { applyLut } from './lut';
+import { framed, hasFraming } from './framing';
 
 interface MediaRec<E extends HTMLMediaElement> {
   el: E;
@@ -308,9 +310,10 @@ class Engine {
       const el = r.el;
       const dur = p.assets[l.clip.assetId]?.duration ?? l.clip.out;
       if (cur && l.index === cur.index) {
-        const src = clamp(l.clip.in + (t - l.start) * l.clip.speed, l.clip.in, l.clip.out);
-        this.setVolume(r, l.clip.volume);
-        if (playing) {
+        const frozen = l.clip.freeze != null;
+        const src = frozen ? sourceTime(l, t, dur) : clamp(l.clip.in + (t - l.start) * l.clip.speed, l.clip.in, l.clip.out);
+        this.setVolume(r, frozen ? 0 : l.clip.volume);
+        if (playing && !frozen) {
           if (el.playbackRate !== l.clip.speed) el.playbackRate = l.clip.speed;
           if (Math.abs(el.currentTime - src) > 0.3 && !el.seeking) el.currentTime = src;
           if (el.paused) el.play().catch(() => {});
@@ -639,7 +642,8 @@ export function renderFrame(
   const frameAt = (l: Placed): FrameImage | null | undefined => {
     const asset = p.assets[l.clip.assetId];
     if (asset?.kind !== 'video' && asset?.kind !== 'image') return undefined; // missing file: draw black
-    return lookup(l.clip, asset, sourceTime(l, t, asset.duration));
+    const f = lookup(l.clip, asset, sourceTime(l, t, asset.duration));
+    return f && framed(l.clip, f); // crop and flip
   };
 
   /** Mask and background of a clip with "Quitar fondo"; null when the export must wait for them. */
@@ -648,7 +652,8 @@ export function renderFrame(
     const asset = p.assets[l.clip.assetId];
     if (!bgr || !asset) return undefined;
     const st = sourceTime(l, t, asset.duration);
-    const key = asset.kind === 'image' ? `${asset.id}@img` : `${asset.id}@${Math.round(st * 30)}`;
+    const framing = hasFraming(l.clip) ? `#${JSON.stringify([l.clip.crop, l.clip.flipH, l.clip.flipV])}` : ''; // cropped/flipped pictures get their own masks
+    const key = (asset.kind === 'image' ? `${asset.id}@img` : `${asset.id}@${Math.round(st * 30)}`) + framing;
     const mask = maskFor(key, asset.id, f.src, f.w, f.h, !!opts.live);
     if (!mask && opts.waitForAll) return null;
     let bgFrame: FrameImage | null = null;
@@ -678,14 +683,14 @@ export function renderFrame(
     const [a, b] = parts.map((x, i) => {
       if (!x) return null;
       const c = layer(i, W, H);
-      drawClip(c.getContext('2d')!, x.l, x.f, t, W, H, x.cut ?? undefined);
+      drawClip(c.getContext('2d')!, x.l, x.f, t, W, H, x.cut ?? undefined, lutOf(p, x.l.clip));
       return c;
     });
-    drawTransition(ctx, tr.type, a ?? b, b ?? a, tr.k, W, H);
+    drawTransition(ctx, tr.type, a ?? b, b ?? a, tr.k, W, H, tr.dir);
   } else if (cur && source && source.w && source.h) {
     const cut = cutoutOf(cur, source);
     if (cut === null) return null;
-    drawClip(ctx, cur, source, t, W, H, cut);
+    drawClip(ctx, cur, source, t, W, H, cut, lutOf(p, cur.clip));
   } else {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
@@ -799,8 +804,17 @@ function bgTime(asset: Asset, l: Placed, t: number) {
   return Math.max(0, t - l.start) % d;
 }
 
-/** Paint one main-track clip (picture, color filter and effect) filling the whole frame. */
-function drawClip(ctx: CanvasRenderingContext2D, l: Placed, f: FrameImage, t: number, W: number, H: number, cut?: Cutout) {
+/** The imported LUT of a clip and how strongly it applies. */
+function lutOf(p: Project, c: Clip) {
+  const l = c.lut && p.luts?.[c.lut.id];
+  return l ? { data: l, amount: c.lut!.amount } : undefined;
+}
+
+/** Paint one main-track clip (picture, color filter, LUT and effect) filling the whole frame. */
+function drawClip(
+  ctx: CanvasRenderingContext2D, l: Placed, f: FrameImage, t: number, W: number, H: number, cut?: Cutout,
+  lut?: ReturnType<typeof lutOf>,
+) {
   const local = t - l.start;
   ctx.save();
   ctx.fillStyle = '#000';
@@ -808,6 +822,7 @@ function drawClip(ctx: CanvasRenderingContext2D, l: Placed, f: FrameImage, t: nu
   applyEffectTransform(ctx, l.clip, local, W, H);
   drawFrame(ctx, f.src, f.w, f.h, W, H, l.clip, effectCss(l.clip, W), cut?.mask ? cut : undefined);
   ctx.restore();
+  if (lut) applyLut(ctx, lut.data, lut.amount, W, H);
   applyEffectOverlay(ctx, l.clip, local, W, H);
   drawVignette(ctx, l.clip.color, W, H);
 }

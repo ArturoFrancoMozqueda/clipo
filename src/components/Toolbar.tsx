@@ -1,12 +1,13 @@
 import {
   BellRing,
-  ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Diamond, Eraser, Gauge, Layers,
+  ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Crop, Diamond, Eraser, Gauge, Layers,
   Maximize, Mic, Minimize, Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors,
-  SlidersHorizontal, Smile, Sparkles, Trash2, Type, Undo2,
+  SlidersHorizontal, Smile, Snowflake, Sparkles, Trash2, Type, Undo2,
   Volume2, type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { addText, deleteSelected, duplicateSelected, moveClip, splitAtPlayhead } from '../ops';
+import { freezeAtPlayhead } from '../visualOps';
 import type { PanelId } from '../types';
 
 interface Tool {
@@ -51,12 +52,16 @@ export function Toolbar() {
       { icon: RectangleHorizontal, label: 'Formato', run: open('format') },
     ];
   } else if (sel.kind === 'clip') {
-    title = kind === 'image' ? 'Foto' : 'Video';
+    const frozen = clip?.freeze != null;
+    const moving = kind === 'video' && !frozen;
+    title = frozen ? 'Imagen congelada' : kind === 'image' ? 'Foto' : 'Video';
     tools = [
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
-      ...(kind === 'video' ? [{ icon: Gauge, label: 'Velocidad', run: open('speed') }] : []),
-      ...(kind === 'video' ? [{ icon: Volume2, label: 'Volumen', run: open('volume') }] : []),
+      ...(moving ? [{ icon: Gauge, label: 'Velocidad', run: open('speed') }] : []),
+      ...(moving ? [{ icon: Volume2, label: 'Volumen', run: open('volume') }] : []),
+      ...(moving ? [{ icon: Snowflake, label: 'Congelar', run: freezeAtPlayhead }] : []),
       { icon: Palette, label: 'Filtros', run: open('filters') },
+      { icon: Crop, label: 'Recortar', run: open('crop') },
       ...adv({ icon: SlidersHorizontal, label: 'Color', run: open('color') }),
       { icon: Sparkles, label: 'Efectos', run: open('effects') },
       { icon: Eraser, label: 'Quitar fondo', run: open('background') },

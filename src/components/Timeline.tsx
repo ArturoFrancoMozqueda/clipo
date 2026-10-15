@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeftRight, Blend, Columns2, Diamond, Image as ImageIcon, Layers, MoveLeft, Music, Plus, Smile, Sparkles, Type, ZoomIn } from 'lucide-react';
+import { ArrowLeftRight, Blend, Diamond, Image as ImageIcon, Layers, Music, Plus, Smile, Snowflake, Sparkles, Type } from 'lucide-react';
 import type { AudioItem, Clip, Keyframe, OverlayItem, Project, SelectionKind, StickerItem, TextItem, TransitionId } from '../types';
 import { itemsOf, useStore } from '../store';
 import { engine } from '../engine';
@@ -9,8 +9,9 @@ import { toggleKeyframe, useAnimated } from './AdvancedPanels';
 import { addText } from '../ops';
 import { getFilter } from '../filters';
 import { effectName, stickersOf, transitionName } from '../visuals';
+import { TRANSITION_ICONS } from './fxIcons';
 
-const JUNCTION_ICONS: Record<TransitionId, typeof Blend> = { none: ArrowLeftRight, fade: Blend, slide: MoveLeft, zoom: ZoomIn, wipe: Columns2 };
+const JUNCTION_ICONS: Record<TransitionId, typeof Blend> = { ...TRANSITION_ICONS, none: ArrowLeftRight };
 
 const ROW_CLIP = 60;
 const ROW_TEXT = 30;
@@ -44,8 +45,8 @@ function applyDrag(p: Project, kind: SelectionKind, id: string, mode: Mode, ds: 
     const oc = o as Clip;
     if (!c) return;
     const a = p.assets[c.assetId];
-    if (a?.kind === 'image') {
-      // Photos have no "source" to trim: both handles change how long they show.
+    if (a?.kind === 'image' || c.freeze != null) {
+      // Photos and freeze frames have no "source" to trim: both handles change how long they show.
       c.out = clamp(oc.out + (mode === 'l' ? -ds : ds), 0.3, IMAGE_MAX);
     } else if (mode === 'l') c.in = clamp(oc.in + ds * oc.speed, 0, oc.out - 0.1);
     else if (mode === 'r') c.out = clamp(oc.out + ds * oc.speed, oc.in + 0.1, a?.duration ?? oc.out);
@@ -299,6 +300,7 @@ export function Timeline() {
                 >
                   <span className="tl-badges">
                     {a?.kind === 'image' && <ImageIcon size={12} />}
+                    {clip.freeze != null && <Snowflake size={12} />}
                     {clip.speed !== 1 && <em>{clip.speed}×</em>}
                     {f.id !== 'none' && <em>{f.name}</em>}
                     {clip.effect && clip.effect.id !== 'none' && <em><Sparkles size={10} /> {effectName(clip.effect.id)}</em>}
