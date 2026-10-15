@@ -306,7 +306,7 @@ export function KeyframesPanel() {
             {EASINGS.map((e) => (
               <button
                 key={e.id}
-                className={`chip ${kfs[idx].ease === e.id ? 'active' : ''}`}
+                className={`chip ${kfs[idx]!.ease === e.id ? 'active' : ''}`}
                 onClick={() => {
                   checkpoint();
                   editSelected((x) => {

@@ -43,20 +43,21 @@ test('a batch creates one pending job per target with its own text', () => {
   const jobs = createJobs(batch());
   assert.equal(jobs.length, 2);
   assert.deepEqual(jobs.map((j) => j.status.kind), ['pending', 'pending']);
-  assert.equal(jobs[0].post.title, 'Short');
-  assert.equal(jobs[1].post.title, 'Largo');
+  assert.equal(jobs[0]!.post.title, 'Short');
+  assert.equal(jobs[1]!.post.title, 'Largo');
   assert.ok(jobs.every((j) => j.batchId === 'b1' && j.videoId === 'b1-video' && j.attempts === 0));
 });
 
 test('scheduling in the future waits; in the past means now', () => {
-  assert.equal(createJobs(batch({ scheduledAt: T0 + 60_000 }))[0].status.kind, 'scheduled');
+  assert.equal(createJobs(batch({ scheduledAt: T0 + 60_000 }))[0]?.status.kind, 'scheduled');
   const past = createJobs(batch({ scheduledAt: T0 - 1 }))[0];
+  assert.ok(past);
   assert.equal(past.status.kind, 'pending');
   assert.equal(past.scheduledAt, undefined);
 });
 
 test('lifecycle: pending → uploading with % → published with link', () => {
-  let j = startUpload(createJobs(batch())[0]);
+  let j = startUpload(createJobs(batch())[0]!);
   assert.deepEqual(j.status, { kind: 'uploading', pct: 0 });
   assert.equal(j.attempts, 1);
   j = progress(j, 42);
@@ -70,7 +71,7 @@ test('lifecycle: pending → uploading with % → published with link', () => {
 });
 
 test('errors keep their reason; retryable ones go back to the queue', () => {
-  const up = startUpload(createJobs(batch())[0]);
+  const up = startUpload(createJobs(batch())[0]!);
   const soft = failed(up, new PublishError('Sin internet', true), T0);
   assert.deepEqual(soft.status, { kind: 'error', reason: 'Sin internet', retryable: true, at: T0 });
   assert.ok(canRetry(soft));
@@ -87,6 +88,7 @@ test('errors keep their reason; retryable ones go back to the queue', () => {
 
 test('cancel works before and during the upload, not after publishing', () => {
   const j = createJobs(batch())[0];
+  assert.ok(j);
   assert.equal(cancel(j).status.kind, 'cancelled');
   assert.equal(cancel(startUpload(j)).status.kind, 'cancelled');
   const done = published(startUpload(j), { url: 'u', remoteId: 'r' }, T0);
@@ -107,10 +109,11 @@ test('after a restart nothing is sent on its own', () => {
   const [a, b] = createJobs(batch());
   const [s1] = createJobs(batch({ batchId: 'old', scheduledAt: T0 + 1000 }));
   const [s2] = createJobs(batch({ batchId: 'future', scheduledAt: T0 + 99_000 }));
+  assert.ok(a && b && s1 && s2);
   const out = recoverOnLoad([startUpload(a), b, s1, s2, published(startUpload(a), { url: 'u', remoteId: 'r' }, T0)], T0 + 5000);
   assert.deepEqual(out.map((j) => j.status.kind), ['error', 'missed', 'missed', 'scheduled', 'published']);
   assert.ok(out.slice(0, 3).every(canRetry), 'the user can retry or publish now');
-  assert.equal(retry(out[2]).scheduledAt, undefined);
+  assert.equal(retry(out[2]!).scheduledAt, undefined);
 });
 
 test('the oldest pending job goes first', () => {
@@ -184,18 +187,21 @@ test('runner records the failure reason and retries on demand', async () => {
   await q.add(createJobs(batch({ targets: [{ network: 'youtube', account: { id: 'UC1', name: 'c' } }] })));
   await q.idle;
   const [j] = q.list();
+  assert.ok(j);
   assert.deepEqual(j.status.kind === 'error' && [j.status.reason, j.status.retryable], ['Se acabó el cupo diario', true]);
   await q.retry(j.id);
   await q.idle;
-  assert.equal(q.list()[0].status.kind, 'published');
-  assert.equal(q.list()[0].attempts, 2);
+  assert.equal(q.list()[0]?.status.kind, 'published');
+  assert.equal(q.list()[0]?.attempts, 2);
 });
 
 test('a missing video is a clear, final error', async () => {
   const { q } = makeQueue(fakePublisher(async () => ({ remoteId: 'x', url: 'u' })), {});
   await q.add(createJobs(batch({ targets: [{ network: 'youtube', account: { id: 'UC1', name: 'c' } }] })));
   await q.idle;
-  const s = q.list()[0].status;
+  const [job] = q.list();
+  assert.ok(job);
+  const s = job.status;
   assert.equal(s.kind, 'error');
   assert.equal(s.kind === 'error' && s.retryable, false);
 });
@@ -207,10 +213,10 @@ test('cancelling a running upload aborts it and marks it cancelled', async () =>
   const { q } = makeQueue(pub);
   await q.add(createJobs(batch({ targets: [{ network: 'youtube', account: { id: 'UC1', name: 'c' } }] })));
   await new Promise((r) => setTimeout(r, 1));
-  assert.equal(q.list()[0].status.kind, 'uploading');
-  await q.cancel(q.list()[0].id);
+  assert.equal(q.list()[0]?.status.kind, 'uploading');
+  await q.cancel(q.list()[0]!.id);
   await q.idle;
-  assert.equal(q.list()[0].status.kind, 'cancelled');
+  assert.equal(q.list()[0]?.status.kind, 'cancelled');
 });
 
 test('scheduled jobs start on the tick after their time', async () => {
@@ -218,10 +224,10 @@ test('scheduled jobs start on the tick after their time', async () => {
   const { q, setNow } = makeQueue(pub);
   await q.add(createJobs(batch({ scheduledAt: T0 + 60_000, targets: [{ network: 'youtube', account: { id: 'UC1', name: 'c' } }] })));
   await q.tick();
-  assert.equal(q.list()[0].status.kind, 'scheduled');
+  assert.equal(q.list()[0]?.status.kind, 'scheduled');
   setNow(T0 + 60_000);
   await q.tick();
-  assert.equal(q.list()[0].status.kind, 'published');
+  assert.equal(q.list()[0]?.status.kind, 'published');
 });
 
 test('loading saved jobs never starts an upload', async () => {
@@ -308,7 +314,7 @@ test('the queue keeps going when saving a job fails', async () => {
   // Not stuck: a later job still runs.
   await q.add(createJobs(batch({ batchId: 'b2', targets: [{ network: 'youtube', account: { id: 'UC1', name: 'c' } }] })));
   await q.idle;
-  assert.equal(q.list()[2].status.kind, 'published');
+  assert.equal(q.list()[2]?.status.kind, 'published');
   await q.tick();
   await new Promise((r) => setTimeout(r, 0));
   process.off('unhandledRejection', onUnhandled);
@@ -321,6 +327,6 @@ test('loading a saved queue survives storage failures', async () => {
     storage: { saveJob: async () => { throw new Error('closed'); }, getBlob: async () => undefined },
     now: () => T0,
   });
-  await q.load([{ ...createJobs(batch())[0], status: { kind: 'uploading', pct: 10 } }]);
-  assert.equal(q.list()[0].status.kind, 'error');
+  await q.load([{ ...createJobs(batch())[0]!, status: { kind: 'uploading', pct: 10 } }]);
+  assert.equal(q.list()[0]?.status.kind, 'error');
 });

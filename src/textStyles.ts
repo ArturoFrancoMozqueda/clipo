@@ -24,7 +24,7 @@ export interface TextStyle {
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
 const SERIF = 'Georgia, "Times New Roman", serif';
 
-export const TEXT_STYLES: TextStyle[] = [
+export const TEXT_STYLES: [TextStyle, ...TextStyle[]] = [
   { id: 'clasico', name: 'Clásico', font: SANS, weight: 800, fill: '#ffffff', stroke: '#000000', strokeW: 0.14 },
   { id: 'amarillo', name: 'Subtítulo', font: SANS, weight: 900, fill: '#ffe500', stroke: '#000000', strokeW: 0.16 },
   { id: 'caja', name: 'Caja', font: SANS, weight: 700, fill: '#ffffff', bg: 'rgba(0,0,0,0.72)' },
@@ -200,13 +200,14 @@ export function drawText(
       let x = cx - (widths.reduce((a, b) => a + b, 0) + space * Math.max(0, toks.length - 1)) / 2;
       toks.forEach((tok, j) => {
         const on = k++ === active;
-        const wx = x + widths[j] / 2;
-        x += widths[j] + space;
+        const tw = widths[j]!;
+        const wx = x + tw / 2;
+        x += tw + space;
         if (!on) return paint(tok, wx, y, fill);
         ctx.save();
         if (kara.mode === 'box') {
           ctx.fillStyle = kara.color;
-          roundRect(ctx, wx - widths[j] / 2 - fs * 0.14, y - fs * 0.6, widths[j] + fs * 0.28, fs * 1.2, fs * 0.22);
+          roundRect(ctx, wx - tw / 2 - fs * 0.14, y - fs * 0.6, tw + fs * 0.28, fs * 1.2, fs * 0.22);
           ctx.fill();
         } else if (kara.mode === 'scale') {
           ctx.translate(wx, y);

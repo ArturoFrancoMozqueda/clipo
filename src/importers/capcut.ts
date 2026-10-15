@@ -104,7 +104,7 @@ function pickAspect(canvas: unknown, notes: string[]): AspectId {
   const h = num(c.height, 0);
   if (w <= 0 || h <= 0) return '9:16';
   const r = w / h;
-  let best = RATIOS[0];
+  let best = RATIOS[0]!;
   for (const x of RATIOS) if (Math.abs(Math.log(x[1] / r)) < Math.abs(Math.log(best[1] / r))) best = x;
   if (Math.abs(Math.log(best[1] / r)) > 0.05) notes.push(`El formato ${w}×${h} no existe en Clipo; se usó ${best[0]}, el más parecido.`);
   return best[0];

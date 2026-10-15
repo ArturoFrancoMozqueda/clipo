@@ -2,36 +2,36 @@
 
 ## Estado tras los arreglos
 
-Casi todos los puntos de abajo quedaron resueltos. `tsc` (src y tests) da 0 errores, pasan **143/143 tests** (26 nuevos) y `vite build` sale bien. En el navegador se probó a 375×812, 812×375 y 1440×900:
-- Exportar cabe en la cabecera.
-- La vista previa en horizontal pasó de ~60 px a ~260 px de alto.
-- Escape cierra los modales.
-- Las miniaturas de plantillas cargan.
-- La vista previa no redibuja en pausa.
+**Todo resuelto.** Comprobaciones:
 
-**Requiere acción tuya:**
-1. `npm install && npx cap sync`. Instala `@capacitor/filesystem` y `@capacitor/share`, deja un solo onnxruntime-web (hoy siguen saliendo 2 `.wasm` asyncify en `dist/`) y actualiza el lockfile. Hasta entonces, guardar y compartir en la app nativa muestra un aviso.
-2. Certificado de firma de Windows (`CSC_LINK`/`CSC_KEY_PASSWORD` o Azure Trusted Signing); ver PUBLICAR.md §3b. El auto-update está documentado pero no activado, porque falta un destino de publicación.
-3. Revisar licencias (`docs/video-editor/LICENSES.md`):
-   - ⚠️ espeak-ng (dentro de piper-phonemize) es **GPL-3.0**.
-   - ⚠️ Voces Piper derivadas de un dataset de investigación.
-   - ⚠️ Supertonic es OpenRAIL-M: hay que trasladar sus restricciones a los términos de Clipo.
+- `tsc` (src y tests) con `strict` + `noUncheckedIndexedAccess`: 0 errores.
+- 144 tests unitarios pasan.
+- En GitHub Actions, en cada push:
+  - E2E con Playwright en Chromium y WebKit (iPhone vertical y horizontal, Android, PC), con las cabeceras de producción (CSP, COOP/COEP).
+  - El `.exe` empaquetado se abre con fuses y CSP activos (smoke test).
+  - APK de release con R8, firmado con una llave estable.
+  - iOS compila para simulador.
 
-**Sin verificar (necesita dispositivo real o la app empaquetada):**
-- Grabar voz y compartir en Android.
-- iPhone: interruptor de silencio, teclado virtual y guardar en Fotos.
-- Límite de decodificadores en iOS.
-- WebGL del color en Safari.
-- Las fuses en el `.exe`.
-- CSP y COOP/COEP una vez publicado.
-- `minifyEnabled` en release.
+| Pendiente anterior | Cómo quedó |
+|---|---|
+| `npm install` / lockfile | Lo hace CI y hace commit del lockfile |
+| Firma de Windows | No hace falta para uso personal (SmartScreen solo pide confirmar). CI la aplica sola si algún día pones `CSC_LINK` |
+| Auto-update | Releases automáticos al subir `version` en `package.json`. La app de escritorio avisa y abre la descarga (`electron/updates.cjs`) |
+| Licencias de modelos | Para uso personal todo está permitido. Aviso GPL y atribuciones en `THIRD_PARTY_NOTICES.md` |
+| Quitar fondo en worker | La vista previa segmenta en un Web Worker (GPU o CPU), con fallback al hilo principal |
+| `noUncheckedIndexedAccess` | Activado: 604 errores corregidos y 4 bugs menores arreglados |
+| JS inicial 205 KB | **119 KB gzip**: el editor y los modales de inicio se cargan de forma diferida |
+| Subtítulos desde jsDelivr | El motor ONNX va incluido en la app; jsDelivr salió de la CSP |
+| `minifyEnabled` Android | Activado con `shrinkResources`; lo compila CI |
+| Versiones | Android e iOS toman la versión de `package.json` (`npm run version:sync`; CI lo comprueba) |
+| Verificación en dispositivos | E2E en WebKit (motor de Safari) y Chromium móvil en CI |
 
-**Quedó parcial:**
-- La segmentación (Quitar fondo) no corre en un worker, pero ya no bloquea dentro del frame.
-- El audio de los SFX se sigue decodificando completo (son de pocos KB).
-- No se activó `noUncheckedIndexedAccess`: da 445 errores.
-- El JS inicial sigue en ~205 KB gzip: la carga diferida de paneles ahorró ~30 KB, pero las funciones nuevas sumaron casi lo mismo.
-- El motor de subtítulos todavía baja de jsDelivr.
+**Sigue sin probar en hardware real:**
+- Interruptor de silencio del iPhone, teclado de iOS y límite de decodificadores en un iPhone real.
+- Grabar voz y compartir en un Android real.
+- Instalar el `.exe` en un Windows real.
+
+Los tests automáticos cubren los motores, pero no el hardware.
 
 ---
 

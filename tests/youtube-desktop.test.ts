@@ -46,7 +46,7 @@ function fakeGoogle() {
       const partial = () => res.writeHead(308, st.received ? { Range: `bytes=0-${st.received - 1}` } : {}).end();
       if (range.startsWith('bytes */')) return st.received === st.total ? done() : partial();
       const [, a, b] = /bytes (\d+)-(\d+)\//.exec(range)!.map(Number);
-      if (a !== st.received || body.length !== b - a + 1) return json(400, { error: { message: 'bad range' } });
+      if (b === undefined || a !== st.received || body.length !== b - a + 1) return json(400, { error: { message: 'bad range' } });
       // The second chunk "drops" once: the client must ask what arrived and continue.
       if (a === CHUNK && st.failNext) return (st.failNext = false), json(503, {});
       st.received = b + 1;

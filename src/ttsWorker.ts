@@ -116,11 +116,11 @@ async function speak(msg: TtsIn) {
   try {
     const pieces: Float32Array[] = [];
     let sampleRate = 0;
-    for (let i = 0; i < msg.parts.length; i++) {
+    for (const [i, part] of msg.parts.entries()) {
       const out =
         msg.engine === 'piper'
-          ? await piperSpeak(msg.model, msg.parts[i], msg.speed, msg.speaker, (loaded, total) => post({ type: 'download', id: msg.id, loaded, total }))
-          : await run(msg, msg.lang ? `<${msg.lang}>${msg.parts[i]}</${msg.lang}>` : msg.parts[i], msg.voice ? { speaker_embeddings: msg.voice, num_inference_steps: 16, speed: msg.speed } : {});
+          ? await piperSpeak(msg.model, part, msg.speed, msg.speaker, (loaded, total) => post({ type: 'download', id: msg.id, loaded, total }))
+          : await run(msg, msg.lang ? `<${msg.lang}>${part}</${msg.lang}>` : part, msg.voice ? { speaker_embeddings: msg.voice, num_inference_steps: 16, speed: msg.speed } : {});
       sampleRate = out.sampling_rate;
       pieces.push(out.audio);
       post({ type: 'part', id: msg.id, done: i + 1, total: msg.parts.length });

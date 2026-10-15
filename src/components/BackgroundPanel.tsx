@@ -3,7 +3,7 @@ import { Droplets, ImageUp, Palette, RefreshCw, TriangleAlert, UserRound } from 
 import type { BgMode, BgRemoval, Clip } from '../types';
 import { useStore } from '../store';
 import { importFiles } from '../media';
-import { BG_COLORS, BG_DEFAULT, BG_LOAD_ERROR, loadSegmenter, useSegStatus } from '../segmentation';
+import { BG_COLORS, BG_DEFAULT, BG_LOAD_ERROR, preparePreview, useSegStatus } from '../segmentation';
 import { Hint, NeedsSelection, Slider, checkpoint, editSelected, useSelected } from './Panels';
 import './background.css';
 
@@ -34,7 +34,7 @@ export function BackgroundPanel() {
 
   // Start loading the model as soon as it is needed.
   useEffect(() => {
-    if (on && status === 'idle') loadSegmenter().catch(() => {});
+    if (on && status === 'idle') preparePreview();
   }, [on, status]);
 
   if (!clip) return <NeedsSelection what="un video o una foto" />;
@@ -88,7 +88,7 @@ export function BackgroundPanel() {
         <div className="bg-status bg-error">
           <TriangleAlert size={18} />
           <span>{BG_LOAD_ERROR}</span>
-          <button className="btn-ghost" onClick={() => loadSegmenter().catch(() => {})}>
+          <button className="btn-ghost" onClick={preparePreview}>
             <RefreshCw size={16} /> Reintentar
           </button>
         </div>

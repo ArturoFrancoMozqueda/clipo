@@ -38,6 +38,7 @@ export function Onboarding() {
     setStep(null);
   };
   const s = STEPS[step];
+  if (!s) return null;
   const last = step === STEPS.length - 1;
 
   return (

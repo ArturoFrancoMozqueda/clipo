@@ -20,7 +20,7 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# ---- Clipo: ready for minifyEnabled true (still off until a release build is tested on a device) ----
+# ---- Clipo: release builds use R8 (minifyEnabled true) ----
 # Capacitor and its official plugins ship their own consumer rules (plugin classes, @PluginMethod,
 # @CapacitorPlugin). These cover what the WebView reaches by reflection outside of those rules.
 -keepclassmembers class * {

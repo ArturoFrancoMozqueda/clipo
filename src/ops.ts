@@ -131,6 +131,7 @@ export function splitAtPlayhead() {
   const id = uid();
   s.commit((q) => {
     const c = q.clips[hit.index];
+    if (!c) return;
     const cut = c.in + (t - hit.start) * c.speed;
     q.clips.splice(hit.index + 1, 0, { ...c, id, in: cut });
     c.out = cut;
@@ -165,7 +166,8 @@ export function duplicateSelected() {
   s.commit((p) => {
     if (sel.kind === 'clip') {
       const i = p.clips.findIndex((c) => c.id === sel.id);
-      if (i >= 0) p.clips.splice(i + 1, 0, { ...p.clips[i], id });
+      const c = p.clips[i];
+      if (c) p.clips.splice(i + 1, 0, { ...c, id });
     } else if (sel.kind === 'text') {
       const x = p.texts.find((c) => c.id === sel.id);
       if (x) p.texts.push({ ...x, id, start: x.start + x.duration });
@@ -195,7 +197,7 @@ export function moveClip(dir: -1 | 1) {
   engine.pause();
   s.commit((p) => {
     const [c] = p.clips.splice(i, 1);
-    p.clips.splice(j, 0, c);
+    if (c) p.clips.splice(j, 0, c);
   });
   // Keep the playhead on the moved clip so the user sees where it went.
   const placed = layout(get().project!).find((l) => l.clip.id === sel.id);

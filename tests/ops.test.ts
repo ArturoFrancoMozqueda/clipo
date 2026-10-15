@@ -21,18 +21,20 @@ test('splitting an audio keeps the fade-in on the first half and the fade-out on
   at('audio', 'au1', 10);
   splitAtPlayhead();
   const [a, b] = st().project!.audios;
+  assert.ok(a && b);
   assert.deepEqual([a.start, a.in, a.out, a.fadeIn, a.fadeOut], [0, 5, 15, 2, 0]);
   assert.deepEqual([b.start, b.in, b.out, b.fadeIn, b.fadeOut], [10, 15, 25, 0, 3]);
   assert.deepEqual(st().selection, { kind: 'audio', id: b.id });
   st().undo();
   assert.equal(st().project!.audios.length, 1);
-  assert.deepEqual([st().project!.audios[0].fadeIn, st().project!.audios[0].fadeOut], [2, 3]);
+  assert.deepEqual([st().project!.audios[0]!.fadeIn, st().project!.audios[0]!.fadeOut], [2, 3]);
 });
 
 test('splitting a text keeps the entrance on the first piece and the exit on the second', () => {
   at('text', 't1', 3);
   splitAtPlayhead();
   const [a, b] = st().project!.texts;
+  assert.ok(a && b);
   assert.deepEqual([a.start, a.duration, b.start, b.duration], [1, 2, 3, 2]);
   assert.deepEqual(a.anim, { in: 'fade', out: 'none', loop: 'none' });
   assert.deepEqual(b.anim, { in: 'none', out: 'pop', loop: 'none' });
@@ -42,11 +44,13 @@ test('splitting a main clip cuts its source by speed and moves the transition to
   at(null, '', 11); // clip c2 (source 2..6 at 2x) is on 10..12
   splitAtPlayhead();
   const [c1, x, y] = st().project!.clips;
+  assert.ok(c1 && x && y);
   assert.equal(c1.id, 'c1');
   assert.deepEqual([x.in, x.out, y.in, y.out], [2, 4, 4, 6]);
   at(null, '', 4);
   splitAtPlayhead();
   const [a, b] = st().project!.clips;
+  assert.ok(a && b);
   assert.deepEqual([a.in, a.out, b.in, b.out], [0, 4, 4, 10]);
   assert.equal(a.transition, undefined);
   assert.deepEqual(b.transition, { type: 'fade', duration: 0.5 });
@@ -56,6 +60,7 @@ test('splitting a sticker and overlays (video and photo)', () => {
   at('sticker', 's1', 3);
   splitAtPlayhead();
   const [s1, s2] = st().project!.stickers!;
+  assert.ok(s1 && s2);
   assert.deepEqual([s1.duration, s2.start, s2.duration], [1, 3, 3]);
 
   at('overlay', 'o1', 2); // video overlay from 1 s, source 1..5

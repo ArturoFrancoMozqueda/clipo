@@ -29,7 +29,7 @@ test('linear and eased interpolation between keyframes', () => {
   near(poseAt(it, -1).x, 0);
   near(poseAt(it, 9).x, 1);
 
-  it.keyframes[0].ease = 'ease';
+  it.keyframes[0]!.ease = 'ease';
   near(poseAt(it, 1).x, 0.5); // symmetric at the middle
   assert.ok(poseAt(it, 0.5).x < 0.25, 'ease starts slower than linear');
   assert.ok(poseAt(it, 1.5).x > 0.75, 'and ends slower too');
@@ -97,8 +97,8 @@ test('each control moves the picture the expected way', () => {
   assert.ok(tone({ highlights: -0.8 }, 1, 0.9) < 0.9 && Math.abs(tone({ highlights: -0.8 }, 1, 0.1) - 0.1) < 0.01, 'highlights pull brights only');
   const gray = new Uint8ClampedArray([200, 100, 50, 255]);
   applyToPixels({ saturation: -1 }, gray);
-  assert.ok(Math.abs(gray[0] - gray[2]) <= 1, 'no saturation = gray');
-  for (const lut of toneLuts({ contrast: 1, brightness: 1 })) assert.ok(lut.every((v, i) => i === 0 || v >= lut[i - 1]), 'curves never invert');
+  assert.ok(Math.abs(gray[0]! - gray[2]!) <= 1, 'no saturation = gray');
+  for (const lut of toneLuts({ contrast: 1, brightness: 1 })) assert.ok(lut.every((v, i) => i === 0 || v >= lut[i - 1]!), 'curves never invert');
 });
 
 test('auto color fixes a warm, dark picture', () => {

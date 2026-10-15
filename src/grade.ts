@@ -130,9 +130,9 @@ function toneBytes(c: ColorAdjust | undefined) {
   const out = new Uint8Array(1024);
   const luts = c ? toneLuts(c) : null;
   for (let i = 0; i < 256; i++) {
-    out[i * 4] = luts ? luts[0][i] : i;
-    out[i * 4 + 1] = luts ? luts[1][i] : i;
-    out[i * 4 + 2] = luts ? luts[2][i] : i;
+    out[i * 4] = luts ? luts[0][i]! : i;
+    out[i * 4 + 1] = luts ? luts[1][i]! : i;
+    out[i * 4 + 2] = luts ? luts[2][i]! : i;
     out[i * 4 + 3] = 255;
   }
   return out;

@@ -74,7 +74,8 @@ interface SrcTime {
  * 16 kHz mono of a clip's in/out only (Whisper's input). Only that part of the file is decoded,
  * chunk by chunk; the browser does the resampling.
  */
-async function decodeClipMono(url: string, from: number, to: number): Promise<Float32Array | null> {
+async function decodeClipMono(url: string | undefined, from: number, to: number): Promise<Float32Array | null> {
+  if (!url) return null; // the file isn't loaded: same as a clip without sound
   try {
     const { extractAudio, resampleMono } = await import('./audioExtract');
     const blob = await (await fetch(url)).blob();
@@ -109,7 +110,7 @@ function timelineMapper(placed: Placed[], originalIds: Set<string>) {
 
 function rms(s: Float32Array, a = 0, b = s.length) {
   let sum = 0;
-  for (let i = a; i < b; i++) sum += s[i] * s[i];
+  for (let i = a; i < b; i++) sum += s[i]! * s[i]!;
   return Math.sqrt(sum / Math.max(1, b - a));
 }
 
@@ -146,9 +147,10 @@ function phrases(text: string): string[] {
   }
   if (cur) lines.push(cur);
   // Don't leave one short word alone on screen for a split second.
-  const last = lines[lines.length - 1];
-  if (lines.length > 1 && last.length < 12 && lines[lines.length - 2].length + last.length < MAX_CHARS + 12) {
-    lines.splice(-2, 2, `${lines[lines.length - 2]} ${last}`);
+  const last = lines.at(-1);
+  const prev = lines.at(-2);
+  if (last !== undefined && prev !== undefined && last.length < 12 && prev.length + last.length < MAX_CHARS + 12) {
+    lines.splice(-2, 2, `${prev} ${last}`);
   }
   return lines;
 }
@@ -192,8 +194,7 @@ export async function generateCaptions(opts: {
   opts.onProgress({ phase: 'audio', pct: 0 });
   const windows: CaptionWindow[] = [];
   const metas: WindowMeta[] = [];
-  for (let k = 0; k < placed.length; k++) {
-    const { clip } = placed[k];
+  for (const [k, { clip }] of placed.entries()) {
     const slice = await decodeClipMono(s.urls[clip.assetId], clip.in, clip.out);
     opts.onProgress({ phase: 'audio', pct: ((k + 1) / placed.length) * 100 });
     if (!slice) continue;
@@ -222,7 +223,7 @@ export async function generateCaptions(opts: {
       } else if (m.type === 'ready') {
         opts.onProgress({ phase: 'listen', pct: 0 });
       } else if (m.type === 'window') {
-        const meta = metas[m.id];
+        const meta = metas[m.id]!; // ids are the indexes of `windows`, sent above
         const toSource = (t: number): SrcTime => ({ clipId: meta.clipId, assetId: meta.assetId, t: meta.srcStart + t });
         if (m.words) spoken.push(...cleanWords(m.chunks, meta.length).map((w) => ({ text: w.text, start: toSource(w.start), end: toSource(w.end) })));
         else for (const c of m.chunks) {
@@ -319,8 +320,7 @@ function cleanWords(chunks: { text: string; start: number; end: number | null }[
 function cuesToItems(cues: Cue[], look: CaptionLook): TextItem[] {
   const sorted = [...cues].sort((a, b) => a.start - b.start);
   const items: TextItem[] = [];
-  for (let i = 0; i < sorted.length; i++) {
-    const f = sorted[i];
+  for (const [i, f] of sorted.entries()) {
     const next = sorted[i + 1]?.start ?? Infinity;
     const end = Math.min(Math.max(f.end, f.start + MIN_SHOW), next);
     if (end - f.start < 0.15) continue;
@@ -389,7 +389,7 @@ export function saveCaptionLook(l: CaptionLook) {
 /** Give a caption the chosen look (keeps its text, timing and position). */
 export function styleCaption(t: TextItem, look: CaptionLook): TextItem {
   const kit = look.style === 'marca' ? getBrand() : null;
-  const def = CAPTION_STYLES.find((c) => c.id === look.style) ?? CAPTION_STYLES[0];
+  const def = CAPTION_STYLES.find((c) => c.id === look.style) ?? CAPTION_STYLES[0]!;
   if (kit) {
     t.styleId = kit.styleId;
     t.font = kit.font;

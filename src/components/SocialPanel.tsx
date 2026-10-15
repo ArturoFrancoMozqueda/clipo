@@ -372,8 +372,7 @@ function VersionsSection({ targets }: { targets: PublishTarget[] }) {
     const made: Version[] = [];
     try {
       const { exportVideo } = await import('../exporter');
-      for (let i = 0; i < versions.length; i++) {
-        const v = versions[i];
+      for (const [i, v] of versions.entries()) {
         setRunning({ index: i, total: versions.length, progress: null });
         const { blob, ext } = await exportVideo(quality, (progress) => !ac.signal.aborted && setRunning({ index: i, total: versions.length, progress }), ac.signal, {
           aspect: v.aspect,
@@ -399,6 +398,7 @@ function VersionsSection({ targets }: { targets: PublishTarget[] }) {
   };
 
   const downloadAll = () => void saveFiles(done.map((v) => v.file));
+  const current = running ? versions[running.index] : undefined;
 
   return (
     <>
@@ -408,7 +408,7 @@ function VersionsSection({ targets }: { targets: PublishTarget[] }) {
         <div className="export-running">
           <div className="progress"><span style={{ width: `${running.progress?.pct ?? 0}%` }} /></div>
           <p>
-            Guardando versión {running.index + 1} de {running.total} ({versions[running.index].aspect} · {names(versions[running.index].platforms)})…{' '}
+            Guardando versión {running.index + 1} de {running.total}{current && <> ({current.aspect} · {names(current.platforms)})</>}…{' '}
             <b>{Math.floor(running.progress?.pct ?? 0)} %</b>
           </p>
           <Hint>No cierres ni cambies de pestaña o de app mientras se guarda.</Hint>

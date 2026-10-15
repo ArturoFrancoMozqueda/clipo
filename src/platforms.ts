@@ -24,7 +24,7 @@ export interface Platform {
   /** Short note shown under the name. */
   hint: string;
   /** Accepted formats; the first one is the recommended one. */
-  formats: AspectId[];
+  formats: [AspectId, ...AspectId[]];
   /** Recommended short side in pixels (1080 → 1080×1920 vertical, 1920×1080 horizontal). */
   short: number;
   /** Highest frame rate accepted. Clipo exports at 30 fps, which every network accepts. */
@@ -279,7 +279,7 @@ export function audioLevels(channels: ArrayLike<number>[]): AudioLevels {
   let clip = 0;
   for (const ch of channels) {
     for (let i = 0; i < ch.length; i++) {
-      const a = Math.abs(ch[i]);
+      const a = Math.abs(ch[i]!);
       if (a > peak) peak = a;
       if (a >= 0.999) clip++;
       sq += a * a;

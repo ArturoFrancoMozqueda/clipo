@@ -403,16 +403,18 @@ function History() {
   return (
     <div className="pub-history">
       {batches.map((list) => {
+        const [first] = list;
+        if (!first) return null;
         const settled = list.every((j) => !['uploading', 'pending', 'scheduled'].includes(j.status.kind));
         return (
-          <section key={list[0].batchId} className="pub-batch">
+          <section key={first.batchId} className="pub-batch">
             <header>
-              <b>{list[0].post.title || list[0].video.name}</b>
-              <span className="muted small">{new Date(list[0].createdAt).toLocaleString('es')}</span>
+              <b>{first.post.title || first.video.name}</b>
+              <span className="muted small">{new Date(first.createdAt).toLocaleString('es')}</span>
             </header>
             {list.map((j) => <JobRow key={j.id} job={j} />)}
             {settled && (
-              <button className="link small" onClick={() => forgetBatch(list[0].batchId)}>Quitar del historial</button>
+              <button className="link small" onClick={() => forgetBatch(first.batchId)}>Quitar del historial</button>
             )}
           </section>
         );

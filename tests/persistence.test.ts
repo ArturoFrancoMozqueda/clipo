@@ -90,10 +90,10 @@ test('closing or switching projects saves the previous one right away', async ()
 
 test('the project summary has what the list needs and every media id', () => {
   const p = sampleProject();
-  p.clips[0].bgRemoval = { mode: 'media', color: '#000', assetId: 'bg1', smooth: 0.5 };
+  p.clips[0]!.bgRemoval = { mode: 'media', color: '#000', assetId: 'bg1', smooth: 0.5 };
   const m = projectMeta(p);
   assert.deepEqual([m.id, m.name, m.aspect, m.clipCount], ['p1', 'Prueba', '9:16', 2]);
-  assert.equal(m.thumb, p.assets.v1.thumb);
+  assert.equal(m.thumb, p.assets.v1!.thumb);
   assert.ok(m.duration >= 12);
   assert.deepEqual(new Set(projectAssetIds(p)), new Set(['v1', 'a1', 'i1', 'bg1']));
   assert.ok(!('clips' in m), 'no timeline in the summary');

@@ -30,10 +30,12 @@ test('maps the main track, texts, audio and canvas of the fixture', () => {
 
   assert.equal(p.texts.length, 2);
   assert.deepEqual(p.texts[0], { text: '¡Hola playa!', start: 0.5, duration: 2, x: 0.5, y: 0.25, size: 0.075 });
-  assert.equal(p.texts[1].text, 'Fin del viaje');
-  assert.equal(p.texts[1].x, 0.25);
-  assert.equal(p.texts[1].y, 0.9);
-  assert.equal(p.texts[1].size, 0.1);
+  const last = p.texts[1];
+  assert.ok(last);
+  assert.equal(last.text, 'Fin del viaje');
+  assert.equal(last.x, 0.25);
+  assert.equal(last.y, 0.9);
+  assert.equal(last.size, 0.1);
 
   assert.deepEqual(p.audios, [{ media: 'a1', start: 1, in: 1, out: 6, volume: 0.8 }]);
 });

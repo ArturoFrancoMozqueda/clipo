@@ -56,5 +56,5 @@ export const desktop = (): DesktopBridge | undefined => (typeof window !== 'unde
 export function bridgeError(err: unknown): { message: string; retryable: boolean } {
   const raw = (err instanceof Error ? err.message : String(err)).replace(/^Error invoking remote method '[^']+':\s*(\w*Error:\s*)?/, '');
   const m = /^([RF])\|([\s\S]*)$/.exec(raw);
-  return m ? { message: m[2], retryable: m[1] === 'R' } : { message: raw, retryable: true };
+  return m ? { message: m[2] ?? '', retryable: m[1] === 'R' } : { message: raw, retryable: true };
 }

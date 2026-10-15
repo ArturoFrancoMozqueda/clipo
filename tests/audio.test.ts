@@ -111,7 +111,7 @@ test('duck curve goes down before the voice, stays down, and comes back smoothly
   // Steps are small: never more than the attack slope per frame (no clicks).
   const maxStep = (12 / 0.2) * FRAME + 1e-6;
   for (let i = 1; i < n; i++) {
-    const d = Math.abs(20 * Math.log10(c[i]) - 20 * Math.log10(c[i - 1]));
+    const d = Math.abs(20 * Math.log10(c[i]!) - 20 * Math.log10(c[i - 1]!));
     assert.ok(d <= maxStep, `step ${d} dB at frame ${i}`);
   }
 });
@@ -155,8 +155,10 @@ test('finds long pauses with a margin, ignores short ones', () => {
   const s = concat(sine(1, -20, 300, sr), silence(1.5, sr), sine(1, -20, 300, sr), silence(0.3, sr), sine(1, -20, 300, sr));
   const found = findSilences(frameLevels(s, sr), { minDuration: 0.8, margin: 0.15 });
   assert.equal(found.length, 1);
-  near(found[0].start, 1.15, 0.03);
-  near(found[0].end, 2.35, 0.03);
+  const [pause] = found;
+  assert.ok(pause);
+  near(pause.start, 1.15, 0.03);
+  near(pause.end, 2.35, 0.03);
 });
 
 test('silence at the start or end is cut without a margin; silent files give nothing', () => {
@@ -164,10 +166,12 @@ test('silence at the start or end is cut without a margin; silent files give not
   const s = concat(silence(1, sr), sine(1, -20, 300, sr), silence(2, sr));
   const found = findSilences(frameLevels(s, sr), { minDuration: 0.8, margin: 0.15 });
   assert.equal(found.length, 2);
-  near(found[0].start, 0, 1e-6);
-  near(found[0].end, 0.85, 0.03);
-  near(found[1].start, 2.15, 0.03);
-  near(found[1].end, 4, 0.03);
+  const [head, tail] = found;
+  assert.ok(head && tail);
+  near(head.start, 0, 1e-6);
+  near(head.end, 0.85, 0.03);
+  near(tail.start, 2.15, 0.03);
+  near(tail.end, 4, 0.03);
   assert.deepEqual(findSilences(frameLevels(silence(3, sr), sr)), []);
 });
 
@@ -185,10 +189,12 @@ test('planned cuts map clip source time to the timeline', () => {
   const p = project({ clips: [clip('a', 10, 12), clip('b', 3, 10, { speed: 2 })] });
   const cuts = planSilenceCuts(p, { v: levels }, { margin: 0.1, minDuration: 0.8 });
   assert.equal(cuts.length, 1);
-  assert.equal(cuts[0].clipId, 'b');
-  near(cuts[0].src.start, 4.1, 0.03);
-  near(cuts[0].src.end, 5.9, 0.03);
-  near(cuts[0].at.start, 2 + (4.1 - 3) / 2, 0.02);
+  const [cut] = cuts;
+  assert.ok(cut);
+  assert.equal(cut.clipId, 'b');
+  near(cut.src.start, 4.1, 0.03);
+  near(cut.src.end, 5.9, 0.03);
+  near(cut.at.start, 2 + (4.1 - 3) / 2, 0.02);
 });
 
 test('removing silences splits the clip and moves later items earlier', () => {
@@ -202,10 +208,10 @@ test('removing silences splits the clip and moves later items earlier', () => {
   const removed = applySilenceCuts(p, cuts, () => `new${n++}`);
   near(removed, 2, 1e-9);
   assert.deepEqual(p.clips.map((c) => [c.id, c.in, c.out]), [['a', 0, 3], ['new0', 5, 10], ['b', 10, 14]]);
-  assert.equal(p.clips[0].transition, undefined, 'transition only on the last piece');
-  assert.deepEqual(p.clips[1].transition, { type: 'fade', duration: 0.5 });
-  near(p.texts[0].start, 4, 1e-9);
-  near(p.audios[0].out - p.audios[0].in, 12, 1e-9, 'music ends with the shorter video');
+  assert.equal(p.clips[0]!.transition, undefined, 'transition only on the last piece');
+  assert.deepEqual(p.clips[1]!.transition, { type: 'fade', duration: 0.5 });
+  near(p.texts[0]!.start, 4, 1e-9);
+  near(p.audios[0]!.out - p.audios[0]!.in, 12, 1e-9, 'music ends with the shorter video');
 });
 
 test('ripple time', () => {

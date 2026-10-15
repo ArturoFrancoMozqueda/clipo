@@ -66,6 +66,9 @@ export async function buildProject(plan: DraftPlan, files: Map<string, File>): P
   // importFiles registered object URLs in the store; hand them to the new project.
   const all = useStore.getState().urls;
   const urls: Record<string, string> = {};
-  for (const a of assets.values()) if (all[a.id]) urls[a.id] = all[a.id];
+  for (const a of assets.values()) {
+    const url = all[a.id];
+    if (url) urls[a.id] = url;
+  }
   return { project: p, urls, problems };
 }

@@ -1,6 +1,13 @@
 // Runs Whisper on the device. Loaded only when the user asks for captions,
 // so the model code never weighs on normal editing.
-import { pipeline, type AutomaticSpeechRecognitionPipeline, type ProgressInfo } from '@huggingface/transformers';
+import { env, pipeline, type AutomaticSpeechRecognitionPipeline, type ProgressInfo } from '@huggingface/transformers';
+import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
+import ortMjs from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
+
+// The ONNX Runtime files ship with the app (same ones as the voices): no CDN, works offline once
+// the model is cached, and the page's CSP doesn't need to allow jsDelivr.
+const onnx = env.backends.onnx as { wasm?: { wasmPaths?: unknown } };
+if (onnx.wasm) onnx.wasm.wasmPaths = { wasm: ortWasm, mjs: ortMjs };
 
 export interface CaptionWindow {
   id: number;

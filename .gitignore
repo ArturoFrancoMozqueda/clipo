@@ -3,3 +3,5 @@ dist
 *.jks
 *.keystore
 release
+test-results
+playwright-report

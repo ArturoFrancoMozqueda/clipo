@@ -158,8 +158,8 @@ test('smoothing fills gaps, removes jitter and does not lag', () => {
 
   // Steady motion keeps its ends: no pull toward the middle at the start and end of the clip.
   const pan = smoothTrack(Array.from({ length: 13 }, (_, i) => ({ t: i / 3, x: 0.15 + 0.05 * i, y: 0.5 })));
-  near(pan[0].x, 0.15, 1e-3);
-  near(pan[12].x, 0.75, 1e-3);
+  near(pan[0]!.x, 0.15, 1e-3);
+  near(pan[12]!.x, 0.75, 1e-3);
 
   const gaps = smoothTrack([{ t: 0, x: 0.3, y: 0.3 }, { t: 1 }, { t: 2 }, { t: 3, x: 0.3, y: 0.3 }], 0);
   assert.deepEqual(gaps.map((p) => p.x), [0.3, 0.3, 0.3, 0.3]);

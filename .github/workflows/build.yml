@@ -1,16 +1,22 @@
-# Builds Clipo on GitHub's machines, so nothing has to be installed locally.
-# - Every push to main / PR: tests + web build, Windows .exe and Android .apk as downloadable artifacts.
-# - A tag like v0.4.0: the same, plus a GitHub Release with the files attached.
-# - "Run workflow" button (Actions tab): run it by hand.
+# Builds, tests and publishes Clipo on GitHub's machines, so nothing has to be installed locally.
 #
-# Optional secrets (Settings → Secrets and variables → Actions) to sign the Windows installer:
-#   CSC_LINK (base64 of the .pfx or an https URL) and CSC_KEY_PASSWORD. Without them it builds unsigned.
+# Every push to main / PR:
+#   tests + web build, end-to-end tests (Chromium and WebKit, phone and PC sizes, production headers),
+#   Windows .exe (with a smoke test of the packaged app), signed Android .apk, iOS compile check.
+# Push to main with a new "version" in package.json:
+#   also publishes GitHub Release v<version> with the .exe and .apk attached. The desktop app
+#   then offers the update. To release: bump "version" in package.json and push.
+# "Run workflow" button (Actions tab): run it by hand.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE (base64 .p12), ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS: stable APK signature,
+#     so new versions install over the old one without losing projects.
+#   CSC_LINK, CSC_KEY_PASSWORD (optional): sign the Windows installer.
 name: Build
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -30,6 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # to commit package-lock.json when it changes
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,11 +45,22 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       # `npm install` (not `npm ci`) keeps working while package-lock.json is behind package.json;
-      # the step below commits the updated lockfile back to main.
+      # the last step commits the updated lockfile back to main.
       - run: npm install --no-audit --no-fund
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - run: node scripts/sync-version.mjs --check
       - run: npx tsc --noEmit -p tsconfig.test.json
       - run: npm test
       - run: npm run build
+      # Reports known vulnerabilities in what ships to users; informative, it doesn't block a release.
+      - run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+          retention-days: 3
       - name: Guardar package-lock.json actualizado
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -52,6 +71,30 @@ jobs:
             git commit -m "chore: update package-lock.json [skip ci]"
             git push
           fi
+
+  e2e:
+    name: E2E (Chromium + WebKit, móvil y PC)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
 
   windows:
     name: Windows (.exe)
@@ -64,7 +107,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm install --no-audit --no-fund
-      - run: npm run build
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist
       - name: Firma (solo si hay certificado)
         shell: bash
         env:
@@ -79,6 +125,18 @@ jobs:
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
           fi
       - run: npx electron-builder --win --publish never
+      # Opens the packaged app (fuses, asar integrity and CSP all active) and checks the editor loads.
+      - name: Smoke test del .exe empaquetado
+        shell: bash
+        env:
+          CLIPO_SMOKE: '1'
+        run: |
+          set +e
+          timeout 120 ./release/build/win-unpacked/Clipo.exe > smoke.log 2>&1
+          code=$?
+          cat smoke.log
+          if grep -q 'renderer error' smoke.log; then echo "La app mostró errores en consola"; exit 1; fi
+          exit $code
       - uses: actions/upload-artifact@v4
         with:
           name: clipo-windows
@@ -101,31 +159,104 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - run: npm install --no-audit --no-fund
-      - run: npm run build
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist
       - run: npx cap sync android
-      # Debug build: installable for testing. A Play Store release needs your keystore (see PUBLICAR.md).
-      - run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Llave de firma
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE" ]; then
+            echo "$ANDROID_KEYSTORE" | base64 -d > "$RUNNER_TEMP/clipo-release.p12"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/clipo-release.p12" >> "$GITHUB_ENV"
+          else
+            echo "Sin llave (p. ej. PR de un fork): el APK de release sale sin firmar y se sube el de debug."
+          fi
+      # Release = R8 minify + shrink, signed with the stable key.
+      - run: chmod +x gradlew && ./gradlew assembleRelease assembleDebug --no-daemon
         working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      - name: Elegir APK
+        env:
+          VERSION: ${{ needs.test.outputs.version }}
+        run: |
+          mkdir out
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "out/Clipo-$VERSION.apk"
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk "out/Clipo-$VERSION-debug.apk"
+          fi
+          ls -la out
       - uses: actions/upload-artifact@v4
         with:
           name: clipo-android
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: out/*.apk
           if-no-files-found: error
+
+  ios:
+    name: iOS (compila en simulador)
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+      - run: npx cap sync ios
+      # No signing: this only proves the project (privacy manifest, plugins, versions) builds.
+      # Installing on an iPhone needs a Mac with Xcode and an Apple ID (see PUBLICAR.md).
+      - run: >
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug
+          -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO build | tail -n 30; exit ${PIPESTATUS[0]}
+        shell: bash
 
   release:
     name: Publicar release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, android]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, e2e, windows, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      TAG: v${{ needs.test.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/download-artifact@v4
+      - name: ¿Versión nueva?
+        id: check
+        run: |
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Ya existe $TAG: no se publica nada. Sube \"version\" en package.json para publicar."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.new == 'true'
+        uses: actions/download-artifact@v4
         with:
+          pattern: clipo-*
           path: out
-      - uses: softprops/action-gh-release@v2
+          merge-multiple: true
+      - if: steps.check.outputs.new == 'true'
+        uses: softprops/action-gh-release@v2
         with:
-          files: |
-            out/clipo-windows/*.exe
-            out/clipo-android/*.apk
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Clipo ${{ needs.test.outputs.version }}
           generate_release_notes: true
+          files: out/*
+          body: |
+            **Windows:** `Clipo-Setup-*.exe` (instalador) o `Clipo-Portable-*.exe` (sin instalar). No está firmado: en SmartScreen elige "Más información" → "Ejecutar de todas formas".
+            **Android:** `Clipo-*.apk`. Se instala encima de la versión anterior sin perder tus proyectos.
+
+            Componentes de terceros y licencias (incluye el aviso GPL de espeak-ng): [THIRD_PARTY_NOTICES.md](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/THIRD_PARTY_NOTICES.md)

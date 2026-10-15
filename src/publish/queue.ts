@@ -224,9 +224,10 @@ export class PublishQueue {
         { jobId: job.id, accountId: job.accountId, network: job.network, video, videoInfo: job.video, thumbnail, post: job.post, options: job.options },
         (pct) => {
           const i = this.jobs.findIndex((j) => j.id === job.id);
-          if (i < 0 || ac.signal.aborted) return;
-          const next = progress(this.jobs[i], pct);
-          if (next !== this.jobs[i]) {
+          const cur = this.jobs[i];
+          if (!cur || ac.signal.aborted) return;
+          const next = progress(cur, pct);
+          if (next !== cur) {
             this.jobs = this.jobs.map((j, k) => (k === i ? next : j));
             this.emit();
           }

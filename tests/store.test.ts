@@ -26,10 +26,10 @@ test('produce copies only the changed path and never touches the base', () => {
   const base = sampleProject();
   const before = JSON.stringify(base);
   const next = produce(base, (p) => {
-    p.clips[1].speed = 3;
+    p.clips[1]!.speed = 3;
   });
   assert.equal(JSON.stringify(base), before);
-  assert.equal(next.clips[1].speed, 3);
+  assert.equal(next.clips[1]!.speed, 3);
   assert.notEqual(next.clips, base.clips);
   assert.equal(next.clips[0], base.clips[0], 'untouched clip shared');
   assert.equal(next.assets, base.assets, 'assets (thumbnails) shared');
@@ -42,7 +42,7 @@ test('produce returns the base when nothing changed, even after reads', () => {
   const base = sampleProject();
   const next = produce(base, (p) => {
     void p.clips.find((c) => c.id === 'c2')!.speed;
-    p.texts[0].x = 0.5; // same value
+    p.texts[0]!.x = 0.5; // same value
   });
   assert.equal(next, base);
 });
@@ -50,29 +50,30 @@ test('produce returns the base when nothing changed, even after reads', () => {
 test('produce handles spreads, filter, splice, push, delete and moved items', () => {
   const base = sampleProject();
   const next = produce(base, (p) => {
-    p.clips.splice(1, 0, { ...p.clips[0], id: 'c3', in: 4 });
-    delete p.clips[0].transition;
+    p.clips.splice(1, 0, { ...p.clips[0]!, id: 'c3', in: 4 });
+    delete p.clips[0]!.transition;
     p.audios = p.audios.filter((a) => a.id !== 'nope');
-    p.audios[0].volume = 0.1;
+    p.audios[0]!.volume = 0.1;
     const [s] = p.stickers!.splice(0, 1);
+    assert.ok(s);
     p.stickers!.push(s);
-    p.texts.push({ ...p.texts[0], id: 't2' });
-    p.texts[1].anim!.in = 'none';
+    p.texts.push({ ...p.texts[0]!, id: 't2' });
+    p.texts[1]!.anim!.in = 'none';
   });
   assertNoDrafts(next);
   assert.deepEqual(next.clips.map((c) => c.id), ['c1', 'c3', 'c2']);
-  assert.equal(next.clips[0].transition, undefined);
-  assert.deepEqual(next.clips[1].transition, { type: 'fade', duration: 0.5 });
-  assert.equal(base.clips[0].transition?.type, 'fade');
-  assert.equal(next.audios[0].volume, 0.1);
-  assert.equal(base.audios[0].volume, 0.8);
+  assert.equal(next.clips[0]!.transition, undefined);
+  assert.deepEqual(next.clips[1]!.transition, { type: 'fade', duration: 0.5 });
+  assert.equal(base.clips[0]!.transition?.type, 'fade');
+  assert.equal(next.audios[0]!.volume, 0.1);
+  assert.equal(base.audios[0]!.volume, 0.8);
   assert.equal(next.stickers![0], base.stickers![0]);
-  assert.equal(next.texts[1].anim!.in, 'none');
+  assert.equal(next.texts[1]!.anim!.in, 'none');
   // Like plain JS: a shallow spread shares the nested object, so both see the change.
-  assert.equal(next.texts[0].anim, next.texts[1].anim);
-  assert.equal(base.texts[0].anim!.in, 'fade');
+  assert.equal(next.texts[0]!.anim, next.texts[1]!.anim);
+  assert.equal(base.texts[0]!.anim!.in, 'fade');
   assert.ok(Array.isArray(next.clips));
-  assert.deepEqual(Object.keys(next.clips[1]).sort(), Object.keys(base.clips[0]).sort());
+  assert.deepEqual(Object.keys(next.clips[1]!).sort(), Object.keys(base.clips[0]!).sort());
 });
 
 test('produce does not change outside objects put into the project', () => {
@@ -83,7 +84,7 @@ test('produce does not change outside objects put into the project', () => {
     p.assets.z.name = 'renamed';
   });
   assert.equal(outside.name, 'x');
-  assert.equal(next.assets.z.name, 'renamed');
+  assert.equal(next.assets.z?.name, 'renamed');
   assert.equal(next.assets.v1, base.assets.v1);
   assertNoDrafts(next);
 });
@@ -93,10 +94,10 @@ test('produce does not change outside objects put into the project', () => {
 test('commit records one step; undo and redo walk it both ways', () => {
   open();
   const p0 = st().project!;
-  st().commit((p) => void (p.clips[0].volume = 0));
+  st().commit((p) => void (p.clips[0]!.volume = 0));
   const p1 = st().project!;
-  assert.equal(p1.clips[0].volume, 0);
-  assert.equal(p0.clips[0].volume, 1, 'the snapshot is not modified');
+  assert.equal(p1.clips[0]!.volume, 0);
+  assert.equal(p0.clips[0]!.volume, 1, 'the snapshot is not modified');
   assert.equal(st().past.length, 1);
   st().undo();
   assert.equal(st().project, p0);
@@ -113,14 +114,14 @@ test('checkpoint + live edits (a drag) undo as one step and share the heavy data
   open();
   const p0 = st().project!;
   st().checkpoint();
-  for (let i = 1; i <= 50; i++) st().live((p) => void (p.texts[0].x = i / 100));
+  for (let i = 1; i <= 50; i++) st().live((p) => void (p.texts[0]!.x = i / 100));
   assert.equal(st().past.length, 1);
-  assert.equal(st().project!.texts[0].x, 0.5);
+  assert.equal(st().project!.texts[0]!.x, 0.5);
   assert.equal(st().project!.assets, p0.assets, 'thumbnails are not copied per pointer move');
   assert.equal(st().project!.luts, p0.luts);
   st().undo();
   assert.equal(st().project, p0);
-  assert.equal(st().project!.texts[0].x, 0.5);
+  assert.equal(st().project!.texts[0]!.x, 0.5);
 });
 
 test('a checkpoint with no change is not an extra undo step', () => {
@@ -140,7 +141,7 @@ test('history keeps at most HISTORY_LIMIT steps', () => {
   open();
   for (let i = 0; i < HISTORY_LIMIT + 20; i++) st().commit((p) => void (p.name = `v${i}`));
   assert.equal(st().past.length, HISTORY_LIMIT);
-  assert.equal(st().past[0].name, 'v19');
+  assert.equal(st().past[0]?.name, 'v19');
   for (let i = 0; i < HISTORY_LIMIT + 5; i++) st().undo();
   assert.equal(st().project!.name, 'v19');
 });
@@ -154,7 +155,7 @@ test('undo drops a selection whose item is gone; selectionExists checks every ki
   }
   assert.equal(selectionExists(null, { kind: 'clip', id: 'c1' }), null);
   assert.equal(selectionExists({ ...p, overlays: undefined }, { kind: 'overlay', id: 'o1' }), null);
-  st().commit((q) => void q.texts.push({ ...q.texts[0], id: 'new' }));
+  st().commit((q) => void q.texts.push({ ...q.texts[0]!, id: 'new' }));
   st().select({ kind: 'text', id: 'new' });
   st().undo();
   assert.equal(st().selection, null);
@@ -185,8 +186,12 @@ test('opening a damaged project fills defaults instead of crashing', () => {
   assert.equal(p.aspect, '9:16');
   assert.deepEqual(Object.keys(p.assets), ['v1']);
   assert.equal(p.clips.length, 1);
-  assert.deepEqual([p.clips[0].speed, p.clips[0].volume, p.clips[0].filter, p.clips[0].fit], [1, 1, 'none', 'fit']);
-  assert.deepEqual([p.texts[0].start, p.texts[0].duration, p.texts[0].styleId], [0, 3, 'clasico']);
+  const [c] = p.clips;
+  assert.ok(c);
+  assert.deepEqual([c.speed, c.volume, c.filter, c.fit], [1, 1, 'none', 'fit']);
+  const [t] = p.texts;
+  assert.ok(t);
+  assert.deepEqual([t.start, t.duration, t.styleId], [0, 3, 'clasico']);
   assert.deepEqual(p.audios, []);
   assert.deepEqual(p.stickers, []);
   assert.ok(p.createdAt > 0 && p.updatedAt > 0);

@@ -6,7 +6,7 @@
 /** Decoded sound of [start, start + length / sampleRate) seconds of the source. */
 export interface Pcm {
   sampleRate: number;
-  /** One array per channel, all the same length. */
+  /** One array per channel (always at least one), all the same length. */
   channels: Float32Array[];
   /** Source time of the first sample, in seconds. */
   start: number;
@@ -54,7 +54,7 @@ function planes(smp: { numberOfChannels: number; numberOfFrames: number; copyTo(
     const tmp = new Float32Array(n);
     for (let ch = 0; ch < src; ch++) {
       smp.copyTo(tmp, { planeIndex: ch, format: 'f32-planar' });
-      for (let i = 0; i < n; i++) mono[i] += tmp[i] / src;
+      for (let i = 0; i < n; i++) mono[i]! += tmp[i]! / src;
     }
     out.push(mono);
   } else {
@@ -103,10 +103,10 @@ export async function extractAudio(blob: Blob, from: number, to: number, opts: O
         }
         const at = Math.round((smp.timestamp - from) * sr);
         const data = planes(smp, outCh);
-        const len = chans[0].length;
+        const len = chans[0]!.length;
         const a = Math.max(0, -at);
         const b = Math.min(smp.numberOfFrames, len - at);
-        if (b > a) for (let ch = 0; ch < outCh; ch++) chans[ch].set(data[ch].subarray(a, b), at + a);
+        if (b > a) for (let ch = 0; ch < outCh; ch++) chans[ch]!.set(data[ch]!.subarray(a, b), at + a);
       } finally {
         smp.close();
       }
@@ -137,7 +137,7 @@ export async function extractLevels(blob: Blob, frame: number, fallbackRate = 22
     opened = await openTrack(blob);
   } catch {
     const pcm = await fallbackRange(blob, 0, Infinity, 1, fallbackRate);
-    return pcm ? { levels: levelsOf(pcm.channels[0], pcm.sampleRate, frame) } : null;
+    return pcm ? { levels: levelsOf(pcm.channels[0]!, pcm.sampleRate, frame) } : null;
   }
   const { mb, input, track } = opened;
   if (!track) {
@@ -159,9 +159,9 @@ export async function extractLevels(blob: Blob, frame: number, fallbackRate = 22
     for await (const smp of sink.samples()) {
       try {
         if (!n) n = Math.max(1, Math.round(frame * smp.sampleRate));
-        const [mono] = planes(smp, 1);
+        const mono = planes(smp, 1)[0]!;
         for (let i = 0; i < mono.length; i++) {
-          sum += mono[i] * mono[i];
+          sum += mono[i]! * mono[i]!;
           if (++count === n) flush();
         }
       } finally {
@@ -175,7 +175,7 @@ export async function extractLevels(blob: Blob, frame: number, fallbackRate = 22
   } catch (e) {
     console.warn('mediabunny could not decode the sound, using decodeAudioData', e);
     const pcm = await fallbackRange(blob, 0, Infinity, 1, fallbackRate);
-    return pcm ? { levels: levelsOf(pcm.channels[0], pcm.sampleRate, frame) } : null;
+    return pcm ? { levels: levelsOf(pcm.channels[0]!, pcm.sampleRate, frame) } : null;
   } finally {
     input.dispose();
   }
@@ -190,7 +190,7 @@ function levelsOf(samples: Float32Array, sampleRate: number, frame: number) {
     let sum = 0;
     const a = f * n;
     const b = Math.min(samples.length, a + n);
-    for (let i = a; i < b; i++) sum += samples[i] * samples[i];
+    for (let i = a; i < b; i++) sum += samples[i]! * samples[i]!;
     out[f] = toDb(Math.sqrt(sum / Math.max(1, b - a)));
   }
   return out;
@@ -216,12 +216,13 @@ async function fallbackRange(blob: Blob, from: number, to: number, maxCh: number
   const outCh = Math.max(1, Math.min(maxCh, buf.numberOfChannels));
   const chans = Array.from({ length: outCh }, () => new Float32Array(len));
   if (outCh === 1 && buf.numberOfChannels > 1) {
+    const mono = chans[0]!;
     for (let ch = 0; ch < buf.numberOfChannels; ch++) {
       const d = buf.getChannelData(ch).subarray(a, b);
-      for (let i = 0; i < d.length; i++) chans[0][i] += d[i] / buf.numberOfChannels;
+      for (let i = 0; i < d.length; i++) mono[i]! += d[i]! / buf.numberOfChannels;
     }
   } else {
-    for (let ch = 0; ch < outCh; ch++) chans[ch].set(buf.getChannelData(Math.min(ch, buf.numberOfChannels - 1)).subarray(a, b));
+    for (let ch = 0; ch < outCh; ch++) chans[ch]!.set(buf.getChannelData(Math.min(ch, buf.numberOfChannels - 1)).subarray(a, b));
   }
   return { sampleRate: sr, channels: chans, start: from };
 }
@@ -233,14 +234,14 @@ export function releaseAudioCache() {
 
 /** The samples as an AudioBuffer of the given context (Web Audio resamples it while playing). */
 export function toAudioBuffer(ctx: BaseAudioContext, pcm: Pcm): AudioBuffer {
-  const buf = ctx.createBuffer(pcm.channels.length, pcm.channels[0].length, pcm.sampleRate);
+  const buf = ctx.createBuffer(pcm.channels.length, pcm.channels[0]!.length, pcm.sampleRate);
   pcm.channels.forEach((d, ch) => buf.copyToChannel(d as Float32Array<ArrayBuffer>, ch));
   return buf;
 }
 
 /** Mono samples at `rate`, resampled by the browser (with proper filtering). */
 export async function resampleMono(pcm: Pcm, rate: number): Promise<Float32Array> {
-  const mono = pcm.channels[0];
+  const mono = pcm.channels[0]!;
   if (pcm.sampleRate === rate && pcm.channels.length === 1) return mono;
   const len = Math.max(1, Math.round((mono.length * rate) / pcm.sampleRate));
   const ctx = new OfflineAudioContext(1, len, rate);

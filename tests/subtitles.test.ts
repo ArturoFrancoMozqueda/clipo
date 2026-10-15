@@ -13,9 +13,11 @@ test('SRT with Windows line breaks, BOM, tags and two lines', () => {
   const cues = parseSubtitles(srt);
   assert.equal(cues.length, 2);
   assert.deepEqual(cues[0], { start: 1, end: 2.5, text: '¿Qué tal, señor?' });
-  near(cues[1].start, 3.25);
-  near(cues[1].end, 64.005);
-  assert.equal(cues[1].text, 'Línea uno\nLínea dos');
+  const second = cues[1];
+  assert.ok(second);
+  near(second.start, 3.25);
+  near(second.end, 64.005);
+  assert.equal(second.text, 'Línea uno\nLínea dos');
 });
 
 test('VTT header, notes, styles, ids, cue settings, short times and entities', () => {
@@ -37,9 +39,11 @@ test('VTT header, notes, styles, ids, cue settings, short times and entities', (
   const cues = parseSubtitles(vtt);
   assert.equal(cues.length, 2);
   assert.deepEqual(cues[0], { start: 1, end: 2, text: 'Hola & adiós' });
-  near(cues[1].start, 3600.5);
-  near(cues[1].end, 3601.75);
-  assert.equal(cues[1].text, 'Fin <3');
+  const second = cues[1];
+  assert.ok(second);
+  near(second.start, 3600.5);
+  near(second.end, 3601.75);
+  assert.equal(second.text, 'Fin <3');
 });
 
 test('broken cues are skipped and cues come out in time order', () => {
@@ -49,13 +53,17 @@ test('broken cues are skipped and cues come out in time order', () => {
 
 test('VTT karaoke timestamps become words', () => {
   const cues = parseSubtitles('WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHola <00:00:01.500>mundo <00:00:02.000>de verdad\n');
-  assert.equal(cues[0].text, 'Hola mundo de verdad');
-  const w = cues[0].words!;
+  const [cue] = cues;
+  assert.ok(cue);
+  assert.equal(cue.text, 'Hola mundo de verdad');
+  const w = cue.words!;
   assert.deepEqual(w.map((x) => x.text), ['Hola', 'mundo', 'de', 'verdad']);
-  near(w[0].start, 1);
-  near(w[1].start, 1.5);
-  near(w[2].start, 2);
-  assert.ok(w[3].start > 2 && w[3].end <= 3 + 1e-9);
+  const [w0, w1, w2, w3] = w;
+  assert.ok(w0 && w1 && w2 && w3);
+  near(w0.start, 1);
+  near(w1.start, 1.5);
+  near(w2.start, 2);
+  assert.ok(w3.start > 2 && w3.end <= 3 + 1e-9);
 });
 
 test('writing SRT and VTT, and reading them back', () => {
@@ -81,7 +89,7 @@ test('texts → cues uses timeline times for the words', () => {
     { text: '  ', start: 9, duration: 1 },
   ]);
   assert.deepEqual(cues.map((c) => [c.start, c.end, c.text]), [[1, 3, 'hola todos'], [4, 5, 'segundo']]);
-  near(cues[0].words![1].start, 1.6);
+  near(cues[0]!.words![1]!.start, 1.6);
 });
 
 test('subtitle bytes: UTF-8, Windows-1252 and UTF-16', () => {
@@ -110,8 +118,8 @@ test('words are grouped into short lines with their own times', () => {
   for (const c of cues) assert.ok(c.text.length <= 24 + 8, c.text);
   assert.equal(cues.map((c) => c.text).join(' '), 'hola a todos y bienvenidos a mi canal de cocina casera');
   for (const c of cues) {
-    near(c.start, c.words![0].start);
-    near(c.end, c.words![c.words!.length - 1].end);
+    near(c.start, c.words![0]!.start);
+    near(c.end, c.words![c.words!.length - 1]!.end);
     assert.equal(c.text, c.words!.map((w) => w.text).join(' '));
   }
 });
@@ -127,15 +135,17 @@ test('a caption does not stay too long and lone short words join the previous li
   assert.ok(slow.length >= 2);
   // "bien" alone would flash by; it is joined to the line before.
   const cues = groupWords(say('esto se ve muy bonito hoy y bien'), { maxChars: 28 });
-  assert.equal(cues[cues.length - 1].text.endsWith('y bien'), true);
+  assert.equal(cues[cues.length - 1]!.text.endsWith('y bien'), true);
   assert.ok(cues.every((c) => c.words!.length > 1));
 });
 
 test('empty and zero-length words are cleaned', () => {
   const cues = groupWords([{ text: ' ', start: 0, end: 0.1 }, { text: 'hola', start: 1, end: 1 }]);
   assert.equal(cues.length, 1);
-  assert.equal(cues[0].text, 'hola');
-  assert.ok(cues[0].end > cues[0].start);
+  const [cue] = cues;
+  assert.ok(cue);
+  assert.equal(cue.text, 'hola');
+  assert.ok(cue.end > cue.start);
 });
 
 // ---------- karaoke timing ----------
@@ -153,24 +163,26 @@ test('recorded word times are used while the text still matches', () => {
 test('edited or imported texts spread the words over the time on screen', () => {
   const t = wordTimings('uno dos tres', undefined, 3);
   assert.equal(t.length, 3);
-  near(t[0].start, 0);
-  near(t[2].end, 3);
-  assert.ok(t[1].start > 0 && t[2].start > t[1].start);
+  const [t0, t1, t2] = t;
+  assert.ok(t0 && t1 && t2);
+  near(t0.start, 0);
+  near(t2.end, 3);
+  assert.ok(t1.start > 0 && t2.start > t1.start);
   // A word was added after transcribing: keep inside the time the words were said.
   const words = [{ text: 'hola', start: 0.5, end: 0.9 }, { text: 'todos', start: 1, end: 1.5 }];
   const e = wordTimings('hola a todos', words, 4);
   assert.equal(e.length, 3);
-  near(e[0].start, 0.5);
-  near(e[2].end, 1.5);
+  near(e[0]!.start, 0.5);
+  near(e[2]!.end, 1.5);
 });
 
 test('splitting a caption keeps the words in sync, relative words never go negative', () => {
   const words = [{ text: 'a', start: 0.2, end: 0.4 }, { text: 'b', start: 1.2, end: 1.5 }];
   const shifted = shiftWords(words, 1)!;
-  near(shifted[1].start, 0.2);
-  near(shifted[0].start, -0.8);
+  near(shifted[1]!.start, 0.2);
+  near(shifted[0]!.start, -0.8);
   assert.equal(shiftWords(undefined, 1), undefined);
   const rel = relativeWords([{ text: 'x', start: 0.9, end: 1.3 }], 1)!;
   assert.deepEqual(rel.map((w) => w.start), [0]);
-  near(rel[0].end, 0.3);
+  near(rel[0]!.end, 0.3);
 });

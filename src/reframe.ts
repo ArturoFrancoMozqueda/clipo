@@ -35,7 +35,7 @@ export function maskCenter(m: { w: number; h: number; alpha: ArrayLike<number> }
   for (let y = 0; y < m.h; y++) {
     let row = 0;
     for (let x = 0; x < m.w; x++) {
-      const a = m.alpha[y * m.w + x];
+      const a = m.alpha[y * m.w + x]!;
       if (a < 128) continue; // only pixels that are clearly the person
       row += a;
       sx += a * (x + 0.5);
@@ -47,7 +47,7 @@ export function maskCenter(m: { w: number; h: number; alpha: ArrayLike<number> }
   // Rows holding 5 % and 95 % of the mass: the person's top and bottom, ignoring stray pixels.
   let acc = 0;
   for (let y = 0; y < m.h; y++) {
-    acc += rowMass[y];
+    acc += rowMass[y]!;
     if (top < 0 && acc >= sum * 0.05) top = y;
     if (bottom < 0 && acc >= sum * 0.95) bottom = y;
   }
@@ -65,11 +65,12 @@ export function smoothTrack(samples: Sample[], tau = 0.7): Point[] {
   const s = [...samples].sort((a, b) => a.t - b.t);
   if (!s.length) return [];
   const known = s.filter((p) => p.x != null && p.y != null);
-  if (!known.length) return s.map((p) => ({ t: p.t, x: 0.5, y: 0.5 }));
+  const first = known[0];
+  if (!first) return s.map((p) => ({ t: p.t, x: 0.5, y: 0.5 }));
   // Fill the gaps with the nearest known value in time.
   const filled: Point[] = s.map((p) => {
     if (p.x != null && p.y != null) return { t: p.t, x: p.x, y: p.y };
-    let best = known[0];
+    let best = first;
     for (const k of known) if (Math.abs(k.t - p.t) < Math.abs(best.t - p.t)) best = k;
     return { t: p.t, x: best.x!, y: best.y! };
   });
@@ -101,19 +102,20 @@ const round = (v: number) => Math.round(v * 1000) / 1000;
 
 /** Subject center at a source time, interpolated along the path (the ends hold). */
 export function trackAt(points: Reframe['points'], t: number): { x: number; y: number } {
-  if (!points.length) return { x: 0.5, y: 0.5 };
-  if (t <= points[0].t) return { x: points[0].x, y: points[0].y };
-  const last = points[points.length - 1];
+  const first = points[0];
+  const last = points.at(-1);
+  if (!first || !last) return { x: 0.5, y: 0.5 };
+  if (t <= first.t) return { x: first.x, y: first.y };
   if (t >= last.t) return { x: last.x, y: last.y };
   let lo = 0;
   let hi = points.length - 1;
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
-    if (points[mid].t <= t) lo = mid;
+    if (points[mid]!.t <= t) lo = mid;
     else hi = mid;
   }
-  const a = points[lo];
-  const b = points[hi];
+  const a = points[lo]!;
+  const b = points[hi]!;
   const k = b.t > a.t ? (t - a.t) / (b.t - a.t) : 0;
   return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
 }

@@ -18,7 +18,7 @@ export function frameLevels(samples: Float32Array, sampleRate: number, frame = F
     let sum = 0;
     const a = f * n;
     const b = Math.min(samples.length, a + n);
-    for (let i = a; i < b; i++) sum += samples[i] * samples[i];
+    for (let i = a; i < b; i++) sum += samples[i]! * samples[i]!;
     out[f] = toDb(Math.sqrt(sum / Math.max(1, b - a)));
   }
   return out;
@@ -27,7 +27,7 @@ export function frameLevels(samples: Float32Array, sampleRate: number, frame = F
 function percentile(levels: Float32Array, q: number) {
   const s = Array.from(levels).filter((x) => x > -150).sort((a, b) => a - b);
   if (!s.length) return -200;
-  return s[Math.min(s.length - 1, Math.max(0, Math.floor(q * (s.length - 1))))];
+  return s[Math.min(s.length - 1, Math.max(0, Math.floor(q * (s.length - 1))))]!;
 }
 
 /** Typical level of the loud (spoken) parts: the 95th percentile of the frames. */
@@ -44,7 +44,7 @@ export function voiceActivity(levels: Float32Array, opts: { minOn?: number; brid
   if (loud < -55) return act; // nothing but (near) silence
   const noise = percentile(levels, 0.1);
   const thr = Math.max(-50, noise + 10, loud - 28);
-  for (let i = 0; i < levels.length; i++) act[i] = levels[i] >= thr ? 1 : 0;
+  for (let i = 0; i < levels.length; i++) act[i] = levels[i]! >= thr ? 1 : 0;
   fillGaps(act, Math.round((opts.bridge ?? 0.25) / FRAME), 1);
   fillGaps(act, Math.round((opts.minOn ?? 0.1) / FRAME), 0);
   return act;
@@ -113,9 +113,9 @@ export function curveAt(curve: Float32Array, t: number) {
   if (!curve.length) return 1;
   const x = t / FRAME;
   const i = Math.floor(x);
-  if (i < 0) return curve[0];
-  if (i >= curve.length - 1) return curve[curve.length - 1];
-  return curve[i] + (curve[i + 1] - curve[i]) * (x - i);
+  if (i < 0) return curve[0]!;
+  if (i >= curve.length - 1) return curve[curve.length - 1]!;
+  return curve[i]! + (curve[i + 1]! - curve[i]!) * (x - i);
 }
 
 /** What an audio item is, for ducking. Items saved before roles existed are guessed from their name. */
@@ -184,8 +184,9 @@ function filter(x: Float32Array, [b0, b1, b2, a1, a2]: Biquad): Float32Array {
   const y = new Float32Array(x.length);
   let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
   for (let i = 0; i < x.length; i++) {
-    const v = b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-    x2 = x1; x1 = x[i]; y2 = y1; y1 = v;
+    const xi = x[i]!;
+    const v = b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1; x1 = xi; y2 = y1; y1 = v;
     y[i] = v;
   }
   return y;
@@ -205,19 +206,19 @@ export function integratedLoudness(channels: Float32Array[], sampleRate: number)
     if (!len) return -Infinity;
     // Shorter than one block: measure it as a single block.
     let z = 0;
-    for (const w of weighted) { let s = 0; for (let i = 0; i < len; i++) s += w[i] * w[i]; z += s / len; }
+    for (const w of weighted) { let s = 0; for (let i = 0; i < len; i++) s += w[i]! * w[i]!; z += s / len; }
     return z > 0 ? -0.691 + 10 * Math.log10(z) : -Infinity;
   }
   // Running sums of squares make every block O(1).
   const cums = weighted.map((w) => {
     const c = new Float64Array(len + 1);
-    for (let i = 0; i < len; i++) c[i + 1] = c[i] + w[i] * w[i];
+    for (let i = 0; i < len; i++) c[i + 1] = c[i]! + w[i]! * w[i]!;
     return c;
   });
   const zs: number[] = [];
   for (let a = 0; a + block <= len; a += hop) {
     let z = 0;
-    for (const c of cums) z += (c[a + block] - c[a]) / block;
+    for (const c of cums) z += (c[a + block]! - c[a]!) / block;
     zs.push(z);
   }
   const lufs = (z: number) => -0.691 + 10 * Math.log10(z);
@@ -232,7 +233,7 @@ export function integratedLoudness(channels: Float32Array[], sampleRate: number)
 /** Highest absolute sample over all channels. */
 export function peak(channels: Float32Array[]) {
   let m = 0;
-  for (const c of channels) for (let i = 0; i < c.length; i++) { const v = Math.abs(c[i]); if (v > m) m = v; }
+  for (const c of channels) for (let i = 0; i < c.length; i++) { const v = Math.abs(c[i]!); if (v > m) m = v; }
   return m;
 }
 
@@ -248,7 +249,7 @@ export function limit(channels: Float32Array[], sampleRate: number, ceiling = db
   const need = new Float32Array(len);
   for (let i = 0; i < len; i++) {
     let m = 0;
-    for (const c of channels) m = Math.max(m, Math.abs(c[i]));
+    for (const c of channels) m = Math.max(m, Math.abs(c[i]!));
     need[i] = m > ceiling ? ceiling / m : 1;
   }
   // Minimum over the look-ahead window (a monotonic deque keeps it linear time).
@@ -257,32 +258,33 @@ export function limit(channels: Float32Array[], sampleRate: number, ceiling = db
   let h = 0, t = 0;
   for (let i = 0, j = 0; i < len; i++) {
     for (; j < len && j <= i + look; j++) {
-      while (t > h && need[dq[t - 1]] >= need[j]) t--;
+      while (t > h && need[dq[t - 1]!]! >= need[j]!) t--;
       dq[t++] = j;
     }
-    while (dq[h] < i) h++;
-    g[i] = need[dq[h]];
+    while (dq[h]! < i) h++;
+    g[i] = need[dq[h]!]!;
   }
   // Ramp down across the look-ahead window instead of jumping, then recover slowly.
   const rel = 1 - Math.exp(-1 / (release * sampleRate));
   const smooth = new Float32Array(len);
   let cur = 1;
   for (let i = 0; i < len; i++) {
-    cur = g[i] < cur ? g[i] : cur + (g[i] - cur) * rel;
+    const gi = g[i]!;
+    cur = gi < cur ? gi : cur + (gi - cur) * rel;
     smooth[i] = cur;
   }
   // Average over the look-ahead window: still ≤ need at each peak because the window minimum covers it.
   const out = new Float32Array(len);
   let acc = 0;
   for (let i = 0; i < len; i++) {
-    acc += smooth[i];
-    if (i >= look) acc -= smooth[i - look];
+    acc += smooth[i]!;
+    if (i >= look) acc -= smooth[i - look]!;
     out[i] = acc / Math.min(i + 1, look);
   }
   for (const c of channels) {
     for (let i = 0; i < len; i++) {
-      const k = Math.min(out[i], need[i]);
-      c[i] *= k;
+      const k = Math.min(out[i]!, need[i]!);
+      c[i]! *= k;
     }
   }
 }
@@ -304,7 +306,7 @@ export function normalizeLoudness(channels: Float32Array[], sampleRate: number, 
   if (!Number.isFinite(before)) return { before, after: before, gainDb: 0 };
   const gainDb = Math.min(maxGainDb, target - before);
   const k = dbToGain(gainDb);
-  for (const c of channels) for (let i = 0; i < c.length; i++) c[i] *= k;
+  for (const c of channels) for (let i = 0; i < c.length; i++) c[i]! *= k;
   limit(channels, sampleRate);
   return { before, after: integratedLoudness(channels, sampleRate), gainDb };
 }
@@ -336,9 +338,9 @@ export function findSilences(levels: Float32Array, o: SilenceOptions = {}, frame
   const out: Range[] = [];
   let i = 0;
   while (i < levels.length) {
-    if (levels[i] >= thr) { i++; continue; }
+    if (levels[i]! >= thr) { i++; continue; }
     let j = i;
-    while (j < levels.length && levels[j] < thr) j++;
+    while (j < levels.length && levels[j]! < thr) j++;
     const start = i * frame;
     const end = Math.min(levels.length, j) * frame;
     if (end - start >= minDur) {

@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const youtube = require('./publish/youtube.cjs');
+const { checkForUpdates } = require('./updates.cjs');
 
 const SCHEME = 'app';
 const HOST = 'clipo';
@@ -46,12 +47,12 @@ function openExternal(url) {
 
 // Hosts the page itself talks to: the AI models (Hugging Face and its download CDNs) and the ONNX
 // Runtime CDN that transformers.js falls back to. Uploads to YouTube go through the main process.
-const MODEL_HOSTS = 'https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co https://cdn.jsdelivr.net';
+const MODEL_HOSTS = 'https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co';
 // Channel avatars and video thumbnails shown in Publicar.
 const IMAGE_HOSTS = 'https://yt3.ggpht.com https://*.ggpht.com https://i.ytimg.com https://*.googleusercontent.com';
 const CSP = [
   "default-src 'self'",
-  `script-src 'self' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net`,
+  `script-src 'self' 'wasm-unsafe-eval' blob:`,
   "worker-src 'self' blob:",
   `connect-src 'self' blob: data: ${MODEL_HOSTS}`,
   `img-src 'self' blob: data: ${IMAGE_HOSTS}`,
@@ -88,7 +89,7 @@ function serve(request) {
     // glue they run builds functions at runtime (WebGPU), which a page CSP would block.
     if (file.endsWith('.html')) {
       headers.set('Content-Security-Policy', CSP);
-      headers.set('Permissions-Policy', 'microphone=(self), camera=(self), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=()');
+      headers.set('Permissions-Policy', 'microphone=(self), camera=(self), geolocation=(), payment=(), usb=(), serial=(), hid=()');
     }
     return new Response(res.body, { status: res.status, headers });
   });
@@ -215,6 +216,8 @@ app.whenReady().then(() => {
 
   Menu.setApplicationMenu(null);
   const win = createWindow();
+  // Installed copies look for a newer release a few seconds after opening (never in tests or `npm run app:dev`).
+  if (app.isPackaged && !SMOKE) setTimeout(() => void checkForUpdates({ app, net, dialog, shell, win }), 5000);
   app.on('second-instance', () => {
     if (win.isDestroyed()) return;
     if (win.isMinimized()) win.restore();

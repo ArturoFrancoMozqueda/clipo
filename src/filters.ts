@@ -15,7 +15,7 @@ export interface Filter {
   fallback: FallbackStep[];
 }
 
-export const FILTERS: Filter[] = [
+export const FILTERS: [Filter, ...Filter[]] = [
   { id: 'none', name: 'Original', css: 'none', fallback: [] },
   { id: 'vivid', name: 'Vívido', css: 'saturate(1.45) contrast(1.08)', fallback: [{ op: 'overlay', self: true, alpha: 0.25 }] },
   { id: 'warm', name: 'Cálido', css: 'sepia(0.25) saturate(1.25) brightness(1.03)', fallback: [{ op: 'soft-light', color: '#ff9a3c', alpha: 0.45 }] },

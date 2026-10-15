@@ -30,7 +30,7 @@ export function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   str(36, 'data');
   v.setUint32(40, samples.length * 2, true);
   for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
+    const s = Math.max(-1, Math.min(1, samples[i]!));
     v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
   }
   return new Blob([buf], { type: 'audio/wav' });
@@ -65,7 +65,7 @@ async function decodeMono(blob: Blob): Promise<{ samples: Float32Array; sampleRa
   const out = new Float32Array(buf.length);
   for (let c = 0; c < buf.numberOfChannels; c++) {
     const ch = buf.getChannelData(c);
-    for (let i = 0; i < out.length; i++) out[i] += ch[i] / buf.numberOfChannels;
+    for (let i = 0; i < out.length; i++) out[i]! += ch[i]! / buf.numberOfChannels;
   }
   return { samples: out, sampleRate: buf.sampleRate };
 }
@@ -202,7 +202,7 @@ const voiceUrl = (v: string) => `https://huggingface.co/${SUPERTONIC}/resolve/${
 // Licenses (model cards): claude Apache-2.0, ald Unlicense, daniela CC BY-SA 4.0, davefx CC0, sharvard CC BY 3.0.
 const piper = (id: string, name: string, desc: string, path: string, mb: number, speaker?: string): Voice => ({ id, name, desc, mb, engine: 'piper', model: path, speaker });
 
-export const VOICES: Voice[] = [
+export const VOICES: [Voice, ...Voice[]] = [
   piper('claude', 'Claudia', 'México · natural', 'es/es_MX/claude/high/es_MX-claude-high', 63),
   piper('ald', 'Aldo', 'México · natural', 'es/es_MX/ald/medium/es_MX-ald-medium', 63),
   piper('daniela', 'Daniela', 'Argentina · natural', 'es/es_AR/daniela/high/es_AR-daniela-high', 114),

@@ -77,7 +77,7 @@ async function decodeTo24k(blob: Blob): Promise<Float32Array> {
   const out = new Float32Array(buf.length);
   for (let c = 0; c < buf.numberOfChannels; c++) {
     const d = buf.getChannelData(c);
-    for (let i = 0; i < out.length; i++) out[i] += d[i] / buf.numberOfChannels;
+    for (let i = 0; i < out.length; i++) out[i]! += d[i]! / buf.numberOfChannels;
   }
   return out;
 }
@@ -87,7 +87,7 @@ function tidy(s: Float32Array): Float32Array {
   const win = Math.round(CLONE_RATE * 0.02);
   const loud = (i: number) => {
     let e = 0;
-    for (let k = i; k < Math.min(s.length, i + win); k++) e += s[k] * s[k];
+    for (let k = i; k < Math.min(s.length, i + win); k++) e += s[k]! * s[k]!;
     return e / win > 1e-4;
   };
   let a = 0;
@@ -98,7 +98,7 @@ function tidy(s: Float32Array): Float32Array {
   const out = s.slice(Math.max(0, a - pad), Math.min(s.length, b + win + pad));
   let peak = 0;
   for (const v of out) peak = Math.max(peak, Math.abs(v));
-  if (peak > 0) for (let i = 0; i < out.length; i++) out[i] *= 0.9 / peak;
+  if (peak > 0) for (let i = 0; i < out.length; i++) out[i]! *= 0.9 / peak;
   return out;
 }
 
@@ -201,13 +201,13 @@ export function medianPitch(s: Float32Array, sr: number) {
   const f0s: number[] = [];
   for (let o = 0; o + n < s.length; o += n * 2) {
     let e = 0;
-    for (let i = o; i < o + n; i++) e += s[i] * s[i];
+    for (let i = o; i < o + n; i++) e += s[i]! * s[i]!;
     if (e / n < 0.001) continue;
     let best = 0;
     let lagBest = 0;
     for (let lag = Math.floor(sr / 400); lag < Math.floor(sr / 70); lag++) {
       let c = 0;
-      for (let i = o; i + lag < o + n; i++) c += s[i] * s[i + lag];
+      for (let i = o; i + lag < o + n; i++) c += s[i]! * s[i + lag]!;
       if (c > best) {
         best = c;
         lagBest = lag;

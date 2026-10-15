@@ -56,6 +56,7 @@ button:disabled { opacity: 0.35; cursor: default; }
   .icon-btn:hover:not(:disabled) { background: var(--panel-2); }
   .icon-btn.danger:hover { color: var(--danger); }
 }
+.editor-loading { position: fixed; inset: 0; display: grid; place-items: center; }
 .spinner { width: 18px; height: 18px; border-radius: 50%; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

@@ -77,14 +77,14 @@ test('large LUTs are resampled down to the stored maximum', () => {
   assert.equal(size, LUT_MAX_SIZE);
   assert.equal(bytes.length, LUT_MAX_SIZE ** 3 * 3);
   const mid = (16 + 16 * 33 + 16 * 33 * 33) * 3;
-  assert.ok(Math.abs(bytes[mid] - 127.5) <= 1, `${bytes[mid]}`);
+  assert.ok(Math.abs(bytes[mid]! - 127.5) <= 1, `${bytes[mid]}`);
 });
 
 test('the input range is baked in: a 0..2 identity halves every color', () => {
   const { bytes, size } = lutToBytes(parseCube(cube(3, identity, 'DOMAIN_MIN 0 0 0\nDOMAIN_MAX 2 2 2\n')));
   // Grid input 1.0 maps to position 0.5 of the file's range, whose value is 0.5 -> 128.
   const last = (size ** 3 - 1) * 3;
-  assert.ok(Math.abs(bytes[last] - 128) <= 1, `${bytes[last]}`);
+  assert.ok(Math.abs(bytes[last]! - 128) <= 1, `${bytes[last]}`);
 });
 
 test('base64 storage round-trips', () => {
@@ -108,7 +108,7 @@ test('an identity LUT leaves pixels as they were', () => {
   const l = lutFromCube('id', 'id.cube', cube(17, identity));
   const p = px();
   applyLutToPixels(p, lutBytes(l), l.size);
-  px().forEach((v, i) => assert.ok(Math.abs(p[i] - v) <= 1, `${i}: ${p[i]} vs ${v}`));
+  px().forEach((v, i) => assert.ok(Math.abs(p[i]! - v) <= 1, `${i}: ${p[i]} vs ${v}`));
 });
 
 test('an inverting LUT inverts, interpolating between grid points; alpha is kept', () => {
@@ -117,7 +117,7 @@ test('an inverting LUT inverts, interpolating between grid points; alpha is kept
   applyLutToPixels(p, lutBytes(l), l.size);
   px().forEach((v, i) => {
     if (i % 4 === 3) assert.equal(p[i], v);
-    else assert.ok(Math.abs(p[i] - (255 - v)) <= 1, `${i}: ${p[i]} vs ${255 - v}`);
+    else assert.ok(Math.abs(p[i]! - (255 - v)) <= 1, `${i}: ${p[i]} vs ${255 - v}`);
   });
 });
 

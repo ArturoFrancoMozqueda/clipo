@@ -10,6 +10,7 @@ import type { VoiceFxId } from './types';
 import type { Box } from './textStyles';
 import { bgClip, bgClipId, bgTime, renderFrame, type FrameImage, type MediaRef } from './render';
 import { onRedraw } from './redraw';
+import { setBgRemovalInUse, usesBgRemoval } from './segmentation';
 
 // The drawing pipeline lives in render.ts; these re-exports keep the old import paths working.
 export { bgClipId, renderFrame } from './render';
@@ -210,6 +211,8 @@ class Engine {
 
   private sync(p: Project | null, urls: Record<string, string>) {
     if (typeof document === 'undefined') return;
+    // "Quitar fondo" frees its models when no clip uses it any more, and right away when the project closes.
+    setBgRemovalInUse(!!p && usesBgRemoval(p), !p);
     const keepV = new Set<string>();
     const keepA = new Set<string>();
     const keepI = new Set<string>();
@@ -594,7 +597,7 @@ class Engine {
         const ahead = cur ? l.index - cur.index : 0;
         if (cur && (ahead === 1 || (ahead === 2 && playing && l.start - t < 3))) {
           this.need(r);
-          const prev = placed[l.index - 1].clip;
+          const prev = placed[l.index - 1]!.clip;
           const lead = transitionLength(prev, l.clip) / 2;
           seekTo(el, sourceTime(l, l.start - lead, dur), 0.05);
         }

@@ -50,7 +50,7 @@ export function TransitionPanel() {
 
   const show = (c: Clip) => {
     const d = transitionLength(c, next.clip);
-    const cut = placed[i].end;
+    const cut = placed[i]!.end; // `next` exists, so the clip is placed
     previewRange(cut - d / 2 - 0.6, cut + d / 2 + 0.6);
   };
   const set = (tr: Transition) => {
@@ -396,7 +396,7 @@ export function TextAnimSection({ text }: { text: TextItem }) {
           const Icon = icons[o.id];
           return (
             <button key={o.id} className={`chip ${anim[key] === o.id ? 'active' : ''}`} onClick={() => set(key, o.id)}>
-              <Icon size={16} /> {o.name}
+              {Icon && <Icon size={16} />} {o.name}
             </button>
           );
         })}

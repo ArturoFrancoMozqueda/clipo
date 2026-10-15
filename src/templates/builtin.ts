@@ -4,7 +4,7 @@ import type { Template, TemplateSlot } from './types';
 
 const slot = (label: string, duration: number, filter = 'none'): TemplateSlot => ({ label, duration, filter, fit: 'fill' });
 
-export const BUILTIN_TEMPLATES: Template[] = [
+export const BUILTIN_TEMPLATES: [Template, ...Template[]] = [
   {
     version: 1,
     id: 'cumple',

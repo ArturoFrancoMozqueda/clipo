@@ -80,7 +80,7 @@ export function toneLuts(c: ColorAdjust): ToneLuts {
       const pos = (i / 255) * n;
       const j = Math.min(n - 1, Math.floor(pos));
       const f = pos - j;
-      lut[i] = Math.round((tab[j] * (1 - f) + tab[j + 1] * f) * 255);
+      lut[i] = Math.round((tab[j]! * (1 - f) + tab[j + 1]! * f) * 255);
     }
     return lut;
   }) as ToneLuts;
@@ -89,8 +89,10 @@ export function toneLuts(c: ColorAdjust): ToneLuts {
   return out;
 }
 
+type Mat3 = [number, number, number, number, number, number, number, number, number];
+
 /** The 3×3 part of the SVG `saturate` color matrix. */
-export function saturateMatrix(s: number) {
+export function saturateMatrix(s: number): Mat3 {
   return [
     0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s,
     0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s,
@@ -101,23 +103,23 @@ export function saturateMatrix(s: number) {
 /** Apply the correction to RGBA pixels in place (the fallback path, also used by tests). */
 export function applyToPixels(c: ColorAdjust, px: Uint8ClampedArray) {
   const [lr, lg, lb] = toneLuts(c);
-  const m = saturateMatrix(saturationFactor(c));
-  const plain = Math.abs(m[0] - 1) < 1e-6;
+  const [m0, m1, m2, m3, m4, m5, m6, m7, m8] = saturateMatrix(saturationFactor(c));
+  const plain = Math.abs(m0 - 1) < 1e-6;
   for (let i = 0; i < px.length; i += 4) {
-    let r = px[i];
-    let g = px[i + 1];
-    let b = px[i + 2];
+    let r = px[i]!;
+    let g = px[i + 1]!;
+    let b = px[i + 2]!;
     if (!plain) {
-      const r2 = m[0] * r + m[1] * g + m[2] * b;
-      const g2 = m[3] * r + m[4] * g + m[5] * b;
-      const b2 = m[6] * r + m[7] * g + m[8] * b;
+      const r2 = m0 * r + m1 * g + m2 * b;
+      const g2 = m3 * r + m4 * g + m5 * b;
+      const b2 = m6 * r + m7 * g + m8 * b;
       r = r2 < 0 ? 0 : r2 > 255 ? 255 : r2;
       g = g2 < 0 ? 0 : g2 > 255 ? 255 : g2;
       b = b2 < 0 ? 0 : b2 > 255 ? 255 : b2;
     }
-    px[i] = lr[r | 0];
-    px[i + 1] = lg[g | 0];
-    px[i + 2] = lb[b | 0];
+    px[i] = lr[r | 0]!;
+    px[i + 1] = lg[g | 0]!;
+    px[i + 2] = lb[b | 0]!;
   }
 }
 
@@ -132,21 +134,21 @@ export function autoColor(px: Uint8ClampedArray): ColorAdjust {
   let sb = 0;
   const hist = new Uint32Array(256);
   for (let i = 0; i < px.length; i += 4) {
-    if (px[i + 3] < 128) continue;
-    const r = px[i];
-    const g = px[i + 1];
-    const b = px[i + 2];
+    if (px[i + 3]! < 128) continue;
+    const r = px[i]!;
+    const g = px[i + 1]!;
+    const b = px[i + 2]!;
     sr += r;
     sg += g;
     sb += b;
-    hist[Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b)]++;
+    hist[Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b)]!++;
     n++;
   }
   if (!n) return {};
   const pct = (q: number) => {
     let acc = 0;
     for (let i = 0; i < 256; i++) {
-      acc += hist[i];
+      acc += hist[i]!;
       if (acc >= q * n) return i / 255;
     }
     return 1;

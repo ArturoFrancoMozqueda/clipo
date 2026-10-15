@@ -44,13 +44,14 @@ export function poseAt(it: Animatable, local: number): Pose {
   const kf = it.keyframes;
   if (!kf?.length) return basePose(it);
   const sorted = isSorted(kf) ? kf : [...kf].sort((a, b) => a.t - b.t);
-  if (local <= sorted[0].t) return pick(sorted[0]);
-  const last = sorted[sorted.length - 1];
+  const first = sorted[0]!;
+  const last = sorted[sorted.length - 1]!;
+  if (local <= first.t) return pick(first);
   if (local >= last.t) return pick(last);
   let i = 0;
-  while (i < sorted.length - 2 && sorted[i + 1].t <= local) i++;
-  const a = sorted[i];
-  const b = sorted[i + 1];
+  while (i < sorted.length - 2 && sorted[i + 1]!.t <= local) i++;
+  const a = sorted[i]!;
+  const b = sorted[i + 1]!;
   const raw = (local - a.t) / Math.max(1e-6, b.t - a.t);
   const k = a.ease === 'ease' ? easeInOut(raw) : raw;
   return {
@@ -65,7 +66,7 @@ export function poseAt(it: Animatable, local: number): Pose {
 const pick = (k: Keyframe): Pose => ({ x: k.x, y: k.y, size: k.size, rotation: k.rotation, opacity: k.opacity });
 
 function isSorted(kf: Keyframe[]) {
-  for (let i = 1; i < kf.length; i++) if (kf[i].t < kf[i - 1].t) return false;
+  for (let i = 1; i < kf.length; i++) if (kf[i]!.t < kf[i - 1]!.t) return false;
   return true;
 }
 
@@ -111,7 +112,7 @@ export function setPose(it: Animatable, local: number, patch: Partial<Pose>) {
     return;
   }
   const i = keyframeAt(it, local);
-  if (i >= 0) Object.assign(it.keyframes[i], patch);
+  if (i >= 0) Object.assign(it.keyframes[i]!, patch);
   else {
     it.keyframes = [...it.keyframes, { t: local, ...poseAt(it, local), ...patch, ease: 'ease' as Easing }].sort((a, b) => a.t - b.t);
   }

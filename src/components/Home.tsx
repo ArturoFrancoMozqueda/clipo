@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Download, Film, FolderInput, LayoutTemplate, Plus, Trash2, X } from 'lucide-react';
 import type { AspectId } from '../types';
 import { deleteProject, getBlob, getProject, listProjectMeta, type ProjectMeta } from '../db';
@@ -7,10 +7,12 @@ import { newProject } from '../ops';
 import { fmtTime } from '../model';
 import { FormatPicker } from './FormatPicker';
 import { Modal } from './Modal';
-import { CapcutImport } from './CapcutImport';
 import { useInstallPrompt } from './useInstallPrompt';
-import { TemplateGallery } from '../templates/TemplateGallery';
 import { SaveTemplateButton } from '../templates/SaveTemplateButton';
+
+// Opened on demand from the start screen.
+const TemplateGallery = lazy(() => import('../templates/TemplateGallery').then((m) => ({ default: m.TemplateGallery })));
+const CapcutImport = lazy(() => import('./CapcutImport').then((m) => ({ default: m.CapcutImport })));
 
 export function Home() {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
@@ -114,8 +116,10 @@ export function Home() {
         )}
       </section>
 
-      {templates && <TemplateGallery onClose={() => setTemplates(false)} />}
-      {importing && <CapcutImport onClose={() => setImporting(false)} />}
+      <Suspense fallback={null}>
+        {templates && <TemplateGallery onClose={() => setTemplates(false)} />}
+        {importing && <CapcutImport onClose={() => setImporting(false)} />}
+      </Suspense>
 
       {picking && (
         <Modal onClose={() => setPicking(false)} labelledBy="pick-title">

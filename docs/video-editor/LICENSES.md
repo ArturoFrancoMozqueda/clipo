@@ -159,14 +159,28 @@ Leyenda: ✅ uso comercial permitido · ⚠️ revisar antes de vender o cobrar 
 | Efectos de sonido | Kenney (`public/sfx/kenney/`) | kenney.nl | CC0 1.0 (`LICENSE.txt` incluido) | ✅ |
 | Stickers | Fluent Emoji (`public/stickers/fluent/`) | Microsoft | MIT (`LICENSE.txt` incluido) | ✅ |
 
-Integridad: Piper y OpenVoice se descargan de un **commit fijo** y cada archivo se compara con su
-SHA-256 antes de usarlo o guardarlo (`src/piperEngine.ts`, `src/toneConvert.ts`). Whisper y
-Supertonic (`src/captions.ts`, `src/voice.ts`) todavía se piden a la rama `main`: conviene fijar su
-revisión (`revision` en `pipeline()` y la URL de las voces) con los commits revisados hoy:
-`whisper-base_timestamped` `608c49e6…`, `whisper-small_timestamped` `65caa70f…`,
-`Supertonic-TTS-2-ONNX` `68d4d942…`.
+Integridad: todos los modelos se piden a un **commit fijo**. Piper y OpenVoice además comparan cada
+archivo con su SHA-256 antes de usarlo o guardarlo (`src/piperEngine.ts`, `src/toneConvert.ts`).
+Whisper (`src/captions.ts`: base `608c49e6…`, small `65caa70f…`) y Supertonic (`src/voice.ts` y
+`src/ttsWorker.ts`: `68d4d942…`) van fijados por `revision`.
 
-## ⚠️ Avisos y recomendaciones
+## Veredicto para Clipo como app personal (uso propio, sin venta)
+
+**Todo está permitido.** Las restricciones de abajo (⚠️) son de *uso comercial* o de *redistribución*,
+y no aplican a usar Clipo uno mismo:
+
+- Voces Piper/lessac (investigación no comercial) y Supertonic (OpenRAIL-M): el uso personal está
+  dentro de lo permitido. Si publicas videos con estas voces, respeta las restricciones de uso de
+  OpenRAIL-M (no suplantar a nadie, no desinformar).
+- espeak-ng (GPL-3.0): la GPL no limita el uso. Como los instaladores se publican en un repositorio
+  público de GitHub, se cumple igual: [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md) lleva el
+  aviso GPL y el enlace al código fuente, y el código de Clipo también es público.
+- Daniela (CC BY-SA 4.0) y Sharvard (CC BY 3.0): la atribución está en THIRD_PARTY_NOTICES.md.
+
+Solo habría que revisar las recomendaciones de abajo si algún día Clipo se vende, se publica en
+tiendas o se cierra el código.
+
+## ⚠️ Avisos y recomendaciones (solo si Clipo se vendiera)
 
 1. **Voces Piper afinadas desde "lessac"** (claude, ald vía davefx, daniela, davefx, sharvard). Según
    sus fichas se entrenaron partiendo de la voz inglesa `en_US-lessac`, cuyo dataset (Blizzard 2013,

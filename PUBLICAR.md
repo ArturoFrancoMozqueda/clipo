@@ -271,21 +271,31 @@ Hoy no hay dónde publicar las versiones, así que no se activa. Pasos cuando lo
 4. Publica con `electron-builder --win --publish always` (con `GH_TOKEN` en el entorno para GitHub).
    Las actualizaciones **tienen que ir firmadas** con el mismo certificado (`verifyUpdateCodeSignature`).
 
-## 3c. Builds automáticos en GitHub (sin instalar nada)
+## 3c. Builds y publicación automáticos en GitHub (sin instalar nada)
 
-`.github/workflows/build.yml` compila todo en las máquinas de GitHub:
+`.github/workflows/build.yml` hace todo en las máquinas de GitHub.
 
-- **En cada push a `main`:** corre los tests y genera el `.exe` de Windows (instalador y portable) y el `.apk` de Android de prueba. Para descargarlos: pestaña **Actions** → la ejecución → sección **Artifacts**.
-- **Con un tag `v*`:** además crea un Release con los archivos adjuntos. Por ejemplo:
+**En cada push a `main` (y en cada PR):**
+1. Tests unitarios, revisión de tipos, build web y `npm audit`.
+2. Tests de punta a punta con Playwright en **Chromium y WebKit** (el motor de Safari), a tamaño de iPhone, Android y PC, sobre el build de producción servido con las mismas cabeceras (CSP, COOP/COEP) que `vercel.json`.
+3. **Windows:** genera el instalador y el portable, y abre el `.exe` empaquetado (con fuses y CSP activos) para comprobar que el editor carga.
+4. **Android:** APK de release minificado con R8 y **firmado con tu llave**.
+5. **iOS:** comprueba que el proyecto compila para el simulador (sin firma).
+6. Si `package-lock.json` estaba desactualizado, lo actualiza y hace commit.
 
-  ```bash
-  git tag v0.4.0 && git push origin v0.4.0
-  ```
+Los archivos quedan en la pestaña **Actions** → la ejecución → **Artifacts**.
 
-- **A mano:** Actions → Build → **Run workflow**.
-- **`package-lock.json`:** si quedó desactualizado, el workflow lo actualiza y hace commit en `main`.
-- **Firma de Windows:** si existen los secretos `CSC_LINK` (el `.pfx` en base64) y `CSC_KEY_PASSWORD`, el instalador sale firmado; si no, sale sin firmar.
-- **iOS** no está incluido: necesita un Mac con Xcode y la cuenta de Apple Developer.
+**Publicar una versión nueva:** sube `"version"` en `package.json` (por ejemplo `0.5.0` → `0.6.0`) y haz push a `main`. El workflow ve que no existe el release `v0.6.0`, lo crea con el `.exe` y el `.apk` adjuntos y la app de escritorio avisará de la actualización al abrirse. Android toma `versionName` y `versionCode` de `package.json`; iOS se sincroniza con `npm run version:sync` (CI falla si no coinciden).
+
+**Aviso de actualizaciones en escritorio:** al abrir la app instalada, `electron/updates.cjs` consulta el último release de GitHub y, si hay uno más nuevo, ofrece abrir la página de descarga. No descarga ni instala nada solo: los instaladores no están firmados, así que la instalación siempre la confirmas tú.
+
+**Llave de firma de Android:** está en los secretos del repo (`ANDROID_KEYSTORE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`). La copia de respaldo está en `~/.clipo-keys/` de tu Mac, con la contraseña en `LEEME.txt`. **Guárdala en otro lugar seguro** (por ejemplo un gestor de contraseñas): si se pierde, las versiones nuevas no se podrán instalar encima y habría que desinstalar la app, perdiendo sus proyectos.
+
+**Primera instalación del APK firmado:** si tenías instalado un APK de debug de una ejecución anterior, desinstálalo una vez, porque la firma cambia. A partir de ahí cada versión se instala encima.
+
+**Firma de Windows (opcional):** para uso personal no hace falta; SmartScreen solo pide confirmar la primera vez. Si algún día la quieres, añade los secretos `CSC_LINK` (el `.pfx` en base64) y `CSC_KEY_PASSWORD`.
+
+**iOS:** instalarla en un iPhone requiere un Mac con Xcode (`npm run cap:ios`) y un Apple ID. Con un Apple ID gratuito la app caduca a los 7 días; con la cuenta de pago (99 USD/año), al año.
 
 ## 4. Checklist de políticas de las tiendas
 

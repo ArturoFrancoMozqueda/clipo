@@ -46,16 +46,19 @@ export function groupWords(input: TimedWord[], opts: Partial<GroupOptions> = {})
   let cur: TimedWord[] = [];
   const len = (ws: TimedWord[]) => ws.reduce((n, w, i) => n + w.text.length + (i ? 1 : 0), 0);
   const flush = () => {
-    if (!cur.length) return;
-    cues.push({ start: cur[0].start, end: cur[cur.length - 1].end, text: cur.map((w) => w.text).join(' '), words: cur });
+    const first = cur[0];
+    const last = cur.at(-1);
+    if (!first || !last) return;
+    cues.push({ start: first.start, end: last.end, text: cur.map((w) => w.text).join(' '), words: cur });
     cur = [];
   };
   for (const w of words) {
-    if (cur.length) {
-      const last = cur[cur.length - 1];
+    const first = cur[0];
+    const last = cur.at(-1);
+    if (first && last) {
       const tooLong = len(cur) + 1 + w.text.length > o.maxChars;
       const pause = w.start - last.end > o.maxGap;
-      const tooSlow = w.end - cur[0].start > o.maxDur;
+      const tooSlow = w.end - first.start > o.maxDur;
       const sentence = SENTENCE_END.test(last.text) && len(cur) >= 8;
       if (tooLong || pause || tooSlow || sentence) flush();
     }
@@ -64,8 +67,8 @@ export function groupWords(input: TimedWord[], opts: Partial<GroupOptions> = {})
   flush();
   // Don't leave one short word alone on screen for a split second.
   for (let i = cues.length - 1; i > 0; i--) {
-    const c = cues[i];
-    const prev = cues[i - 1];
+    const c = cues[i]!;
+    const prev = cues[i - 1]!;
     if (
       c.words!.length === 1 &&
       c.text.length < 10 &&
@@ -95,9 +98,11 @@ export function wordTimings(text: string, words: CaptionWord[] | undefined, dura
   if (words && words.length === tokens.length) return words.map((w) => ({ start: w.start, end: w.end }));
   let a = 0;
   let b = duration;
-  if (words?.length) {
-    a = Math.max(0, words[0].start);
-    b = Math.min(duration, Math.max(a + 0.1, words[words.length - 1].end));
+  const first = words?.[0];
+  const last = words?.at(-1);
+  if (first && last) {
+    a = Math.max(0, first.start);
+    b = Math.min(duration, Math.max(a + 0.1, last.end));
   }
   const weights = tokens.map((t) => t.length + 1);
   const total = weights.reduce((s, x) => s + x, 0);
@@ -113,7 +118,7 @@ export function wordTimings(text: string, words: CaptionWord[] | undefined, dura
 /** Index of the word being said at `local` seconds: the last one that has started, or -1. */
 export function activeWord(timings: { start: number }[], local: number): number {
   let k = -1;
-  for (let i = 0; i < timings.length; i++) if (timings[i].start <= local + 1e-6) k = i;
+  for (let i = 0; i < timings.length; i++) if (timings[i]!.start <= local + 1e-6) k = i;
   return k;
 }
 
@@ -182,7 +187,8 @@ const TIME = String.raw`(?:(\d+):)?(\d{1,2}):(\d{2})(?:[.,](\d{1,3}))?`;
 const TIME_LINE = new RegExp(String.raw`^\s*${TIME}\s*-->\s*${TIME}`);
 const INLINE_TIME = new RegExp(String.raw`<${TIME}>`, 'g');
 
-const toSec = (h: string | undefined, m: string, s: string, f: string | undefined) =>
+// The minutes and seconds groups are not optional in the patterns, so they are always matched.
+const toSec = (h: string | undefined, m: string | undefined, s: string | undefined, f: string | undefined) =>
   Number(h ?? 0) * 3600 + Number(m) * 60 + Number(s) + (f ? Number(f.padEnd(3, '0')) / 1000 : 0);
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', lrm: '', rlm: '' };
@@ -246,13 +252,13 @@ export function parseSubtitles(raw: string): Cue[] {
 
   const cues: Cue[] = [];
   for (const b of blocks) {
-    if (/^(WEBVTT|NOTE|STYLE|REGION)\b/.test(b[0])) {
+    if (/^(WEBVTT|NOTE|STYLE|REGION)\b/.test(b[0]!)) {
       // A cue can't start with these words; the header may still share the block in sloppy files.
       if (!b.some((l) => TIME_LINE.test(l))) continue;
     }
     const at = b.findIndex((l) => TIME_LINE.test(l));
     if (at < 0) continue;
-    const m = TIME_LINE.exec(b[at])!;
+    const m = TIME_LINE.exec(b[at]!)!;
     const start = toSec(m[1], m[2], m[3], m[4]);
     const end = toSec(m[5], m[6], m[7], m[8]);
     const rawText = b.slice(at + 1).join('\n');

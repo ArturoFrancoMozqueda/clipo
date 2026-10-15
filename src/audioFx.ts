@@ -224,9 +224,9 @@ function roomImpulse(ctx: BaseAudioContext) {
   for (let ch = 0; ch < 2; ch++) {
     const d = b.getChannelData(ch);
     let e = 0;
-    for (let i = 0; i < len; i++) e += d[i] * d[i];
+    for (let i = 0; i < len; i++) e += d[i]! * d[i]!;
     const k = 1 / Math.sqrt(e || 1);
-    for (let i = 0; i < len; i++) d[i] *= k;
+    for (let i = 0; i < len; i++) d[i]! *= k;
   }
   impulses.set(ctx, b);
   return b;
@@ -247,7 +247,7 @@ export function monoOf(buf: AudioBuffer): Float32Array {
   const out = new Float32Array(buf.length);
   for (let ch = 0; ch < buf.numberOfChannels; ch++) {
     const d = buf.getChannelData(ch);
-    for (let i = 0; i < out.length; i++) out[i] += d[i] / buf.numberOfChannels;
+    for (let i = 0; i < out.length; i++) out[i]! += d[i]! / buf.numberOfChannels;
   }
   return out;
 }

@@ -52,9 +52,9 @@ export function placeTexts(t: Template, values: Record<string, string>, lengths:
   for (const x of t.texts) {
     const all = x.slot === 'all';
     const i = all ? 0 : Math.min(x.slot as number, lengths.length - 1);
-    if (i < 0) continue;
     const base = all ? 0 : starts[i];
     const len = all ? total : lengths[i];
+    if (base === undefined || len === undefined) continue;
     const offset = clamp(x.offset, 0, Math.max(0, len - MIN_TEXT));
     const duration = clamp(x.duration ?? len - offset, MIN_TEXT, Math.max(MIN_TEXT, len - offset));
     const text = fillText(x.text, t, values);
@@ -86,7 +86,7 @@ export function projectFromTemplate(t: Template, media: Asset[], values: Record<
   const first = t.fields[0] && values[t.fields[0].key]?.trim();
   p.name = first ? `${t.name} · ${first}` : t.name;
   for (const a of media) p.assets[a.id] = a;
-  if (media.length) p.clips = t.slots.map((s, i) => clipFor(media[i % media.length], s));
+  if (media.length) p.clips = t.slots.map((s, i) => clipFor(media[i % media.length]!, s));
   p.texts = placeTexts(t, values, p.clips.length ? p.clips.map(clipDur) : t.slots.map((s) => s.duration));
   return p;
 }
@@ -109,11 +109,12 @@ export function templateFromProject(p: Project, name: string): Template {
     .filter((x) => !x.caption)
     .map((x) => {
       const i = placed.findIndex((l) => x.start >= l.start - 1e-3 && x.start < l.end);
-      const ok = i >= 0 && x.start + x.duration <= placed[i].end + 0.05;
+      const l = placed[i];
+      const ok = l !== undefined && x.start + x.duration <= l.end + 0.05;
       return {
         text: x.text,
         slot: ok ? i : ('all' as const),
-        offset: round(ok ? x.start - placed[i].start : x.start),
+        offset: round(ok ? x.start - l.start : x.start),
         duration: round(x.duration),
         x: x.x,
         y: x.y,
@@ -121,7 +122,7 @@ export function templateFromProject(p: Project, name: string): Template {
         styleId: x.styleId,
       };
     });
-  const palette = BUILTIN_TEMPLATES[Math.floor(Math.random() * BUILTIN_TEMPLATES.length)].look.colors;
+  const palette = BUILTIN_TEMPLATES[Math.floor(Math.random() * BUILTIN_TEMPLATES.length)]!.look.colors;
   return {
     version: 1,
     id: `mia-${uid()}`,

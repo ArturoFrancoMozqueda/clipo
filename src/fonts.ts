@@ -200,7 +200,7 @@ export function ensureFont(id: string | undefined): Promise<void> {
       (url, i) => new FontFace(f.name, `url(${JSON.stringify(url)}) format("woff2")`, { weight: String(f.weight), unicodeRange: i ? LATIN_EXT : LATIN, display: 'swap' }),
     );
     faces.forEach((ff) => document.fonts.add(ff));
-    p = faces[0].load().then(
+    p = faces[0]!.load().then(
       () => undefined,
       () => {
         // Offline the first time: forget it so the next use tries again.

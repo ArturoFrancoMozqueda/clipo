@@ -151,5 +151,6 @@ export async function piperSpeak(path: string, text: string, speed: number, spea
   };
   if (config.num_speakers > 1) feeds.sid = new ort.Tensor('int64', int64([config.speaker_id_map[speaker ?? ''] ?? 0]), [1]);
   const out = await session.run(feeds);
+  if (!out.output) throw new Error('piper: the model returned no output');
   return { audio: out.output.data as Float32Array, sampling_rate: config.audio.sample_rate };
 }

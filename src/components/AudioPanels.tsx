@@ -169,7 +169,7 @@ function DuckingSection() {
     if (duck <= 0) return setCurve(null);
     let alive = true;
     const ids = voiceAssets(project).filter((id) => urls[id]);
-    Promise.all(ids.map((id) => analyzeAsset(id, urls[id]).then((a) => [id, a?.activity] as const))).then((list) => {
+    Promise.all(ids.map((id) => analyzeAsset(id, urls[id]!).then((a) => [id, a?.activity] as const))).then((list) => {
       if (alive) setCurve(projectDuckCurve(project, Object.fromEntries(list), totalDuration(project)));
     });
     return () => void (alive = false);
@@ -205,7 +205,7 @@ function DuckGraph({ curve, depth }: { curve: Float32Array; depth: number }) {
     const step = Math.max(1, Math.floor(n / W));
     const pts: string[] = [];
     for (let i = 0; i < n; i += step) {
-      const db = 20 * Math.log10(Math.max(1e-4, curve[i]));
+      const db = 20 * Math.log10(Math.max(1e-4, curve[i]!));
       const y = 4 + ((-db / Math.max(1, depth)) * (H - 8));
       pts.push(`${((i / (n - 1)) * W).toFixed(1)},${y.toFixed(1)}`);
     }
@@ -240,7 +240,7 @@ function SilenceSection() {
     setBusy(true);
     try {
       const ids = [...new Set(project.clips.map((c) => c.assetId))].filter((id) => project.assets[id]?.kind === 'video' && urls[id]);
-      const levels = Object.fromEntries(await Promise.all(ids.map(async (id) => [id, (await analyzeAsset(id, urls[id]))?.levels] as const)));
+      const levels = Object.fromEntries(await Promise.all(ids.map(async (id) => [id, (await analyzeAsset(id, urls[id]!))?.levels] as const)));
       const opts: SilenceOptions = { depth: SENSITIVITY.find((x) => x.id === sens)!.depth, minDuration: minDur, margin: 0.15 };
       const cuts = planSilenceCuts(project, levels, opts);
       setPlan({ for: project, cuts, skip: new Set() });

@@ -12,7 +12,7 @@ const rnd = (i: number) => {
 };
 
 function drawMotif(ctx: CanvasRenderingContext2D, m: Motif, W: number, H: number, t: number, colors: string[], slot: number) {
-  const c = (i: number) => colors[(i + slot + 1) % colors.length];
+  const c = (i: number) => colors[(i + slot + 1) % colors.length]!;
   const S = Math.min(W, H);
   ctx.save();
   ctx.globalAlpha = 0.85;
@@ -187,16 +187,16 @@ export function TemplatePreview({ template, width = 200, values = {} }: { templa
       const time = still ? Math.min(1, total / 2) : ((now - t0) / 1000) % total;
       let i = 0;
       let start = 0;
-      while (i < lengths.length - 1 && time >= start + lengths[i]) start += lengths[i++];
+      while (i < lengths.length - 1 && time >= start + lengths[i]!) start += lengths[i++]!;
       const local = time - start;
       const colors = template.look.colors;
       // Slide the new slot in over the previous one.
       const slide = i > 0 && local < 0.35 ? 1 - local / 0.35 : 0;
-      ctx.fillStyle = colors[(i - 1 + colors.length) % colors.length];
+      ctx.fillStyle = colors[(i - 1 + colors.length) % colors.length]!;
       ctx.fillRect(0, 0, W, H);
       ctx.save();
       ctx.translate(slide * slide * W, 0);
-      ctx.fillStyle = colors[i % colors.length];
+      ctx.fillStyle = colors[i % colors.length]!;
       ctx.fillRect(0, 0, W, H);
       drawMotif(ctx, template.look.motif, W, H, time, colors, i);
       drawSlotFrame(ctx, W, H, i + 1);
@@ -205,7 +205,9 @@ export function TemplatePreview({ template, width = 200, values = {} }: { templa
       if (still) cancelAnimationFrame(raf);
     };
     raf = requestAnimationFrame(frame);
-    const io = new IntersectionObserver(([e]) => (visible = e.isIntersecting));
+    const io = new IntersectionObserver(([e]) => {
+      if (e) visible = e.isIntersecting;
+    });
     io.observe(cv);
     return () => {
       cancelAnimationFrame(raf);

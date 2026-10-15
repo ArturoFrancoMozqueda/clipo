@@ -84,8 +84,11 @@ export function Preview() {
     return b ? { x: r.left + (b.cx * r.width) / c.width, y: r.top + (b.cy * r.height) / c.height } : null;
   };
 
+  // Only called with two pointers down.
   const pinchGeom = () => {
-    const [p1, p2] = [...pointers.current.values()];
+    const pts = [...pointers.current.values()];
+    const p1 = pts[0]!;
+    const p2 = pts[1]!;
     return { d: Math.hypot(p2.x - p1.x, p2.y - p1.y), a: Math.atan2(p2.y - p1.y, p2.x - p1.x) };
   };
 

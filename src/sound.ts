@@ -332,8 +332,8 @@ const decoded = new Map<string, Promise<Float32Array>>();
 /** Scale down anything that would clip, so no effect ever distorts. */
 function limit(d: Float32Array, max = 0.95) {
   let peak = 0;
-  for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
-  if (peak > max) for (let i = 0; i < d.length; i++) d[i] *= max / peak;
+  for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]!));
+  if (peak > max) for (let i = 0; i < d.length; i++) d[i]! *= max / peak;
   return d;
 }
 
@@ -349,7 +349,7 @@ export function renderSfx(s: Sfx): Promise<Float32Array> {
         const out = new Float32Array(ab.length);
         for (let ch = 0; ch < ab.numberOfChannels; ch++) {
           const d = ab.getChannelData(ch);
-          for (let i = 0; i < out.length; i++) out[i] += d[i] / ab.numberOfChannels;
+          for (let i = 0; i < out.length; i++) out[i]! += d[i]! / ab.numberOfChannels;
         }
         return limit(out);
       });
@@ -445,17 +445,17 @@ function buildSong(m: Mood, seconds: number): Build {
     const rests = Array.from({ length: 8 }, () => r() < 0.25);
     for (let b = 0; b < bars; b++) {
       const t0 = b * bar;
-      const chord = m.chords[b % m.chords.length];
+      const chord = m.chords[b % m.chords.length]!;
       playChord(c, out, t0, bar, chord, m.pad);
       // Bass on the root, an octave down.
-      const root = chord[0] - 24;
+      const root = chord[0]! - 24;
       const bassHits = m.drums === 'four' || m.drums === 'epic' ? [0, 1, 2, 3] : [0, 2];
       for (const k of bassHits) tone(c, out, t0 + k * beat, 'triangle', hz(root), hz(root), beat * 0.9, 0.35, 0.01);
       // Melody/arpeggio: skip the first bars so the song builds up.
       if (m.lead && b >= 2) {
         for (let i = 0; i < 8; i++) {
           if (rests[i]) continue;
-          const n = chord[pattern[i] % chord.length] + 12;
+          const n = chord[pattern[i]! % chord.length]! + 12;
           tone(c, out, t0 + i * (beat / 2), m.lead, hz(n), hz(n), beat * 0.4, m.lead === 'square' ? 0.07 : 0.16, 0.005);
         }
       }

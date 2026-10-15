@@ -31,14 +31,14 @@ export function parseCube(text: string): CubeLut {
     return v as [number, number, number];
   };
   const lines = text.replace(/^﻿/, '').split(/\r\n|\r|\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].replace(/#.*$/, '').trim();
+  for (const [i, raw] of lines.entries()) {
+    const line = raw.replace(/#.*$/, '').trim();
     if (!line) continue;
     const parts = line.split(/\s+/);
-    const key = parts[0].toUpperCase();
+    const key = (parts[0] ?? '').toUpperCase();
     if (key === 'TITLE') title = line.slice(5).trim().replace(/^"|"$/g, '');
-    else if (key === 'LUT_3D_SIZE') size3 = parseInt(parts[1], 10);
-    else if (key === 'LUT_1D_SIZE') size1 = parseInt(parts[1], 10);
+    else if (key === 'LUT_3D_SIZE') size3 = parseInt(parts[1] ?? '', 10);
+    else if (key === 'LUT_1D_SIZE') size1 = parseInt(parts[1] ?? '', 10);
     else if (key === 'DOMAIN_MIN') domainMin = triple(parts, i + 1);
     else if (key === 'DOMAIN_MAX') domainMax = triple(parts, i + 1);
     else if (key === 'LUT_3D_INPUT_RANGE' || key === 'LUT_1D_INPUT_RANGE') {
@@ -57,7 +57,7 @@ export function parseCube(text: string): CubeLut {
     }
     // Other keywords (LUT_IN_VIDEO_RANGE, vendor tags…) don't change the colors: ignore them.
   }
-  if (domainMax.some((v, k) => v <= domainMin[k])) throw new Error('El rango del LUT no es válido');
+  if (domainMax.some((v, k) => v <= domainMin[k]!)) throw new Error('El rango del LUT no es válido');
   if (size3) {
     if (size3 < 2 || size3 > 256) throw new Error('Tamaño de LUT no válido');
     if (values.length !== size3 ** 3 * 3) throw new Error(`El archivo está incompleto: faltan colores (${values.length / 3} de ${size3 ** 3})`);
@@ -72,7 +72,7 @@ export function parseCube(text: string): CubeLut {
       const pos = x * (size1 - 1);
       const j = Math.min(size1 - 2, Math.floor(pos));
       const f = pos - j;
-      return values[j * 3 + ch] * (1 - f) + values[(j + 1) * 3 + ch] * f;
+      return values[j * 3 + ch]! * (1 - f) + values[(j + 1) * 3 + ch]! * f;
     };
     const data = new Float32Array(n ** 3 * 3);
     for (let b = 0; b < n; b++)
@@ -98,7 +98,7 @@ function trilinear(grid: ArrayLike<number>, n: number, r: number, g: number, b: 
   const fb = b - b0;
   const n2 = n * n;
   for (let ch = 0; ch < 3; ch++) {
-    const at = (dr: number, dg: number, db: number) => grid[((r0 + dr) + (g0 + dg) * n + (b0 + db) * n2) * 3 + ch];
+    const at = (dr: number, dg: number, db: number) => grid[((r0 + dr) + (g0 + dg) * n + (b0 + db) * n2) * 3 + ch]!;
     const c00 = at(0, 0, 0) * (1 - fr) + at(1, 0, 0) * fr;
     const c10 = at(0, 1, 0) * (1 - fr) + at(1, 1, 0) * fr;
     const c01 = at(0, 0, 1) * (1 - fr) + at(1, 0, 1) * fr;
@@ -119,19 +119,19 @@ export function lutToBytes(lut: CubeLut, maxSize = LUT_MAX_SIZE): { size: number
   const bytes = new Uint8Array(n ** 3 * 3);
   const out = [0, 0, 0];
   const m = lut.size - 1;
-  const pos = (x: number, ch: number) => c01((x - lut.domainMin[ch]) / (lut.domainMax[ch] - lut.domainMin[ch])) * m;
+  const pos = (x: number, ch: number) => c01((x - lut.domainMin[ch]!) / (lut.domainMax[ch]! - lut.domainMin[ch]!)) * m;
   for (let b = 0; b < n; b++)
     for (let g = 0; g < n; g++)
       for (let r = 0; r < n; r++) {
         const o = (r + g * n + b * n * n) * 3;
         if (same) {
-          out[0] = lut.data[o];
-          out[1] = lut.data[o + 1];
-          out[2] = lut.data[o + 2];
+          out[0] = lut.data[o]!;
+          out[1] = lut.data[o + 1]!;
+          out[2] = lut.data[o + 2]!;
         } else trilinear(lut.data, lut.size, pos(r / (n - 1), 0), pos(g / (n - 1), 1), pos(b / (n - 1), 2), out);
-        bytes[o] = Math.round(c01(out[0]) * 255);
-        bytes[o + 1] = Math.round(c01(out[1]) * 255);
-        bytes[o + 2] = Math.round(c01(out[2]) * 255);
+        bytes[o] = Math.round(c01(out[0]!) * 255);
+        bytes[o + 1] = Math.round(c01(out[1]!) * 255);
+        bytes[o + 2] = Math.round(c01(out[2]!) * 255);
       }
   return { size: n, bytes };
 }
@@ -175,9 +175,12 @@ export function applyLutToPixels(px: Uint8ClampedArray, bytes: Uint8Array, size:
   const k = (size - 1) / 255;
   const out = [0, 0, 0];
   for (let i = 0; i < px.length; i += 4) {
-    trilinear(bytes, size, px[i] * k, px[i + 1] * k, px[i + 2] * k, out);
-    px[i] = px[i] + (out[0] - px[i]) * a;
-    px[i + 1] = px[i + 1] + (out[1] - px[i + 1]) * a;
-    px[i + 2] = px[i + 2] + (out[2] - px[i + 2]) * a;
+    const r = px[i]!;
+    const g = px[i + 1]!;
+    const b = px[i + 2]!;
+    trilinear(bytes, size, r * k, g * k, b * k, out);
+    px[i] = r + (out[0]! - r) * a;
+    px[i + 1] = g + (out[1]! - g) * a;
+    px[i + 2] = b + (out[2]! - b) * a;
   }
 }

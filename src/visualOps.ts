@@ -30,6 +30,7 @@ export function freezeAtPlayhead() {
   const id = uid();
   s.commit((q) => {
     const c = q.clips[hit.index];
+    if (!c) return;
     const freeze: Clip = { ...c, id, in: 0, out: FREEZE_DEFAULT, speed: 1, volume: 0, freeze: still };
     delete freeze.transition;
     if (at <= hit.start + MIN) q.clips.splice(hit.index, 0, freeze);

@@ -57,8 +57,8 @@ export interface ActiveTransition {
 /** The transition happening at time t, if any. It is centered on the cut between two clips. */
 export function transitionAt(placed: Placed[], t: number): ActiveTransition | null {
   for (let i = 0; i < placed.length - 1; i++) {
-    const a = placed[i];
-    const b = placed[i + 1];
+    const a = placed[i]!;
+    const b = placed[i + 1]!;
     const d = transitionLength(a.clip, b.clip);
     if (!d) continue;
     const from = a.end - d / 2;
@@ -372,7 +372,7 @@ function grainTile(i: number) {
     const img = g.createImageData(GRAIN_SIZE, GRAIN_SIZE);
     const v = grainValues(i + 1, GRAIN_SIZE * GRAIN_SIZE);
     for (let p = 0; p < v.length; p++) {
-      img.data[p * 4] = img.data[p * 4 + 1] = img.data[p * 4 + 2] = v[p];
+      img.data[p * 4] = img.data[p * 4 + 1] = img.data[p * 4 + 2] = v[p]!;
       img.data[p * 4 + 3] = 255;
     }
     g.putImageData(img, 0, 0);

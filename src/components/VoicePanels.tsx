@@ -26,7 +26,7 @@ const mb = (n: number) => `${Math.round(n / 1e6)} MB`;
 
 // ---------- Grabar voz ----------
 
-const MIC_ERRORS: Record<string, string> = {
+const MIC_ERRORS: Record<string, string> & { failed: string } = {
   unsupported: 'Este navegador no puede grabar audio. Usa Chrome, Edge o Safari actualizados.',
   denied: 'Clipo no tiene permiso para usar el micrófono. Permítelo en el candado junto a la dirección de la página y vuelve a intentarlo.',
   'no-mic': 'No se encontró ningún micrófono. Conecta uno o revisa la configuración de tu dispositivo.',

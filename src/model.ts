@@ -50,10 +50,11 @@ export function layout(p: Project): Placed[] {
     let t = 0;
     let ok = true;
     for (let i = 0; i < hit.length && ok; i++) {
-      const c = p.clips[i];
-      ok = hit[i].clip === c && hit[i].start === t;
+      const c = p.clips[i]!;
+      const h = hit[i]!;
+      ok = h.clip === c && h.start === t;
       t += clipDur(c);
-      ok &&= hit[i].end === t;
+      ok &&= h.end === t;
     }
     if (ok) return hit;
   }
@@ -70,7 +71,7 @@ export function layout(p: Project): Placed[] {
 
 export function mainDuration(p: Project) {
   const l = layout(p);
-  return l.length ? l[l.length - 1].end : 0;
+  return l.at(-1)?.end ?? 0;
 }
 
 export function totalDuration(p: Project) {

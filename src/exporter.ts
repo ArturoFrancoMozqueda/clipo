@@ -207,17 +207,21 @@ async function fastExport(
     const a = p.assets[id];
     if (a?.kind === 'image' && !images.has(a.id)) {
       const img = new Image();
-      img.src = urls[a.id];
-      await img.decode().catch(() => {});
+      const url = urls[a.id];
+      if (url) {
+        img.src = url;
+        await img.decode().catch(() => {});
+      }
       images.set(a.id, img.naturalWidth ? { src: img, w: img.naturalWidth, h: img.naturalHeight } : blank);
     }
   }
   // Pictures used as stickers.
   const stickerImgs = new Map<string, HTMLImageElement>();
   for (const st of p.stickers ?? []) {
-    if (!st.assetId || stickerImgs.has(st.assetId) || !urls[st.assetId]) continue;
+    const url = st.assetId ? urls[st.assetId] : undefined;
+    if (!st.assetId || stickerImgs.has(st.assetId) || !url) continue;
     const img = new Image();
-    img.src = urls[st.assetId];
+    img.src = url;
     await img.decode().catch(() => {});
     if (img.naturalWidth) stickerImgs.set(st.assetId, img);
   }
@@ -407,7 +411,10 @@ function pickVideoCodec(mb: typeof import('mediabunny'), W: number, H: number) {
   if (!found) {
     found = (async () => {
       const codecs = await mb.getEncodableVideoCodecs(['avc', 'hevc', 'vp9', 'av1'], { width: W, height: H });
-      for (const codec of codecs) if (await probeEncoder(PROBE_CODECS[codec], W, H)) return codec;
+      for (const codec of codecs) {
+        const probe = PROBE_CODECS[codec];
+        if (probe && (await probeEncoder(probe, W, H))) return codec;
+      }
       return null;
     })();
     probed.set(key, found);

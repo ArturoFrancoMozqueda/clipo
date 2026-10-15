@@ -57,10 +57,14 @@ const twSin = Float32Array.from({ length: N_FFT / 2 }, (_, i) => Math.sin((-2 * 
 /** In-place radix-2 FFT of one frame. */
 function fft(re: Float32Array, im: Float32Array) {
   for (let i = 0; i < N_FFT; i++) {
-    const j = bitrev[i];
+    const j = bitrev[i]!;
     if (j > i) {
-      [re[i], re[j]] = [re[j], re[i]];
-      [im[i], im[j]] = [im[j], im[i]];
+      const tr = re[i]!;
+      re[i] = re[j]!;
+      re[j] = tr;
+      const ti = im[i]!;
+      im[i] = im[j]!;
+      im[j] = ti;
     }
   }
   for (let size = 2; size <= N_FFT; size <<= 1) {
@@ -68,16 +72,18 @@ function fft(re: Float32Array, im: Float32Array) {
     const step = N_FFT / size;
     for (let start = 0; start < N_FFT; start += size) {
       for (let k = 0; k < half; k++) {
-        const c = twCos[k * step];
-        const s = twSin[k * step];
+        const c = twCos[k * step]!;
+        const s = twSin[k * step]!;
         const a = start + k;
         const b = a + half;
-        const tr = re[b] * c - im[b] * s;
-        const ti = re[b] * s + im[b] * c;
-        re[b] = re[a] - tr;
-        im[b] = im[a] - ti;
-        re[a] += tr;
-        im[a] += ti;
+        const rb = re[b]!;
+        const ib = im[b]!;
+        const tr = rb * c - ib * s;
+        const ti = rb * s + ib * c;
+        re[b] = re[a]! - tr;
+        im[b] = im[a]! - ti;
+        re[a]! += tr;
+        im[a]! += ti;
       }
     }
   }
@@ -92,7 +98,7 @@ export function spectrogram(y: Float32Array): { data: Float32Array; frames: numb
     let k = i - pad;
     if (k < 0) k = -k;
     if (k >= y.length) k = 2 * (y.length - 1) - k;
-    return y[Math.max(0, Math.min(y.length - 1, k))];
+    return y[Math.max(0, Math.min(y.length - 1, k))]!;
   };
   const frames = Math.max(1, Math.floor((n - N_FFT) / HOP) + 1);
   const data = new Float32Array(frames * BINS);
@@ -101,18 +107,18 @@ export function spectrogram(y: Float32Array): { data: Float32Array; frames: numb
   for (let f = 0; f < frames; f++) {
     const o = f * HOP;
     for (let i = 0; i < N_FFT; i++) {
-      re[i] = at(o + i) * hann[i];
+      re[i] = at(o + i) * hann[i]!;
       im[i] = 0;
     }
     fft(re, im);
-    for (let b = 0; b < BINS; b++) data[f * BINS + b] = Math.sqrt(re[b] * re[b] + im[b] * im[b] + 1e-6);
+    for (let b = 0; b < BINS; b++) data[f * BINS + b] = Math.sqrt(re[b]! * re[b]! + im[b]! * im[b]! + 1e-6);
   }
   return { data, frames };
 }
 
 function transpose(s: { data: Float32Array; frames: number }) {
   const out = new Float32Array(s.data.length);
-  for (let f = 0; f < s.frames; f++) for (let b = 0; b < BINS; b++) out[b * s.frames + f] = s.data[f * BINS + b];
+  for (let f = 0; f < s.frames; f++) for (let b = 0; b < BINS; b++) out[b * s.frames + f] = s.data[f * BINS + b]!;
   return out;
 }
 
@@ -177,7 +183,7 @@ export async function toneColor(y: Float32Array): Promise<Float32Array> {
   const { extract } = await loadTone();
   const s = spectrogram(y);
   const out = await extract.run({ input: new ort.Tensor('float32', s.data, [1, s.frames, BINS]) });
-  return new Float32Array((out[extract.outputNames[0]] as ort.Tensor).data as Float32Array);
+  return new Float32Array((out[extract.outputNames[0]!] as ort.Tensor).data as Float32Array);
 }
 
 /** Re-timbre speech `y` (22.05 kHz) from the `src` tone color to the `dest` one. */
@@ -191,5 +197,5 @@ export async function convertTone(y: Float32Array, src: Float32Array, dest: Floa
     dest_tone: new ort.Tensor('float32', dest, [1, 256, 1]),
     tau: new ort.Tensor('float32', Float32Array.from([tau]), [1]),
   });
-  return new Float32Array((out[clone.outputNames[0]] as ort.Tensor).data as Float32Array);
+  return new Float32Array((out[clone.outputNames[0]!] as ort.Tensor).data as Float32Array);
 }

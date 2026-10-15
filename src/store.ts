@@ -165,13 +165,13 @@ export const useStore = create<State>()((set, get) => ({
     let i = past.length - 1;
     while (i >= 0 && past[i] === project) i--;
     if (i < 0) return past.length ? set({ past: [] }) : undefined;
-    const prev = past[i];
+    const prev = past[i]!;
     set({ project: prev, past: past.slice(0, i), future: [project, ...future], selection: selectionExists(prev, get().selection) });
   },
   redo: () => {
     const { project, past, future } = get();
-    if (!project || !future.length) return;
     const next = future[0];
+    if (!project || !next) return;
     set({ project: next, past: pushPast(past, project), future: future.slice(1), selection: selectionExists(next, get().selection) });
   },
   setTime: (t) => set({ time: t }),

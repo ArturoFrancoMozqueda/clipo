@@ -124,7 +124,7 @@ function TemplateFill({ template: t, onBack, onDone }: { template: Template; onB
       // Fill empty slots first, in order; if all are full, start over from the first.
       let order = next.map((f, i) => (f ? -1 : i)).filter((i) => i >= 0);
       if (!order.length) order = next.map((_, i) => i);
-      list.slice(0, order.length).forEach((f, k) => (next[order[k]] = f));
+      list.slice(0, order.length).forEach((f, k) => (next[order[k]!] = f));
       return next;
     });
     if (list.length > t.slots.length) useStore.getState().notify(`Esta plantilla usa ${t.slots.length}; agregamos las primeras.`);
@@ -152,7 +152,7 @@ function TemplateFill({ template: t, onBack, onDone }: { template: Template; onB
       }
       // Empty slots reuse the chosen media in order so the template keeps its rhythm.
       let k = 0;
-      const media = bySlot.map((a) => a ?? good[k++ % good.length]);
+      const media = bySlot.map((a) => a ?? good[k++ % good.length]!);
       const p = projectFromTemplate(t, media, values);
       await saveProject(p).catch(() => {});
       s.open(p, { ...useStore.getState().urls });

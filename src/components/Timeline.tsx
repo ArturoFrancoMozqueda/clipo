@@ -202,7 +202,8 @@ export function Timeline() {
       }
     };
     let pinch: { d: number; pps: number } | null = null;
-    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    // Only called with two touches.
+    const dist = (t: TouchList) => Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY);
     const ts = (e: TouchEvent) => {
       if (e.touches.length === 2) pinch = { d: dist(e.touches), pps: useStore.getState().pps };
     };
@@ -285,7 +286,7 @@ export function Timeline() {
                     style={{
                       left: pad + o.start * pps,
                       width: Math.max(2, overlayDur(o) * pps),
-                      top: overlayLanes.map[o.id] * ROW_OVERLAY,
+                      top: (overlayLanes.map[o.id] ?? 0) * ROW_OVERLAY,
                       height: ROW_OVERLAY - 4,
                       backgroundImage: a?.thumb ? `url(${a.thumb})` : undefined,
                     }}
@@ -383,7 +384,7 @@ export function Timeline() {
                 <div
                   key={t.id}
                   className={`tl-item text ${sel ? 'selected' : ''}`}
-                  style={{ left: pad + t.start * pps, width: Math.max(2, t.duration * pps), top: textLanes.map[t.id] * ROW_TEXT, height: ROW_TEXT - 4 }}
+                  style={{ left: pad + t.start * pps, width: Math.max(2, t.duration * pps), top: (textLanes.map[t.id] ?? 0) * ROW_TEXT, height: ROW_TEXT - 4 }}
                   onClick={select('text', t.id)}
                   {...itemA11y('text', t.id, `Texto: ${t.text}`)}
                   onPointerDown={sel ? (e) => startDrag(e, 'text', t.id, 'body') : undefined}
@@ -410,7 +411,7 @@ export function Timeline() {
                 <div
                   key={st.id}
                   className={`tl-item sticker ${sel ? 'selected' : ''}`}
-                  style={{ left: pad + st.start * pps, width: Math.max(2, st.duration * pps), top: stickerLanes.map[st.id] * ROW_STICKER, height: ROW_STICKER - 4 }}
+                  style={{ left: pad + st.start * pps, width: Math.max(2, st.duration * pps), top: (stickerLanes.map[st.id] ?? 0) * ROW_STICKER, height: ROW_STICKER - 4 }}
                   onClick={select('sticker', st.id)}
                   {...itemA11y('sticker', st.id, 'Sticker')}
                   onPointerDown={sel ? (e) => startDrag(e, 'sticker', st.id, 'body') : undefined}
@@ -437,7 +438,7 @@ export function Timeline() {
                 <div
                   key={a.id}
                   className={`tl-item audio ${sel ? 'selected' : ''}`}
-                  style={{ left: pad + a.start * pps, width: Math.max(2, audioDur(a) * pps), top: audioLanes.map[a.id] * ROW_AUDIO, height: ROW_AUDIO - 4 }}
+                  style={{ left: pad + a.start * pps, width: Math.max(2, audioDur(a) * pps), top: (audioLanes.map[a.id] ?? 0) * ROW_AUDIO, height: ROW_AUDIO - 4 }}
                   onClick={select('audio', a.id)}
                   {...itemA11y('audio', a.id, `Audio: ${project.assets[a.assetId]?.name ?? 'sin nombre'}`)}
                   onPointerDown={sel ? (e) => startDrag(e, 'audio', a.id, 'body') : undefined}
