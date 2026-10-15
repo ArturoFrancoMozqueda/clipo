@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Captions, CheckCircle2, Download, Share2, TriangleAlert, VolumeX } from 'lucide-react';
+import { Captions, CheckCircle2, Download, Send, Share2, TriangleAlert, VolumeX } from 'lucide-react';
 import type { AudioItem, Clip, OverlayItem, PanelId, SelectionKind, StickerItem, TextItem } from '../types';
 import { itemsOf, useStore } from '../store';
 import { canExport, exportVideo, type ExportProgress } from '../exporter';
@@ -19,6 +19,8 @@ import { RecordPanel, TtsPanel } from './VoicePanels';
 import { AdvancedToggle, ColorPanel, KeyframesPanel, OverlayPanel } from './AdvancedPanels';
 import { BackgroundPanel } from './BackgroundPanel';
 import { BgError } from '../segmentation';
+import { PublishPanel } from './PublishPanel';
+import { handOffVideo } from '../publish/store';
 
 const TITLES: Record<PanelId, string> = {
   media: 'Agregar videos y fotos',
@@ -36,6 +38,7 @@ const TITLES: Record<PanelId, string> = {
   record: 'Grabar tu voz',
   tts: 'Texto a voz',
   export: 'Guardar video',
+  publish: 'Publicar en redes',
   overlay: 'Superposición',
   color: 'Corrección de color',
   keyframes: 'Fotogramas clave',
@@ -66,6 +69,7 @@ export function Sheet() {
     record: <RecordPanel />,
     tts: <TtsPanel />,
     export: <ExportPanel />,
+    publish: <PublishPanel />,
     overlay: <OverlayPanel />,
     color: <ColorPanel />,
     keyframes: <KeyframesPanel />,
@@ -495,6 +499,9 @@ function ExportPanel() {
             </button>
           )}
         </div>
+        <button className="btn-primary full" onClick={() => { handOffVideo(state.file); useStore.getState().setPanel('publish'); }}>
+          <Send size={18} /> Publicar en redes
+        </button>
         <button className="btn-ghost" onClick={() => setState({ kind: 'idle' })}>Volver a guardar</button>
       </div>
     );
@@ -516,6 +523,9 @@ function ExportPanel() {
         <Download size={22} /> Guardar video ({fmtTime(dur)})
       </button>
       <Hint>Sin marca de agua. Se procesa en tu dispositivo: nada se sube a internet.</Hint>
+      <button className="btn-ghost" onClick={() => useStore.getState().setPanel('publish')}>
+        <Send size={18} /> Publicar en redes y ver publicaciones
+      </button>
     </>
   );
 }

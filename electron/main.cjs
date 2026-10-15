@@ -1,10 +1,11 @@
 // Clipo for the desktop: the same web app, served from the installed files through a private
 // app:// scheme (a secure origin, so IndexedDB, workers, WebCodecs and the AI models all work),
 // in its own window, with no browser around it.
-const { app, BrowserWindow, Menu, net, protocol, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, safeStorage, session, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const youtube = require('./publish/youtube.cjs');
 
 const SCHEME = 'app';
 const HOST = 'clipo';
@@ -21,6 +22,8 @@ if (SMOKE) app.setPath('userData', process.env.CLIPO_SMOKE_DATA || fs.mkdtempSyn
 
 // One window only: opening Clipo again focuses the running one.
 if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
+
+let publishing = null;
 
 /** Map app://clipo/<path> to a file inside dist/, never outside it. Unknown paths get the app shell. */
 function serve(request) {
@@ -49,9 +52,31 @@ function createWindow() {
     icon: path.join(DIST, 'icon-512.png'),
     autoHideMenuBar: true,
     show: !SMOKE,
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      spellcheck: false,
+      // Publishing bridge (src/publish/desktop.ts): connect accounts and upload from the main process.
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
   });
   win.loadURL(`${SCHEME}://${HOST}/index.html`);
+
+  // Closing during an upload would cut it: ask first.
+  win.on('close', (e) => {
+    if (SMOKE || !publishing || !publishing.activeUploads()) return;
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      buttons: ['Seguir subiendo', 'Cerrar igual'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Clipo',
+      message: 'Hay un video subiéndose a tus redes.',
+      detail: 'Si cierras Clipo ahora, la subida se corta. Después podrás reintentarla desde Publicar.',
+    });
+    if (choice === 0) e.preventDefault();
+  });
 
   // Links to websites open in the user's browser, never inside the editor window.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -107,6 +132,8 @@ app.whenReady().then(() => {
   const allowed = new Set(['media', 'fullscreen', 'clipboard-sanitized-write']);
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)));
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+
+  publishing = youtube.register({ app, ipcMain, shell, safeStorage, BrowserWindow });
 
   Menu.setApplicationMenu(null);
   const win = createWindow();
