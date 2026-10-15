@@ -2,9 +2,10 @@
 #
 # Every push to main / PR:
 #   tests + web build, end-to-end tests (Chromium and WebKit, phone and PC sizes, production headers),
-#   Windows .exe (with a smoke test of the packaged app), signed Android .apk, iOS compile check.
+#   Windows .exe and macOS .dmg (each with a smoke test of the packaged app), signed Android .apk,
+#   iOS compile check.
 # Push to main with a new "version" in package.json:
-#   also publishes GitHub Release v<version> with the .exe and .apk attached. The desktop app
+#   also publishes GitHub Release v<version> with the .exe, .dmg and .apk attached. The desktop app
 #   then offers the update. To release: bump "version" in package.json and push.
 # "Run workflow" button (Actions tab): run it by hand.
 #
@@ -143,6 +144,43 @@ jobs:
           path: release/build/*.exe
           if-no-files-found: error
 
+  mac:
+    name: macOS (.dmg)
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+      # Ad-hoc signature (identity "-" in package.json): enough for Apple Silicon to run it. Without an
+      # Apple Developer ID it isn't notarized, so the first launch needs "Abrir igualmente" (PUBLICAR.md).
+      - run: npx electron-builder --mac --publish never
+      - name: Smoke test del .app empaquetado
+        env:
+          CLIPO_SMOKE: '1'
+        run: |
+          set +e
+          app=release/build/mac-arm64/Clipo.app
+          codesign --verify --deep --strict "$app" && echo "Firma ad-hoc válida"
+          # macOS has no `timeout`: perl's alarm kills the app if it hangs.
+          perl -e 'alarm shift; exec @ARGV' 120 "$app/Contents/MacOS/Clipo" > smoke.log 2>&1
+          code=$?
+          cat smoke.log
+          if grep -q 'renderer error' smoke.log; then echo "La app mostró errores en consola"; exit 1; fi
+          exit $code
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clipo-mac
+          path: release/build/*.dmg
+          if-no-files-found: error
+
   android:
     name: Android (.apk)
     needs: test
@@ -224,7 +262,7 @@ jobs:
   release:
     name: Publicar release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [test, e2e, windows, android]
+    needs: [test, e2e, windows, mac, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -256,6 +294,7 @@ jobs:
           generate_release_notes: true
           files: out/*
           body: |
+            **Mac:** `Clipo-*-mac-arm64.dmg` (Apple Silicon: M1, M2, M3…) o `Clipo-*-mac-x64.dmg` (Intel). Abre el .dmg y arrastra Clipo a Aplicaciones. La primera vez macOS lo bloquea porque no está notarizado: ve a Ajustes del Sistema → Privacidad y seguridad → "Abrir igualmente".
             **Windows:** `Clipo-Setup-*.exe` (instalador) o `Clipo-Portable-*.exe` (sin instalar). No está firmado: en SmartScreen elige "Más información" → "Ejecutar de todas formas".
             **Android:** `Clipo-*.apk`. Se instala encima de la versión anterior sin perder tus proyectos.
 

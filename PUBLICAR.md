@@ -279,9 +279,10 @@ Hoy no hay dónde publicar las versiones, así que no se activa. Pasos cuando lo
 1. Tests unitarios, revisión de tipos, build web y `npm audit`.
 2. Tests de punta a punta con Playwright en **Chromium y WebKit** (el motor de Safari), a tamaño de iPhone, Android y PC, sobre el build de producción servido con las mismas cabeceras (CSP, COOP/COEP) que `vercel.json`.
 3. **Windows:** genera el instalador y el portable, y abre el `.exe` empaquetado (con fuses y CSP activos) para comprobar que el editor carga.
-4. **Android:** APK de release minificado con R8 y **firmado con tu llave**.
-5. **iOS:** comprueba que el proyecto compila para el simulador (sin firma).
-6. Si `package-lock.json` estaba desactualizado, lo actualiza y hace commit.
+4. **macOS:** `.dmg` para Apple Silicon (`arm64`) e Intel (`x64`), con firma ad-hoc, y abre el `.app` empaquetado para comprobar que carga.
+5. **Android:** APK de release minificado con R8 y **firmado con tu llave**.
+6. **iOS:** comprueba que el proyecto compila para el simulador (sin firma).
+7. Si `package-lock.json` estaba desactualizado, lo actualiza y hace commit.
 
 Los archivos quedan en la pestaña **Actions** → la ejecución → **Artifacts**.
 
@@ -292,6 +293,8 @@ Los archivos quedan en la pestaña **Actions** → la ejecución → **Artifacts
 **Llave de firma de Android:** está en los secretos del repo (`ANDROID_KEYSTORE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`). La copia de respaldo está en `~/.clipo-keys/` de tu Mac, con la contraseña en `LEEME.txt`. **Guárdala en otro lugar seguro** (por ejemplo un gestor de contraseñas): si se pierde, las versiones nuevas no se podrán instalar encima y habría que desinstalar la app, perdiendo sus proyectos.
 
 **Primera instalación del APK firmado:** si tenías instalado un APK de debug de una ejecución anterior, desinstálalo una vez, porque la firma cambia. A partir de ahí cada versión se instala encima.
+
+**Instalar en Mac:** descarga `Clipo-<versión>-mac-arm64.dmg` si tu Mac tiene chip Apple (M1, M2…) o `-mac-x64.dmg` si es Intel. Abre el `.dmg` y arrastra Clipo a Aplicaciones. Como no está notarizado por Apple (eso requiere la cuenta de desarrollador de 99 USD/año), la primera vez macOS lo bloquea. Para abrirlo: Ajustes del Sistema → Privacidad y seguridad → "Abrir igualmente". También puedes ejecutar `xattr -dr com.apple.quarantine /Applications/Clipo.app`. Solo hace falta una vez por versión.
 
 **Firma de Windows (opcional):** para uso personal no hace falta; SmartScreen solo pide confirmar la primera vez. Si algún día la quieres, añade los secretos `CSC_LINK` (el `.pfx` en base64) y `CSC_KEY_PASSWORD`.
 
