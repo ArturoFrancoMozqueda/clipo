@@ -6,6 +6,7 @@ import { ASPECTS, canvasSize, clamp, fmtTime, totalDuration } from '../model';
 import { ImportButton } from './ImportButton';
 import { hitSticker, stickerHandle, stickerHandleRadius } from '../visuals';
 import { editPose, poseNow } from '../ops';
+import { SafeZoneGuide } from './SafeZoneGuide';
 
 /** Things that can be dragged, resized and rotated on the preview. */
 type Shape = 'sticker' | 'overlay';
@@ -206,6 +207,7 @@ export function Preview() {
           onPointerUp={onUp}
           onPointerCancel={onUp}
         />
+        {!empty && <SafeZoneGuide aspect={aspect} w={box.w} h={box.h} />}
         {empty && (
           <div className="empty-state" style={{ width: box.w, height: box.h }}>
             <ImagePlus size={44} />

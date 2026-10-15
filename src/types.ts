@@ -127,6 +127,14 @@ export interface Clip {
   effect?: Effect;
   color?: ColorAdjust;
   bgRemoval?: BgRemoval;
+  /** "Reencuadre automático": where the person is over time, so a cropped frame follows them. */
+  reframe?: Reframe;
+}
+
+/** Smoothed subject center over the clip's source time; used when the clip fills the frame. */
+export interface Reframe {
+  /** Sorted by t. t = seconds in the source file; x, y = center as a fraction of the source picture. */
+  points: { t: number; x: number; y: number }[];
 }
 
 export interface TextItem {
@@ -195,8 +203,37 @@ export interface Project {
   stickers?: StickerItem[];
   /** Picture-in-picture track (advanced mode). Missing in older projects. */
   overlays?: OverlayItem[];
+  /** Cover, text and target networks for publishing. Missing in older projects. */
+  publish?: PublishInfo;
   createdAt: number;
   updatedAt: number;
+}
+
+/** Social networks Clipo adapts videos for (ids shared with the publishing center). */
+export type PlatformId = 'tiktok' | 'instagram_reels' | 'youtube_shorts' | 'youtube' | 'facebook' | 'x' | 'linkedin';
+
+/** Post text for one network. */
+export interface PostText {
+  /** Only networks with a title field (YouTube). */
+  title?: string;
+  description: string;
+  /** As typed by the user; read it with parseHashtags(). */
+  hashtags: string;
+}
+
+export interface PublishTarget {
+  platform: PlatformId;
+  aspect: AspectId;
+}
+
+export interface PublishInfo {
+  /** Networks the video is for and the format chosen for each. */
+  targets?: PublishTarget[];
+  /** Timeline second used as the cover. */
+  coverTime?: number;
+  /** Small JPEG data URL of the cover, for showing it. */
+  coverThumb?: string;
+  posts?: Partial<Record<PlatformId, PostText>>;
 }
 
 export type SelectionKind = 'clip' | 'text' | 'audio' | 'sticker' | 'overlay';
@@ -222,4 +259,5 @@ export type PanelId =
   | 'color'
   | 'keyframes'
   | 'sfx'
+  | 'social'
   | 'help';

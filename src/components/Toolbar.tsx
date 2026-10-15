@@ -2,7 +2,7 @@ import {
   BellRing,
   ArrowLeft, ArrowLeftRight, ArrowRight, AudioLines, Captions, Copy, Diamond, Eraser, Gauge, Layers,
   Maximize, Mic, Minimize, Music, Palette, Pencil, Plus, RectangleHorizontal, Scissors,
-  SlidersHorizontal, Smile, Sparkles, Trash2, Type, Undo2,
+  Send, SlidersHorizontal, Smile, Sparkles, Trash2, Type, Undo2,
   Volume2, type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../store';
@@ -49,6 +49,7 @@ export function Toolbar() {
       { icon: AudioLines, label: 'Texto a voz', run: open('tts') },
       { icon: Scissors, label: 'Dividir', run: splitAtPlayhead },
       { icon: RectangleHorizontal, label: 'Formato', run: open('format') },
+      { icon: Send, label: 'Redes', run: open('social') },
     ];
   } else if (sel.kind === 'clip') {
     title = kind === 'image' ? 'Foto' : 'Video';

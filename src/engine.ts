@@ -10,6 +10,7 @@ import {
 import { applyColorPixels, colorCss, drawVignette } from './color';
 import { poseAt, type Pose } from './keyframes';
 import { maskFor, maskImageOf, type Mask } from './segmentation';
+import { coverRect, trackAt } from './reframe';
 
 interface MediaRec<E extends HTMLMediaElement> {
   el: E;
@@ -806,7 +807,9 @@ function drawClip(ctx: CanvasRenderingContext2D, l: Placed, f: FrameImage, t: nu
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
   applyEffectTransform(ctx, l.clip, local, W, H);
-  drawFrame(ctx, f.src, f.w, f.h, W, H, l.clip, effectCss(l.clip, W), cut?.mask ? cut : undefined);
+  // "Reencuadre automático": the saved path of the person, at this moment of the source.
+  const focus = l.clip.reframe?.points.length ? trackAt(l.clip.reframe.points, l.clip.in + local * l.clip.speed) : undefined;
+  drawFrame(ctx, f.src, f.w, f.h, W, H, l.clip, effectCss(l.clip, W), cut?.mask ? cut : undefined, focus);
   ctx.restore();
   applyEffectOverlay(ctx, l.clip, local, W, H);
   drawVignette(ctx, l.clip.color, W, H);
@@ -845,7 +848,7 @@ function drawBackground(ctx: CanvasRenderingContext2D, cut: Cutout, src: CanvasI
 
 function drawFrame(
   ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: number, sh: number, W: number, H: number, clip: Clip, extraCss: string,
-  cut?: Cutout,
+  cut?: Cutout, focus?: { x: number; y: number },
 ) {
   const fit = clip.fit;
   const cc = colorCss(clip.color);
@@ -869,11 +872,9 @@ function drawFrame(
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.fillRect(0, 0, W, H);
   }
-  const k = fit === 'fit' ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
-  const dw = sw * k;
-  const dh = sh * k;
-  const dx = (W - dw) / 2;
-  const dy = (H - dh) / 2;
+  const k = Math.min(W / sw, H / sh);
+  const { dx, dy, dw, dh } =
+    fit === 'fit' ? { dx: (W - sw * k) / 2, dy: (H - sh * k) / 2, dw: sw * k, dh: sh * k } : coverRect(sw, sh, W, H, focus);
   const f = getFilter(clip.filter);
   const css = [f.id !== 'none' ? f.css : '', cc, extraCss].filter(Boolean).join(' ');
   if (cut?.mask) {
