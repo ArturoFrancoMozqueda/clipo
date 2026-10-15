@@ -12,10 +12,17 @@ import { poseAt, type Pose } from './keyframes';
 import { maskFor, maskImageOf, type Mask } from './segmentation';
 import { applyLut } from './lut';
 import { framed, hasFraming } from './framing';
+import { analyzeAsset, buildVoiceFx, mixOf, projectDuckCurve, voiceAssets, type FxChain } from './audioFx';
+import { audioRole, curveAt, type ActivityByAsset } from './audioDsp';
+import type { VoiceFxId } from './types';
 
 interface MediaRec<E extends HTMLMediaElement> {
   el: E;
   gain: GainNode | null;
+  /** Web Audio source of the element, once the audio graph exists. */
+  src?: MediaElementAudioSourceNode | null;
+  /** Voice effect currently wired between src and gain. */
+  fx?: { id: VoiceFxId; chain: FxChain | null };
 }
 
 /** Ordered by preference; MP4 is the most widely shareable result. */
@@ -51,6 +58,10 @@ class Engine {
   private lastNow = 0;
   private onEnded: (() => void) | null = null;
   private abortExport: (() => void) | null = null;
+  /** Voice activity of each media file (for ducking), filled in as files are analyzed. */
+  private voiceActivity: ActivityByAsset = {};
+  private activityVersion = 0;
+  private duck: { project: Project; version: number; curve: Float32Array | null } | null = null;
   /** Bounding boxes of the visible texts, for tapping and dragging in the preview. */
   textBoxes: Box[] = [];
   /** Boxes of the visible stickers, topmost last. */
@@ -161,9 +172,20 @@ class Engine {
         keepA.add(au.id);
         if (!this.audios.has(au.id)) this.audios.set(au.id, this.make('audio', url));
       }
+      // Ducking needs to know when people talk: analyze the sound of the clips and voice items once.
+      if (mixOf(p).duck > 0) {
+        for (const id of voiceAssets(p)) {
+          if (id in this.voiceActivity || !urls[id]) continue;
+          this.voiceActivity[id] = undefined;
+          analyzeAsset(id, urls[id]).then((a) => {
+            this.voiceActivity[id] = a?.activity;
+            this.activityVersion++;
+          });
+        }
+      }
     }
-    for (const [id, r] of this.videos) if (!keepV.has(id)) { this.dispose(r.el); this.videos.delete(id); }
-    for (const [id, r] of this.audios) if (!keepA.has(id)) { this.dispose(r.el); this.audios.delete(id); }
+    for (const [id, r] of this.videos) if (!keepV.has(id)) { r.fx?.chain?.dispose(); this.dispose(r.el); this.videos.delete(id); }
+    for (const [id, r] of this.audios) if (!keepA.has(id)) { r.fx?.chain?.dispose(); this.dispose(r.el); this.audios.delete(id); }
     for (const id of [...this.images.keys()]) if (!keepI.has(id)) this.images.delete(id);
   }
 
@@ -173,7 +195,9 @@ class Engine {
     el.setAttribute('playsinline', '');
     el.src = url;
     this.host.appendChild(el);
-    return { el, gain: this.connect(el) };
+    const r: MediaRec<HTMLElementTagNameMap[K]> = { el, gain: null };
+    this.connect(r);
+    return r;
   }
 
   private dispose(el: HTMLMediaElement) {
@@ -196,22 +220,45 @@ class Engine {
       this.master.connect(this.monitor);
       this.monitor.connect(actx.destination);
       this.master.connect(this.recDest);
-      for (const r of [...this.videos.values(), ...this.audios.values()]) r.gain = this.connect(r.el);
+      for (const r of [...this.videos.values(), ...this.audios.values()]) this.connect(r);
     }
     if (this.actx.state === 'suspended') this.actx.resume().catch(() => {});
   }
 
-  private connect(el: HTMLMediaElement): GainNode | null {
-    if (!this.actx || !this.master) return null;
+  private connect(r: MediaRec<HTMLMediaElement>) {
+    if (!this.actx || !this.master) return;
     try {
-      const src = this.actx.createMediaElementSource(el);
+      const src = this.actx.createMediaElementSource(r.el);
       const g = this.actx.createGain();
       src.connect(g);
       g.connect(this.master);
-      return g;
+      r.src = src;
+      r.gain = g;
     } catch {
-      return null;
+      /* already connected or unsupported: plain element volume is used */
     }
+  }
+
+  /** Put the right voice effect between the element and its volume (rewired only when it changes). */
+  private setFx(r: MediaRec<HTMLMediaElement>, id: VoiceFxId = 'none') {
+    if (!this.actx || !r.src || !r.gain || (r.fx?.id ?? 'none') === id) return;
+    r.fx?.chain?.dispose();
+    r.src.disconnect();
+    const chain = buildVoiceFx(this.actx, id);
+    if (chain) {
+      r.src.connect(chain.input);
+      chain.output.connect(r.gain);
+    } else r.src.connect(r.gain);
+    r.fx = { id, chain };
+  }
+
+  /** How loud the background music may be at time t (1 = untouched), following the voices. */
+  private duckAt(p: Project, t: number) {
+    if (mixOf(p).duck <= 0) return 1;
+    if (!this.duck || this.duck.project !== p || this.duck.version !== this.activityVersion) {
+      this.duck = { project: p, version: this.activityVersion, curve: projectDuckCurve(p, this.voiceActivity, totalDuration(p)) };
+    }
+    return this.duck.curve ? curveAt(this.duck.curve, t) : 1;
   }
 
   private setVolume(r: MediaRec<HTMLMediaElement>, v: number) {
@@ -309,6 +356,7 @@ class Engine {
       if (!r) continue;
       const el = r.el;
       const dur = p.assets[l.clip.assetId]?.duration ?? l.clip.out;
+      this.setFx(r, l.clip.voiceFx);
       if (cur && l.index === cur.index) {
         const frozen = l.clip.freeze != null;
         const src = frozen ? sourceTime(l, t, dur) : clamp(l.clip.in + (t - l.start) * l.clip.speed, l.clip.in, l.clip.out);
@@ -401,7 +449,9 @@ class Engine {
         let fade = 1;
         if (a.fadeIn > 0) fade = Math.min(fade, (t - a.start) / a.fadeIn);
         if (a.fadeOut > 0) fade = Math.min(fade, (end - t) / a.fadeOut);
-        this.setVolume(r, a.volume * clamp(fade, 0, 1));
+        const duck = audioRole(a, p.assets[a.assetId]?.name) === 'music' ? this.duckAt(p, t) : 1;
+        this.setFx(r, a.voiceFx);
+        this.setVolume(r, a.volume * clamp(fade, 0, 1) * duck);
         if (playing) {
           if (Math.abs(el.currentTime - src) > 0.3 && !el.seeking) el.currentTime = src;
           if (el.paused) el.play().catch(() => {});

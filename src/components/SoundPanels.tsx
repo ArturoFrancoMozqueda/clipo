@@ -19,7 +19,7 @@ export function SfxPanel() {
     setBusy(s.id);
     try {
       const st = useStore.getState();
-      await addGenerated(await renderSfx(s), `Sonido: ${s.name}`, st.time);
+      await addGenerated(await renderSfx(s), `Sonido: ${s.name}`, st.time, { role: 'sfx' });
       st.notify(`“${s.name}” agregado donde está la línea blanca`);
     } finally {
       setBusy(null);
@@ -95,7 +95,7 @@ export function MusicSection() {
     try {
       const samples = await renderSong(m, seconds, v(m));
       // Music sits under voices: a bit lower, with soft start and end.
-      await addGenerated(samples, `Música: ${m.name}${v(m) > 1 ? ` ${v(m)}` : ''}`, 0, { volume: 0.6, fadeIn: 1, fadeOut: 2 });
+      await addGenerated(samples, `Música: ${m.name}${v(m) > 1 ? ` ${v(m)}` : ''}`, 0, { volume: 0.6, fadeIn: 1, fadeOut: 2, role: 'music' });
       useStore.getState().notify(`Música “${m.name}” agregada (${seconds} s)`);
     } finally {
       setBusy(null);

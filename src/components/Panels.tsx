@@ -16,6 +16,7 @@ import { RecordPanel, TtsPanel } from './VoicePanels';
 import { AdvancedToggle, ColorPanel, KeyframesPanel, OverlayPanel } from './AdvancedPanels';
 import { BackgroundPanel } from './BackgroundPanel';
 import { BgError } from '../segmentation';
+import { AudioRoleSection, NormalizeOption, SmartAudioPanel, VoiceFxSection } from './AudioPanels';
 
 const TITLES: Record<PanelId, string> = {
   media: 'Agregar videos y fotos',
@@ -38,6 +39,7 @@ const TITLES: Record<PanelId, string> = {
   keyframes: 'Fotogramas clave',
   sfx: 'Efectos de sonido',
   crop: 'Recortar y voltear',
+  smartAudio: 'Audio inteligente',
   help: 'Cómo usar Clipo',
 };
 
@@ -69,6 +71,7 @@ export function Sheet() {
     keyframes: <KeyframesPanel />,
     sfx: <SfxPanel />,
     crop: <CropPanel />,
+    smartAudio: <SmartAudioPanel />,
     help: <HelpPanel />,
   };
   return (
@@ -200,7 +203,9 @@ function VolumePanel() {
           <Slider label="Desaparece poco a poco" value={audio.fadeOut} min={0} max={5} step={0.5} format={secs} onChange={(v) => editSelected((x) => void (x.fadeOut = v))} />
         </>
       )}
-      <Hint>Consejo: baja la música a 30–50 % cuando alguien habla en el video.</Hint>
+      <AudioRoleSection />
+      <VoiceFxSection />
+      <Hint>Consejo: en “Audio inteligente” Clipo puede bajar la música sola cuando alguien habla.</Hint>
     </>
   );
 }
@@ -328,6 +333,7 @@ function ExportPanel() {
           1080p <small>Máxima calidad</small>
         </button>
       </div>
+      <NormalizeOption />
       <button className="btn-primary big full" onClick={start}>
         <Download size={22} /> Guardar video ({fmtTime(dur)})
       </button>

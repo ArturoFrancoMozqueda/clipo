@@ -5,7 +5,9 @@ import { loadProjectFonts } from './fonts';
 import { preloadEmojis } from './stickers';
 import { audioDur, canvasSize, clamp, clipDur, layout, overlayDur, overlaysOf, totalDuration } from './model';
 import { useStore } from './store';
-import type { Project } from './types';
+import type { Project, VoiceFxId } from './types';
+import { FRAME, audioRole, integratedLoudness, normalizeLoudness, peak, type ActivityByAsset } from './audioDsp';
+import { LOUDNESS_TARGET, analyzeBuffer, buildVoiceFx, mixOf, projectDuckCurve } from './audioFx';
 
 export interface ExportProgress {
   /** 0..100 */
@@ -384,11 +386,24 @@ interface Mix {
   duration: number;
 }
 
-/** Mixes every clip's own sound and the music/sound items exactly as the preview plays them. */
-async function mixAudio(p: Project, dur: number, blobOf: (id: string) => Promise<Blob>, check: () => void): Promise<Mix> {
+/** Seconds an effect (echo, reverb) keeps sounding after its source ends. */
+const FX_TAIL = 3;
+
+/**
+ * Mixes every clip's own sound and the music/sound items exactly as the preview plays them:
+ * voice effects, music that ducks under voices, and (when asked) loudness normalization.
+ */
+async function mixAudio(
+  p: Project,
+  dur: number,
+  blobOf: (id: string) => Promise<Blob>,
+  check: () => void,
+  opts: { normalize?: boolean } = {},
+): Promise<Mix> {
   const length = Math.max(1, Math.ceil(dur * SAMPLE_RATE));
   const octx = new OfflineAudioContext(2, length, SAMPLE_RATE);
   const decoded = new Map<string, Promise<AudioBuffer | null>>();
+  const activity: ActivityByAsset = {};
   const decode = (assetId: string) => {
     let d = decoded.get(assetId);
     if (!d) {
@@ -396,10 +411,27 @@ async function mixAudio(p: Project, dur: number, blobOf: (id: string) => Promise
       d = blobOf(assetId)
         .then((b) => b.arrayBuffer())
         .then((ab) => octx.decodeAudioData(ab))
+        .then((buf) => {
+          activity[assetId] = analyzeBuffer(buf).activity;
+          return buf;
+        })
         .catch(() => null);
       decoded.set(assetId, d);
     }
     return d;
+  };
+  const mixSettings = mixOf(p);
+  // Background music goes through its own bus so it can dip under voices.
+  const musicBus = octx.createGain();
+  musicBus.connect(octx.destination);
+  /** Source → (voice effect) → gain → destination. */
+  const route = (src: AudioNode, g: GainNode, fx: VoiceFxId | undefined, start: number, end: number, dest: AudioNode = octx.destination) => {
+    const chain = fx ? buildVoiceFx(octx, fx, start, end + FX_TAIL) : null;
+    if (chain) {
+      src.connect(chain.input);
+      chain.output.connect(g);
+    } else src.connect(g);
+    g.connect(dest);
   };
 
   for (const l of layout(p)) {
@@ -413,7 +445,7 @@ async function mixAudio(p: Project, dur: number, blobOf: (id: string) => Promise
     src.playbackRate.value = c.speed;
     const g = octx.createGain();
     g.gain.value = c.volume;
-    src.connect(g).connect(octx.destination);
+    route(src, g, c.voiceFx, l.start, l.start + clipDur(c));
     src.start(l.start, c.in);
     src.stop(l.start + clipDur(c));
   }
@@ -457,12 +489,44 @@ async function mixAudio(p: Project, dur: number, blobOf: (id: string) => Promise
       curve[i] = a.volume * clamp(fade, 0, 1);
     }
     g.gain.setValueCurveAtTime(curve, a.start, d);
-    src.connect(g).connect(octx.destination);
+    const music = audioRole(a, p.assets[a.assetId]?.name) === 'music';
+    route(src, g, a.voiceFx, a.start, a.start + d, music ? musicBus : octx.destination);
     src.start(a.start, a.in);
     src.stop(a.start + d);
   }
 
-  return { buffer: await octx.startRendering(), duration: dur };
+  // Every voice is decoded by now, so the ducking curve covers the whole video.
+  const duck = projectDuckCurve(p, activity, dur);
+  if (duck && duck.length > 1) musicBus.gain.setValueCurveAtTime(duck, 0, duck.length * FRAME);
+
+  const buffer = await octx.startRendering();
+  check();
+  if (opts.normalize ?? mixSettings.normalize) {
+    const chans = Array.from({ length: buffer.numberOfChannels }, (_, ch) => buffer.getChannelData(ch).slice());
+    normalizeLoudness(chans, SAMPLE_RATE, LOUDNESS_TARGET);
+    chans.forEach((c, ch) => buffer.copyToChannel(c, ch));
+  }
+  return { buffer, duration: dur };
+}
+
+export interface LoudnessReport {
+  /** Integrated loudness of the mix as it is now, in LUFS (-Infinity when silent). */
+  lufs: number;
+  /** Highest sample, in dBFS. */
+  peakDb: number;
+  /** Change "Normalizar" would make, in dB. */
+  gainDb: number;
+}
+
+/** Mixes the project's sound like the export does (without normalizing) and measures it. */
+export async function measureLoudness(p: Project, signal?: AbortSignal): Promise<LoudnessReport> {
+  const urls = useStore.getState().urls;
+  const blobOf = (id: string) => (urls[id] ? fetch(urls[id]).then((r) => r.blob()) : Promise.reject(new Error('missing media')));
+  const m = await mixAudio(p, totalDuration(p), blobOf, () => { if (signal?.aborted) throw cancelled(); }, { normalize: false });
+  const chans = Array.from({ length: m.buffer.numberOfChannels }, (_, ch) => m.buffer.getChannelData(ch));
+  const lufs = integratedLoudness(chans, SAMPLE_RATE);
+  const pk = peak(chans);
+  return { lufs, peakDb: pk > 0 ? 20 * Math.log10(pk) : -Infinity, gainDb: Number.isFinite(lufs) ? Math.min(20, LOUDNESS_TARGET - lufs) : 0 };
 }
 
 /** Copy of [from, to) seconds of a buffer. */
