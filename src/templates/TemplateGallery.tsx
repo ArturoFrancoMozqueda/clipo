@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, Clock, ImagePlus, Images, Sparkles, Trash2, X } from 'lucide-react';
 import type { Asset } from '../types';
 import { ASPECTS } from '../model';
@@ -9,6 +9,7 @@ import { BUILTIN_TEMPLATES } from './builtin';
 import { deleteUserTemplate, loadUserTemplates, projectFromTemplate } from './build';
 import { TemplatePreview } from './TemplatePreview';
 import { templateDuration, type Template } from './types';
+import { Modal } from '../components/Modal';
 import './templates.css';
 
 const ACCEPT = 'video/*,image/*';
@@ -23,12 +24,6 @@ const secs = (n: number) => `${Math.round(n)} s`;
 export function TemplateGallery({ onClose }: { onClose: () => void }) {
   const [mine, setMine] = useState(loadUserTemplates);
   const [chosen, setChosen] = useState<Template | null>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && (chosen ? setChosen(null) : onClose());
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [chosen, onClose]);
 
   const remove = (t: Template) => {
     if (!confirm(`¿Eliminar la plantilla "${t.name}"?`)) return;
@@ -57,8 +52,8 @@ export function TemplateGallery({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="modal-backdrop tpl-backdrop" onClick={onClose}>
-      <div className="modal tpl-modal" role="dialog" aria-modal="true" aria-label="Plantillas" onClick={(e) => e.stopPropagation()}>
+    // Escape steps back from a chosen template to the list; from the list it closes.
+    <Modal onClose={() => (chosen ? setChosen(null) : onClose())} label="Plantillas" className="tpl-modal" backdropClassName="tpl-backdrop">
         {chosen ? (
           <TemplateFill template={chosen} onBack={() => setChosen(null)} onDone={onClose} />
         ) : (
@@ -80,14 +75,20 @@ export function TemplateGallery({ onClose }: { onClose: () => void }) {
             <div className="tpl-grid">{BUILTIN_TEMPLATES.map(card)}</div>
           </>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }
 
 function SlotThumb({ file }: { file: File }) {
-  const url = useMemo(() => URL.createObjectURL(file), [file]);
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  // Create the object URL inside the effect: with useMemo, StrictMode's mount/cleanup/mount cycle
+  // revoked the memoized URL and the thumbnails loaded a dead blob: (ERR_FILE_NOT_FOUND, black boxes).
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+  if (!url) return null;
   return file.type.startsWith('video/') ? (
     <video src={`${url}#t=0.5`} muted playsInline preload="metadata" />
   ) : (

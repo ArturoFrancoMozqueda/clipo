@@ -1,6 +1,7 @@
-// Per-clip color correction (advanced mode). The math is shared by two drawing paths that give the
-// same result: an SVG filter used through the canvas `filter` property, and a pixel loop for
-// browsers without canvas filters. Preview and export call the same code, so they match.
+// Per-clip color correction (advanced mode). The math is shared by three drawing paths that give the
+// same result: a WebGL2 shader (lut.ts, together with the LUT in one pass), an SVG filter used
+// through the canvas `filter` property where WebGL2 is missing, and a pixel loop as the last resort.
+// Preview and export call the same code, so they match.
 import type { ColorAdjust } from './types';
 
 export const COLOR_KEYS = ['brightness', 'contrast', 'saturation', 'temperature', 'tint', 'highlights', 'shadows', 'vignette'] as const;
@@ -63,9 +64,15 @@ export function toneTable(c: ColorAdjust, ch: 0 | 1 | 2) {
   return out;
 }
 
+type ToneLuts = [Uint8ClampedArray, Uint8ClampedArray, Uint8ClampedArray];
+const lutCache = new Map<string, ToneLuts>();
+
 /** 256-entry lookup tables built from the same samples as the SVG filter, so both paths agree. */
-export function toneLuts(c: ColorAdjust): [Uint8ClampedArray, Uint8ClampedArray, Uint8ClampedArray] {
-  return ([0, 1, 2] as const).map((ch) => {
+export function toneLuts(c: ColorAdjust): ToneLuts {
+  const key = colorKey(c);
+  const hit = lutCache.get(key);
+  if (hit) return hit;
+  const out = ([0, 1, 2] as const).map((ch) => {
     const tab = toneTable(c, ch);
     const lut = new Uint8ClampedArray(256);
     const n = TABLE_SIZE - 1;
@@ -76,7 +83,10 @@ export function toneLuts(c: ColorAdjust): [Uint8ClampedArray, Uint8ClampedArray,
       lut[i] = Math.round((tab[j] * (1 - f) + tab[j + 1] * f) * 255);
     }
     return lut;
-  }) as [Uint8ClampedArray, Uint8ClampedArray, Uint8ClampedArray];
+  }) as ToneLuts;
+  lutCache.set(key, out);
+  if (lutCache.size > 32) lutCache.delete(lutCache.keys().next().value!);
+  return out;
 }
 
 /** The 3×3 part of the SVG `saturate` color matrix. */
@@ -161,20 +171,32 @@ export function autoColor(px: Uint8ClampedArray): ColorAdjust {
   return out;
 }
 
+/** Identity of the correction (without the vignette): equal keys draw the same colors. */
+export const colorKey = (c: ColorAdjust) => COLOR_KEYS.filter((k) => k !== 'vignette').map((k) => cl(c[k]).toFixed(3)).join(',');
+
 // ---------- canvas helpers (browser only) ----------
 
 let svgRoot: SVGSVGElement | null = null;
 const filterIds = new Map<string, string>();
-
-const keyOf = (c: ColorAdjust) => COLOR_KEYS.filter((k) => k !== 'vignette').map((k) => cl(c[k]).toFixed(3)).join(',');
+/** colorCss per settings object: projects are replaced, not mutated, so the same object means the same answer. */
+const cssOf = new WeakMap<ColorAdjust, string>();
 
 /**
  * CSS for the canvas `filter` property that applies the correction (without the vignette), or ''
  * when nothing changes. Creates a hidden SVG filter once per distinct setting.
  */
 export function colorCss(c: ColorAdjust | undefined): string {
-  if (!c || isNeutral(c, true) || typeof document === 'undefined') return '';
-  const key = keyOf(c);
+  if (!c || typeof document === 'undefined') return '';
+  let css = cssOf.get(c);
+  if (css === undefined) {
+    css = isNeutral(c, true) ? '' : buildCss(c);
+    cssOf.set(c, css);
+  }
+  return css;
+}
+
+function buildCss(c: ColorAdjust): string {
+  const key = colorKey(c);
   let id = filterIds.get(key);
   if (!id) {
     id = `clipo-cc-${filterIds.size}`;
@@ -216,7 +238,7 @@ export function colorCss(c: ColorAdjust | undefined): string {
   return `url(#${id})`;
 }
 
-/** Fallback for browsers without canvas filters: correct the pixels of a drawn area. */
+/** CPU fallback (no canvas filters and no WebGL2): correct the pixels of a drawn area. */
 export function applyColorPixels(ctx: CanvasRenderingContext2D, c: ColorAdjust | undefined, x: number, y: number, w: number, h: number) {
   if (!c || isNeutral(c, true)) return;
   const x0 = Math.max(0, Math.floor(x));

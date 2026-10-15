@@ -5,6 +5,7 @@ import {
   Send, SlidersHorizontal, Smile, Snowflake, Sparkles, Trash2, Type, Undo2,
   Volume2, WandSparkles, type LucideIcon,
 } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { useStore } from '../store';
 import { addText, deleteSelected, duplicateSelected, moveClip, splitAtPlayhead } from '../ops';
 import { freezeAtPlayhead } from '../visualOps';
@@ -22,6 +23,7 @@ const open = (p: PanelId) => () => useStore.getState().setPanel(p);
 /** Bottom bar whose tools change with what is selected, so only relevant actions show. */
 export function Toolbar() {
   const sel = useStore((s) => s.selection);
+  const strip = useRef<HTMLDivElement>(null);
   const clip = useStore((s) => (s.selection?.kind === 'clip' ? s.project!.clips.find((c) => c.id === s.selection!.id) : undefined));
   const kind = useStore((s) => (clip ? s.project!.assets[clip.assetId]?.kind : undefined));
   const isLast = useStore((s) => !!clip && s.project!.clips[s.project!.clips.length - 1]?.id === clip.id);
@@ -127,16 +129,41 @@ export function Toolbar() {
     ];
   }
 
+  // Fade the edges that hide more tools, and let a mouse wheel scroll the strip sideways.
+  const toolKey = tools.map((t) => t.label).join('|');
+  useEffect(() => {
+    const el = strip.current!;
+    const edges = () => {
+      el.classList.toggle('more-left', el.scrollLeft > 2);
+      el.classList.toggle('more-right', el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+    };
+    const wheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+    edges();
+    const ro = new ResizeObserver(edges);
+    ro.observe(el);
+    el.addEventListener('scroll', edges, { passive: true });
+    el.addEventListener('wheel', wheel, { passive: false });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('scroll', edges);
+      el.removeEventListener('wheel', wheel);
+    };
+  }, [toolKey]);
+
   return (
     <nav className="toolbar" aria-label="Herramientas">
       {sel && (
-        <button className="tool back" onClick={deselect} title="Terminar de editar este elemento">
+        <button className="tool back" onClick={deselect} title="Terminar de editar este elemento" aria-label={title ? `Listo: terminar de editar ${title}` : 'Listo'}>
           <Undo2 size={22} />
           <span>Listo</span>
           <small>{title}</small>
         </button>
       )}
-      <div className="tools">
+      <div className="tools" ref={strip}>
         {tools.map((t) => (
           <button key={t.label} className={`tool ${t.danger ? 'danger' : ''}`} onClick={t.run}>
             <t.icon size={24} />

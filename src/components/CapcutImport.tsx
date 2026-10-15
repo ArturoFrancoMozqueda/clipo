@@ -4,6 +4,7 @@ import { FAILURE_MESSAGE, findDraftFile, matchMedia, parseDraft, type DraftPlan 
 import { buildProject } from '../importers/capcutProject';
 import { ASPECTS } from '../model';
 import { useStore } from '../store';
+import { Modal } from './Modal';
 
 /** Hidden file input; `folder` turns it into a directory picker on desktop browsers. */
 function Picker({ folder, accept, onFiles, inputRef }: {
@@ -94,10 +95,9 @@ export function CapcutImport({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={busy ? undefined : onClose}>
-      <div className="modal capcut-import" onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} dismissible={!busy} labelledBy="ci-title" className="capcut-import">
         <header>
-          <h3>Importar proyecto de CapCut</h3>
+          <h3 id="ci-title">Importar proyecto de CapCut</h3>
           <button className="icon-btn" aria-label="Cerrar" disabled={busy} onClick={onClose}>
             <X />
           </button>
@@ -192,7 +192,6 @@ export function CapcutImport({ onClose }: { onClose: () => void }) {
             </button>
           </>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

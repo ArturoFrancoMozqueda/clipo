@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CalendarClock, CheckCircle2, ExternalLink, ImagePlus, Link2, RotateCcw, Share2, TriangleAlert, Upload, X } from 'lucide-react';
 import { fmtTime } from '../model';
 import { useStore } from '../store';
+import { canShareFile, saveFile, shareFile } from '../nativeShare';
 import { bridgeError, desktop, type YouTubeConfig } from '../publish/desktop';
 import { PUBLISH_FLAGS } from '../publish/flags';
 import { NETWORK_ORDER, NETWORKS } from '../publish/networks';
@@ -43,9 +44,7 @@ export function PublishPanel() {
 
 function WebPublish() {
   const file = usePublish((s) => s.handoff);
-  const url = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
-  const canShare = !!file && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
+  const canShare = !!file && canShareFile(file);
   return (
     <div className="publish">
       <p className="pub-callout">
@@ -55,11 +54,11 @@ function WebPublish() {
       {file && (
         <div className="row">
           {canShare && (
-            <button className="btn-primary" onClick={() => navigator.share({ files: [file], title: file.name }).catch(() => {})}>
+            <button className="btn-primary" onClick={() => void shareFile(file, file.name)}>
               <Share2 size={18} /> Compartir
             </button>
           )}
-          {url && <a className="btn-primary alt" href={url} download={file.name}>Descargar</a>}
+          <button className="btn-primary alt" onClick={() => void saveFile(file)}>Descargar</button>
         </div>
       )}
       {!file && <Note>Primero guarda tu video con “Guardar video”.</Note>}
@@ -113,8 +112,14 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
   const [privacy, setPrivacy] = useState<Privacy>('public');
   const [kids, setKids] = useState(false);
   const [cover, setCover] = useState<Blob | null>(null);
-  const coverUrl = useMemo(() => (cover ? URL.createObjectURL(cover) : null), [cover]);
-  useEffect(() => () => void (coverUrl && URL.revokeObjectURL(coverUrl)), [coverUrl]);
+  // Created inside the effect: a memoized URL would be revoked by StrictMode's double mount.
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!cover) return setCoverUrl(null);
+    const u = URL.createObjectURL(cover);
+    setCoverUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [cover]);
   const [when, setWhen] = useState<'now' | 'later'>('now');
   const [date, setDate] = useState('');
   const [schedMode, setSchedMode] = useState<'native' | 'local'>('native');

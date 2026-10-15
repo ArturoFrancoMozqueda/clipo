@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { engine } from '../engine';
 import { deleteSelected, splitAtPlayhead } from '../ops';
@@ -10,10 +10,21 @@ import { Sheet } from './Panels';
 import { MediaLibrary } from './MediaLibrary';
 import { Onboarding } from './Onboarding';
 import { importAndAdd } from './ImportButton';
+import { useKeyboardInset } from './useKeyboardInset';
 
 export function Editor() {
   const [dragging, setDragging] = useState(false);
   const exporting = useStore((s) => s.exporting);
+  const root = useRef<HTMLDivElement>(null);
+  useKeyboardInset();
+
+  // iOS Safari: a stray pinch inside the editor would zoom the whole app (Preview handles its own pinch).
+  useEffect(() => {
+    const el = root.current!;
+    const stop = (e: Event) => e.preventDefault();
+    el.addEventListener('gesturestart', stop);
+    return () => el.removeEventListener('gesturestart', stop);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -56,6 +67,7 @@ export function Editor() {
 
   return (
     <div
+      ref={root}
       className={`editor ${exporting ? 'exporting' : ''}`}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {

@@ -161,13 +161,13 @@ export class PublishQueue {
   async load(saved: PublishJob[]) {
     const recovered = recoverOnLoad(saved, this.now());
     this.jobs = recovered;
-    await Promise.all(recovered.filter((j, i) => j !== saved[i]).map((j) => this.deps.storage.saveJob(j)));
+    await Promise.all(recovered.filter((j, i) => j !== saved[i]).map((j) => this.save(j)));
     this.emit();
   }
 
   async add(jobs: PublishJob[]) {
     this.jobs = [...this.jobs, ...jobs];
-    await Promise.all(jobs.map((j) => this.deps.storage.saveJob(j)));
+    await Promise.all(jobs.map((j) => this.save(j)));
     this.emit();
     this.tick();
   }
@@ -175,12 +175,12 @@ export class PublishQueue {
   /** Check the clock and start the next upload if nothing is running. Call it on a timer. */
   tick() {
     const promoted = promoteDue(this.jobs, this.now());
-    promoted.forEach((j, i) => j !== this.jobs[i] && this.deps.storage.saveJob(j));
+    promoted.forEach((j, i) => j !== this.jobs[i] && this.save(j));
     if (promoted.some((j, i) => j !== this.jobs[i])) {
       this.jobs = promoted;
       this.emit();
     }
-    if (!this.running && nextPending(this.jobs)) this.idle = this.pump();
+    if (!this.running && nextPending(this.jobs)) this.idle = this.pump().catch((e) => console.error('Clipo: cola de publicación', e));
     return this.idle;
   }
 
@@ -203,15 +203,18 @@ export class PublishQueue {
 
   private async pump() {
     for (let job = nextPending(this.jobs); job; job = nextPending(this.jobs)) {
+      const before = job;
       await this.run(job);
+      // Never spin on a job that could not leave 'pending'.
+      if (this.jobs.find((j) => j.id === before.id)?.status.kind === 'pending') break;
     }
   }
 
   private async run(job: PublishJob) {
     const ac = new AbortController();
     this.running = { id: job.id, ac };
-    await this.update(job.id, startUpload);
     try {
+      await this.update(job.id, startUpload);
       const publisher = this.deps.publisherFor(job.network);
       if (!publisher) throw new PublishError('Esta red todavía no se puede usar desde Clipo.', false);
       const video = await this.deps.storage.getBlob(job.videoId);
@@ -238,13 +241,18 @@ export class PublishQueue {
     }
   }
 
+  /** Save a job; a storage failure is logged, the queue in memory keeps going. */
+  private save(job: PublishJob) {
+    return this.deps.storage.saveJob(job).catch((e) => console.error('Clipo: no se pudo guardar la publicación', e));
+  }
+
   private async update(id: string, fn: (j: PublishJob) => PublishJob, settled = false) {
     const cur = this.jobs.find((j) => j.id === id);
     if (!cur) return;
     const next = fn(cur);
     if (next === cur) return;
     this.jobs = this.jobs.map((j) => (j.id === id ? next : j));
-    await this.deps.storage.saveJob(next);
+    await this.save(next);
     this.emit();
     if (settled) this.deps.onSettled?.(next);
   }

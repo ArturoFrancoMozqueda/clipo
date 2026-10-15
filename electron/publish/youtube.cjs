@@ -3,6 +3,7 @@
 // - Tokens and the optional client secret: encrypted with Electron safeStorage, never sent to the page.
 // - Upload: YouTube Data API v3 resumable upload, in chunks, resumed after drops.
 // The Google Cloud client is the user's own (they paste its ID in Clipo); nothing secret ships in the app.
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createVerifier, challengeS256, createState, buildAuthUrl, startLoopback } = require('./oauth.cjs');
@@ -17,9 +18,86 @@ const GOOGLE = {
   upload: 'https://www.googleapis.com/upload/youtube/v3',
 };
 // Upload videos + read the own channel name and the processing state of uploaded videos.
+// youtube.readonly is needed: channels.list(mine=true) for the channel name/avatar shown in Cuentas,
+// and videos.list(part=status,processingDetails) for "Estado". youtube.upload alone allows neither.
 const SCOPE_UPLOAD = 'https://www.googleapis.com/auth/youtube.upload';
 const SCOPES = [SCOPE_UPLOAD, 'https://www.googleapis.com/auth/youtube.readonly'];
 const CLIENT_ID_RE = /^[\w.-]+\.apps\.googleusercontent\.com$/;
+
+// ---------- limits and validation of what the page sends ----------
+const GIB = 1024 ** 3;
+/** YouTube's own limit per video. */
+const MAX_VIDEO_BYTES = 256 * GIB;
+/** A video sent in one IPC message (the old API) is held twice in memory: keep it bounded. */
+const MAX_SINGLE_SHOT_BYTES = 2 * GIB;
+/** Largest piece accepted by yt:uploadAppend. */
+const MAX_APPEND_BYTES = 64 * 1024 * 1024;
+/** YouTube rejects custom thumbnails over 2 MB. */
+const MAX_THUMB_BYTES = 2 * 1024 * 1024;
+const VIDEO_MIMES = new Set(['video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska']);
+const THUMB_MIMES = new Set(['image/jpeg', 'image/png']);
+const PRIVACY = new Set(['public', 'unlisted', 'private']);
+const ID_RE = /^[\w-]{1,128}$/;
+
+const isId = (v) => typeof v === 'string' && ID_RE.test(v);
+const bad = (what) => fail(`Clipo envió datos no válidos para subir (${what}). Reintenta; si sigue pasando, vuelve a exportar el video.`, false);
+
+/** ArrayBuffer / typed array / Buffer from IPC as a Buffer view (no copy), or null. */
+function toBuffer(v) {
+  if (Buffer.isBuffer(v)) return v;
+  if (v instanceof ArrayBuffer) return Buffer.from(v);
+  if (ArrayBuffer.isView(v)) return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
+  return null;
+}
+
+/** The video resource for videos.insert, rebuilt field by field from an allow-list. */
+function buildMetadata(m) {
+  if (!m || typeof m !== 'object') throw bad('metadata');
+  const sn = m.snippet && typeof m.snippet === 'object' ? m.snippet : {};
+  const st = m.status && typeof m.status === 'object' ? m.status : {};
+  const title = typeof sn.title === 'string' ? sn.title.trim() : '';
+  if (!title || Array.from(title).length > 100) throw fail('El título tiene que tener entre 1 y 100 letras.', false);
+  const description = typeof sn.description === 'string' ? sn.description : '';
+  if (Buffer.byteLength(description) > 5000) throw fail('La descripción es demasiado larga para YouTube (máximo 5000 bytes).', false);
+  const categoryId = typeof sn.categoryId === 'string' && /^\d{1,3}$/.test(sn.categoryId) ? sn.categoryId : '22';
+  const snippet = { title, description, categoryId };
+  if (sn.tags !== undefined) {
+    if (!Array.isArray(sn.tags) || sn.tags.length > 100 || !sn.tags.every((t) => typeof t === 'string' && t.length <= 100)) throw bad('tags');
+    if (sn.tags.join(',').length > 500) throw fail('Los hashtags pasan del límite de YouTube (500 letras). Quita algunos.', false);
+    if (sn.tags.length) snippet.tags = sn.tags.slice();
+  }
+  if (!PRIVACY.has(st.privacyStatus)) throw bad('privacidad');
+  const status = { privacyStatus: st.privacyStatus, selfDeclaredMadeForKids: st.selfDeclaredMadeForKids === true };
+  if (st.publishAt !== undefined) {
+    const t = typeof st.publishAt === 'string' ? Date.parse(st.publishAt) : NaN;
+    if (!Number.isFinite(t)) throw fail('La fecha programada no es válida para YouTube. Elige una hora en el futuro.', false);
+    status.publishAt = new Date(t).toISOString();
+  }
+  return { snippet, status };
+}
+
+/** Where the bytes of an upload come from: memory (old single-shot API) or a temp file (chunked API). */
+function bufferSource(buf) {
+  return { size: buf.length, read: async (start, end) => buf.subarray(start, end + 1), close: async () => {} };
+}
+async function fileSource(file) {
+  const fh = await fs.promises.open(file, 'r');
+  const { size } = await fh.stat();
+  return {
+    size,
+    read: async (start, end) => {
+      const out = Buffer.allocUnsafe(end - start + 1);
+      let at = 0;
+      while (at < out.length) {
+        const { bytesRead } = await fh.read(out, at, out.length - at, start + at);
+        if (!bytesRead) throw fail('El archivo temporal del video se cortó. Vuelve a pulsar “Publicar”.', false);
+        at += bytesRead;
+      }
+      return out;
+    },
+    close: () => fh.close(),
+  };
+}
 
 const sleep = (ms, signal) =>
   new Promise((res, rej) => {
@@ -34,7 +112,10 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
   const file = path.join(dir, 'youtube.json');
 
   // ---------- encrypted storage ----------
-  const canEncrypt = () => safeStorage.isEncryptionAvailable();
+  // On Linux without a keyring, Electron "encrypts" with a hard-coded key (backend "basic_text"):
+  // that is not real protection, so Clipo refuses to store tokens there.
+  const canEncrypt = () =>
+    safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend?.() === 'basic_text');
   const enc = (value) => safeStorage.encryptString(JSON.stringify(value)).toString('base64');
   const dec = (b64) => JSON.parse(safeStorage.decryptString(Buffer.from(b64, 'base64')));
 
@@ -183,18 +264,24 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     }
   }
 
-  async function disconnect(accountId) {
-    const data = load();
-    const acc = data.accounts.find((a) => a.id === accountId);
-    if (!acc) return;
+  /** Best effort: also remove Clipo's access in the Google account. */
+  async function revoke(acc) {
     try {
       const tok = dec(acc.token);
       const t = tok.refresh_token || tok.access_token;
-      // Best effort: also remove Clipo's access in the Google account.
-      if (t) await fetch(REVOKE_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: t }) });
+      if (t) await fetch(REVOKE_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: t }), signal: AbortSignal.timeout(10_000) });
     } catch {}
-    data.accounts = data.accounts.filter((a) => a.id !== accountId);
-    save(data);
+  }
+
+  async function disconnect(accountId) {
+    if (!isId(accountId)) return;
+    const data = load();
+    const acc = data.accounts.find((a) => a.id === accountId);
+    if (!acc) return;
+    await revoke(acc);
+    const fresh = load();
+    fresh.accounts = fresh.accounts.filter((a) => a.id !== accountId);
+    save(fresh);
   }
 
   // ---------- upload ----------
@@ -225,8 +312,8 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     throw await apiFail(res);
   }
 
-  async function sendAll({ jobId, accountId, buf, mime, metadata, signal, report }) {
-    const total = buf.length;
+  async function sendAll({ jobId, accountId, src, mime, metadata, signal, report }) {
+    const total = src.size;
     let s = sessions.get(jobId);
     if (s && s.total !== total) s = undefined;
     let offset = 0;
@@ -246,12 +333,13 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     for (;;) {
       if (signal.aborted) throw fail('Subida cancelada.');
       const { start, end } = chunkRange(offset, total, chunkSize);
+      const body = await src.read(start, end);
       let res = null;
       try {
         res = await api(accountId, s.uri, {
           method: 'PUT',
           headers: { 'Content-Type': mime, 'Content-Range': `bytes ${start}-${end}/${total}` },
-          body: buf.subarray(start, end + 1),
+          body,
           signal,
         });
       } catch (e) {
@@ -289,7 +377,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
       const res = await api(accountId, `${UPLOAD_API}/thumbnails/set?videoId=${encodeURIComponent(videoId)}&uploadType=media`, {
         method: 'POST',
         headers: { 'Content-Type': thumb.mime },
-        body: Buffer.from(thumb.bytes),
+        body: thumb.bytes,
       });
       if (res.ok) return undefined;
       if (res.status === 403) return 'El video se subió, pero YouTube no dejó poner la portada: tu canal tiene que estar verificado (youtube.com/verify).';
@@ -299,35 +387,110 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     }
   }
 
+  // ---------- chunked transfer from the page (no whole video in one IPC message) ----------
+  // yt:uploadBegin → yt:uploadAppend (in order, ≤ 64 MiB each) → yt:upload({ fileId, … }).
+  // The video is written to a private temp file and read back chunk by chunk while uploading.
+  const tmpDir = path.join(app.getPath('temp'), 'clipo-upload');
+  /** fileId -> { file, total, written, mime } */
+  const files = new Map();
+  // Files left by a previous run (crash, forced quit) are useless: their ids are gone.
+  try {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  } catch {}
+
+  async function beginFile(total, mime) {
+    if (!Number.isSafeInteger(total) || total <= 0 || total > MAX_VIDEO_BYTES) throw bad('tamaño');
+    if (mime !== undefined && !VIDEO_MIMES.has(mime)) throw bad('tipo de video');
+    await fs.promises.mkdir(tmpDir, { recursive: true, mode: 0o700 });
+    const fileId = crypto.randomUUID();
+    const file = path.join(tmpDir, `${fileId}.part`);
+    await fs.promises.writeFile(file, Buffer.alloc(0), { mode: 0o600 });
+    files.set(fileId, { file, total, written: 0, mime: mime || 'video/mp4', busy: false });
+    return { fileId, chunkLimit: MAX_APPEND_BYTES };
+  }
+
+  async function appendFile(fileId, bytes) {
+    const f = typeof fileId === 'string' ? files.get(fileId) : undefined;
+    if (!f) throw bad('archivo');
+    const buf = toBuffer(bytes);
+    if (!buf || !buf.length || buf.length > MAX_APPEND_BYTES) throw bad('trozo');
+    if (f.written + buf.length > f.total) throw bad('tamaño');
+    if (f.busy) throw bad('orden');
+    f.busy = true;
+    try {
+      await fs.promises.appendFile(f.file, buf);
+      f.written += buf.length;
+    } finally {
+      f.busy = false;
+    }
+    return { written: f.written, total: f.total };
+  }
+
+  async function discardFile(fileId) {
+    const f = typeof fileId === 'string' ? files.get(fileId) : undefined;
+    if (!f) return;
+    files.delete(fileId);
+    await fs.promises.rm(f.file, { force: true }).catch(() => {});
+  }
+
   async function upload(sender, req) {
-    if (running.has(req.jobId)) throw fail('Ese video ya se está subiendo.', false);
+    if (!req || typeof req !== 'object') throw bad('pedido');
+    const { jobId, accountId } = req;
+    if (!isId(jobId) || !isId(accountId)) throw bad('ids');
+    if (req.mime !== undefined && !VIDEO_MIMES.has(req.mime)) throw bad('tipo de video');
+    const metadata = buildMetadata(req.metadata);
+    let thumbnail;
+    if (req.thumbnail) {
+      const tb = toBuffer(req.thumbnail.bytes);
+      if (!tb || !tb.length || tb.length > MAX_THUMB_BYTES || !THUMB_MIMES.has(req.thumbnail.mime)) throw fail('La portada tiene que ser JPG o PNG de hasta 2 MB.', false);
+      thumbnail = { bytes: tb, mime: req.thumbnail.mime };
+    }
+    let file;
+    if (req.fileId !== undefined) {
+      file = typeof req.fileId === 'string' ? files.get(req.fileId) : undefined;
+      if (!file) throw bad('archivo');
+      if (file.written !== file.total) throw bad('archivo incompleto');
+    }
+    if (running.has(jobId)) throw fail('Ese video ya se está subiendo.', false);
     const ac = new AbortController();
-    running.set(req.jobId, ac);
+    running.set(jobId, ac);
     let last = 0;
     const report = (sent, total) => {
       const now = Date.now();
       if (sent < total && now - last < 250) return;
       last = now;
-      if (!sender.isDestroyed()) sender.send('yt:progress', { jobId: req.jobId, sent, total });
+      if (!sender.isDestroyed()) sender.send('yt:progress', { jobId, sent, total });
     };
+    let src;
     try {
-      const buf = Buffer.from(req.bytes);
-      if (!buf.length) throw fail('El video está vacío.', false);
-      const video = await sendAll({ jobId: req.jobId, accountId: req.accountId, buf, mime: req.mime || 'video/mp4', metadata: req.metadata, signal: ac.signal, report });
-      sessions.delete(req.jobId);
-      report(buf.length, buf.length);
+      if (file) src = await fileSource(file.file);
+      else {
+        const buf = toBuffer(req.bytes);
+        if (!buf) throw bad('video');
+        if (buf.length > MAX_SINGLE_SHOT_BYTES) throw fail('El video es muy grande para enviarlo de una vez. Actualiza Clipo y vuelve a intentarlo.', false);
+        src = bufferSource(buf);
+      }
+      if (!src.size) throw fail('El video está vacío.', false);
+      const mime = req.mime || file?.mime || 'video/mp4';
+      const video = await sendAll({ jobId, accountId, src, mime, metadata, signal: ac.signal, report });
+      sessions.delete(jobId);
+      report(src.size, src.size);
       if (!video?.id) throw fail('YouTube terminó la subida pero no devolvió el video. Revisa YouTube Studio antes de reintentar.', false);
-      const note = req.thumbnail ? await setThumbnail(req.accountId, video.id, req.thumbnail) : undefined;
+      // Done: the temp copy is no longer needed. (After a failure it is kept so "Reintentar" resumes.)
+      if (file) await discardFile(req.fileId);
+      const note = thumbnail ? await setThumbnail(accountId, video.id, thumbnail) : undefined;
       return { videoId: video.id, note };
     } catch (e) {
       if (e.message?.match(/^[RF]\|/)) throw e;
       throw fail('No hay conexión con YouTube. Revisa tu internet y pulsa “Reintentar”.');
     } finally {
-      running.delete(req.jobId);
+      await src?.close().catch(() => {});
+      running.delete(jobId);
     }
   }
 
   async function status(accountId, videoId) {
+    if (!isId(accountId) || !isId(videoId)) throw bad('ids');
     const res = await api(accountId, `${API}/videos?part=status,processingDetails&id=${encodeURIComponent(videoId)}`);
     if (!res.ok) throw await apiFail(res);
     const v = (await res.json()).items?.[0];
@@ -361,15 +524,21 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     const d = load();
     return { clientId: d.clientId || '', hasSecret: !!d.secret, encryption: canEncrypt() };
   });
-  handle('yt:setConfig', (_e, { clientId, clientSecret: secret }) => {
+  handle('yt:setConfig', async (_e, cfg) => {
+    const { clientId, clientSecret: secret } = cfg && typeof cfg === 'object' ? cfg : {};
     const id = String(clientId || '').trim();
     if (id && !CLIENT_ID_RE.test(id)) throw fail('Eso no parece un ID de cliente de Google: termina en “.apps.googleusercontent.com”.', false);
+    if (secret !== undefined && secret !== null && (typeof secret !== 'string' || secret.length > 256)) throw bad('secreto');
     if (!canEncrypt()) throw fail('Este equipo no permite guardar datos cifrados.', false);
     const d = load();
     // Tokens belong to one client: a different client ID means connecting the channels again.
-    if (d.clientId && id !== d.clientId) d.accounts = [];
+    // Revoke them in Google first, so no grant is left behind for the old client.
+    if (d.clientId && id !== d.clientId) {
+      await Promise.all(d.accounts.map(revoke));
+      d.accounts = [];
+    }
     d.clientId = id;
-    if (secret !== undefined) d.secret = String(secret).trim() ? enc(String(secret).trim()) : null;
+    if (secret !== undefined) d.secret = String(secret ?? '').trim() ? enc(String(secret).trim()) : null;
     save(d);
   });
   handle('yt:connect', (e) => connect(e.sender));
@@ -377,10 +546,22 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
   handle('yt:accounts', () => (canEncrypt() ? load().accounts.map(publicAccount) : []));
   handle('yt:disconnect', (_e, id) => disconnect(id));
   handle('yt:upload', (e, req) => upload(e.sender, req));
-  handle('yt:cancelUpload', (_e, jobId) => running.get(jobId)?.abort());
+  handle('yt:uploadBegin', (_e, total, mime) => beginFile(total, mime));
+  handle('yt:uploadAppend', (_e, fileId, bytes) => appendFile(fileId, bytes));
+  handle('yt:uploadDiscard', (_e, fileId) => discardFile(fileId));
+  handle('yt:cancelUpload', (_e, jobId) => (isId(jobId) ? running.get(jobId)?.abort() : undefined));
   handle('yt:status', (_e, accountId, videoId) => status(accountId, videoId));
 
-  return { activeUploads: () => running.size };
+  return {
+    activeUploads: () => running.size,
+    /** Remove the temp copies of videos (call on quit). */
+    cleanup: () => {
+      files.clear();
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {}
+    },
+  };
 }
 
 module.exports = { register };

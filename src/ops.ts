@@ -61,7 +61,13 @@ export function splitAtPlayhead() {
       const keyframes = shiftKeyframes(it.keyframes, t - it.start);
       it.duration = t - it.start;
       const words = shiftWords(it.words, t - it.start);
-      q.texts.push({ ...it, id, start: t, duration: rest, ...(keyframes ? { keyframes } : {}), ...(words ? { words } : {}) });
+      // The entrance animation stays on the first piece and the exit on the second.
+      const second = { ...it, id, start: t, duration: rest, ...(keyframes ? { keyframes } : {}), ...(words ? { words } : {}) };
+      if (it.anim) {
+        second.anim = { ...it.anim, in: 'none' };
+        it.anim = { ...it.anim, out: 'none' };
+      }
+      q.texts.push(second);
     });
     s.select({ kind: 'text', id });
     return s.notify('Texto dividido');
@@ -111,8 +117,10 @@ export function splitAtPlayhead() {
     s.commit((q) => {
       const it = q.audios.find((i) => i.id === sel.id)!;
       const cut = it.in + (t - it.start);
-      q.audios.push({ ...it, id, start: t, in: cut });
+      // Fading in stays at the start of the first piece and fading out at the end of the second.
+      q.audios.push({ ...it, id, start: t, in: cut, fadeIn: 0 });
       it.out = cut;
+      it.fadeOut = 0;
     });
     s.select({ kind: 'audio', id });
     return s.notify('Audio dividido');
@@ -271,12 +279,12 @@ export function addOverlays(assets: Asset[]) {
 
 type Posable = Animatable & { id: string; start: number };
 
-const durOf = (p: Project, kind: SelectionKind, it: Posable) =>
+const durOf = (kind: SelectionKind, it: Posable) =>
   kind === 'overlay' ? overlayDur(it as unknown as OverlayItem) : (it as unknown as { duration: number }).duration;
 
 /** Seconds into the item at the playhead, kept inside the item. */
-export function localTime(p: Project, kind: SelectionKind, it: Posable, time = get().time) {
-  return clamp(time - it.start, 0, Math.max(0, durOf(p, kind, it) - 1e-3));
+export function localTime(_p: Project, kind: SelectionKind, it: Posable, time = get().time) {
+  return clamp(time - it.start, 0, Math.max(0, durOf(kind, it) - 1e-3));
 }
 
 /** The item's pose at the playhead (after keyframes). */

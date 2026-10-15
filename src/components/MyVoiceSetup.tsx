@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Modal } from './Modal';
 import { Check, Mic, Pause, Play, RotateCcw, ShieldCheck, Square, TriangleAlert, X } from 'lucide-react';
 import { MAX_SECONDS, consentScript, recordSample, saveProfile, type QualityReport, type VoiceProfile, type VoiceRecording } from '../myVoice';
 import { encodeWav } from '../voice';
@@ -103,8 +104,7 @@ export function MyVoiceSetup({ onClose, onSaved }: { onClose: () => void; onSave
 
   // Rendered on <body>: the settings panel is animated (transformed), which would trap a fixed overlay inside it.
   return createPortal(
-    <div className="modal-backdrop">
-      <div className="modal myvoice" role="dialog" aria-labelledby="mv-title">
+    <Modal onClose={onClose} labelledBy="mv-title" className="myvoice">
         <header>
           <h3 id="mv-title">Crear mi voz</h3>
           <button className="icon-btn" aria-label="Cerrar" onClick={onClose}>
@@ -189,8 +189,7 @@ export function MyVoiceSetup({ onClose, onSaved }: { onClose: () => void; onSave
             </div>
           </>
         )}
-      </div>
-    </div>,
+    </Modal>,
     document.body,
   );
 }

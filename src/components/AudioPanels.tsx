@@ -6,7 +6,7 @@ import { engine } from '../engine';
 import { fmtTime, mainDuration, totalDuration } from '../model';
 import { DUCK_DEFAULT, LOUDNESS_TARGET, VOICE_FX, analyzeAsset, mixOf, projectDuckCurve, voiceAssets } from '../audioFx';
 import { FRAME, applySilenceCuts, audioRole, planSilenceCuts, type SilenceCut, type SilenceOptions } from '../audioDsp';
-import { measureLoudness, type LoudnessReport } from '../exporter';
+import type { LoudnessReport } from '../exporter';
 import { Hint, Slider, checkpoint, editSelected, useSelected } from './Panels';
 
 const setMix = (patch: Partial<AudioMix>, live = false) => {
@@ -110,6 +110,7 @@ export function NormalizeOption() {
     abort.current = ac;
     setBusy(true);
     try {
+      const { measureLoudness } = await import('../exporter');
       setReport({ for: project, r: await measureLoudness(project, ac.signal) });
     } catch {
       if (!ac.signal.aborted) useStore.getState().notify('No se pudo medir el volumen. Intenta otra vez.');

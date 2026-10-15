@@ -1,11 +1,12 @@
 /* ---------- templates ---------- */
 .tpl-canvas { display: block; max-width: 100%; height: auto; border-radius: 10px; background: var(--panel-2); }
-.modal.tpl-modal { width: min(1000px, 100%); }
+.modal.tpl-modal { width: min(1000px, 100%); --pt: 20px; --pb: 20px; }
 .tpl-section { margin: 18px 0 10px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
 .tpl-step { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; font-size: 14px; flex: none; }
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 .tpl-card { position: relative; background: var(--panel-2); border: 2px solid var(--line); border-radius: var(--radius); transition: border-color .15s; }
-.tpl-card:hover, .tpl-card:focus-within { border-color: var(--accent); }
+.tpl-card:focus-within { border-color: var(--accent); }
+@media (hover: hover) { .tpl-card:hover { border-color: var(--accent); } }
 .tpl-open { width: 100%; text-align: left; padding: 8px 8px 12px; display: flex; flex-direction: column; gap: 4px; min-height: var(--tap); }
 .tpl-thumb { height: 210px; display: grid; place-items: center; margin-bottom: 6px; }
 .tpl-open strong { font-size: 16px; }
@@ -13,7 +14,8 @@
 .tpl-meta { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; margin-top: 4px; flex-wrap: wrap; }
 .tpl-del { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,.6); }
 
-.tpl-fill header { position: sticky; top: -20px; background: var(--panel); z-index: 2; padding: 4px 0; margin: -4px 0 0; }
+/* --pt/--pb: the modal's top/bottom padding (bigger on full-screen phones with a notch). */
+.tpl-fill header { position: sticky; top: calc(-1 * var(--pt, 20px)); background: var(--panel); z-index: 2; padding: calc(var(--pt, 20px) - 16px) 0 4px; margin: calc(16px - var(--pt, 20px)) 0 0; }
 .tpl-fill-body { display: flex; flex-direction: column; gap: 16px; }
 .tpl-fill-preview { display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 8px; }
 .tpl-fill-form { flex: 1; min-width: 0; }
@@ -21,7 +23,7 @@
 .tpl-slots { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
 .tpl-slot { width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 8px; min-height: 64px; border-radius: 12px; background: var(--panel-2); border: 2px dashed var(--line); }
 .tpl-slot.full { border-style: solid; border-color: var(--accent); }
-.tpl-slot:hover:not(:disabled) { border-color: var(--accent); }
+@media (hover: hover) { .tpl-slot:hover:not(:disabled) { border-color: var(--accent); } }
 .tpl-slot-media { width: 56px; height: 56px; flex: none; border-radius: 8px; overflow: hidden; display: grid; place-items: center; background: var(--bg); color: var(--muted); }
 .tpl-slot-media img, .tpl-slot-media video { width: 100%; height: 100%; object-fit: cover; }
 .tpl-slot-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -29,7 +31,7 @@
 .tpl-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 14px; color: var(--muted); }
 .tpl-field input, .tpl-field textarea { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 17px; min-height: var(--tap); color: var(--text); resize: vertical; }
 .tpl-field input:focus, .tpl-field textarea:focus { border-color: var(--accent); outline: none; }
-.tpl-foot { position: sticky; bottom: -20px; background: var(--panel); padding: 12px 0 4px; margin-top: 8px; border-top: 1px solid var(--line); }
+.tpl-foot { position: sticky; bottom: calc(-1 * var(--pb, 20px)); background: var(--panel); padding: 12px 0 calc(var(--pb, 20px) - 16px); margin: 8px 0 calc(20px - var(--pb, 20px)); border-top: 1px solid var(--line); }
 .tpl-create { width: 100%; justify-content: center; }
 
 .modal.tpl-save { width: min(480px, 100%); }
@@ -39,8 +41,12 @@
 .home-template-btn { margin-left: 10px; }
 
 @media (max-width: 640px) {
-  .modal-backdrop.tpl-backdrop { padding: 0; }
-  .modal.tpl-modal { border-radius: 0; height: 100dvh; max-height: 100dvh; border: 0; }
+  .modal-dialog.tpl-backdrop { padding: 0; }
+  .modal.tpl-modal {
+    border-radius: 0; height: 100vh; max-height: 100vh; height: 100dvh; max-height: 100dvh; border: 0;
+    --pt: max(20px, env(safe-area-inset-top)); --pb: max(20px, env(safe-area-inset-bottom));
+    padding: var(--pt) max(16px, env(safe-area-inset-right)) var(--pb) max(16px, env(safe-area-inset-left));
+  }
   .tpl-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .tpl-thumb { height: 180px; }
   .home-template-btn { margin: 12px 0 0; }
@@ -53,4 +59,4 @@
 }
 .project-card .icon-btn.tpl-card-save { top: 14px; right: 14px; bottom: auto; background: rgba(0,0,0,.6); color: #fff; }
 /* The editor top bar is too narrow on small phones; there the option lives on the project card. */
-@media (max-width: 480px) { .tpl-topbar-btn { display: none; } }
+@media (max-width: 480px) { .icon-btn.tpl-topbar-btn { display: none; } }

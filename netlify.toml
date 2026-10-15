@@ -11,6 +11,12 @@
   [headers.values]
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "microphone=(self), camera=(self), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=()"
+    # Cross-origin isolation: multithreaded WebAssembly for Whisper/Piper/OpenVoice (2-4x faster).
+    # "credentialless" keeps the Hugging Face / jsDelivr downloads working without CORP headers
+    # (Chrome, Edge, Firefox). Safari ignores it and simply runs single-threaded. See PUBLICAR.md.
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "credentialless"
 
 # Hashed build files never change.
 [[headers]]
@@ -19,15 +25,21 @@
     Cache-Control = "public, max-age=31536000, immutable"
 
 # The shell and the service worker must be revalidated so updates reach users.
+# Content-Security-Policy goes on the page only (see PUBLICAR.md, "Cabeceras"): the AI workers get
+# none, because the ONNX Runtime glue they run builds functions at runtime for WebGPU.
 [[headers]]
   for = "/"
   [headers.values]
     Cache-Control = "no-cache"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; worker-src 'self' blob:; connect-src 'self' blob: data: https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co https://cdn.jsdelivr.net; img-src 'self' blob: data: https://yt3.ggpht.com https://*.ggpht.com https://i.ytimg.com https://*.googleusercontent.com; media-src 'self' blob: data:; font-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+    X-Frame-Options = "DENY"
 
 [[headers]]
   for = "/index.html"
   [headers.values]
     Cache-Control = "no-cache"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; worker-src 'self' blob:; connect-src 'self' blob: data: https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co https://cdn.jsdelivr.net; img-src 'self' blob: data: https://yt3.ggpht.com https://*.ggpht.com https://i.ytimg.com https://*.googleusercontent.com; media-src 'self' blob: data:; font-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+    X-Frame-Options = "DENY"
 
 [[headers]]
   for = "/sw.js"
@@ -39,5 +51,3 @@
   [headers.values]
     Cache-Control = "no-cache"
     Content-Type = "application/manifest+json"
-
-# Cross-origin isolation (COOP/COEP) is intentionally NOT enabled; see PUBLICAR.md, "Cabeceras".

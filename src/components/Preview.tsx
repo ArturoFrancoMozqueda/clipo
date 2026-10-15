@@ -223,14 +223,22 @@ export function Preview() {
 }
 
 function PlayerControls() {
-  const time = useStore((s) => s.time);
+  // The timecode is written straight to the DOM so playback doesn't re-render React at 60fps.
+  const tc = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const paint = (t: number) => {
+      if (tc.current) tc.current.textContent = fmtTime(t, true);
+    };
+    paint(useStore.getState().time);
+    return useStore.subscribe((s, prev) => void (s.time !== prev.time && paint(s.time)));
+  }, []);
   const dur = useStore((s) => (s.project ? totalDuration(s.project) : 0));
   const playing = useStore((s) => s.playing);
   const zoom = (k: number) => useStore.getState().setPps(useStore.getState().pps * k);
   return (
     <div className="controls">
       <span className="timecode">
-        <b>{fmtTime(time, true)}</b> / {fmtTime(dur, true)}
+        <b ref={tc} /> / {fmtTime(dur, true)}
       </span>
       <button className="play-btn" onClick={() => engine.toggle()} aria-label={playing ? 'Pausar' : 'Reproducir'}>
         {playing ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" />}

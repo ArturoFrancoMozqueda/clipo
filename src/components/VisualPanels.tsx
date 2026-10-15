@@ -240,12 +240,15 @@ export function LutSection({ clip }: { clip: Clip }) {
       <input
         ref={input}
         type="file"
-        accept=".cube"
+        // Android/iOS pickers don't know the .cube type and grey the files out; the extension is checked below.
+        accept=".cube,application/octet-stream,text/plain"
         multiple
         hidden
         onChange={(e) => {
-          const files = Array.from(e.target.files ?? []);
+          const all = Array.from(e.target.files ?? []);
           e.target.value = '';
+          const files = all.filter((f) => /\.cube$/i.test(f.name));
+          if (all.length && !files.length) useStore.getState().notify('Elige un archivo .cube');
           if (!files.length) return;
           setBusy(true);
           importLuts(files)
@@ -415,7 +418,7 @@ const deg = (r: number) => Math.round((r * 180) / Math.PI);
 
 export function StickersPanel() {
   const sticker = useSelected<StickerItem>('sticker');
-  useStore((s) => s.time); // size and turn follow keyframes at the playhead
+  useStore((s) => (s.playing ? -1 : s.time)); // size and turn follow keyframes at the playhead (not re-rendered while playing)
   const pose = sticker ? poseNow('sticker', sticker.id) ?? sticker : null;
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);

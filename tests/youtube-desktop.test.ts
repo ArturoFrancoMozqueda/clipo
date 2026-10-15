@@ -75,6 +75,7 @@ test('sign in, upload in chunks after a drop, cover, status and disconnect', asy
 
   yt.register({
     app: { getPath: () => dir },
+    BrowserWindow: undefined,
     ipcMain: { handle: (ch: string, fn: (...a: unknown[]) => unknown) => handlers.set(ch, fn) },
     shell: {
       // Plays the user's browser: read the auth URL and follow the redirect back to the loopback.

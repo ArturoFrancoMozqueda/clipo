@@ -53,12 +53,15 @@ export async function startPublishing() {
   started = true;
   try {
     await queue.load(await listJobs());
-    await refreshAccounts();
-  } finally {
-    usePublish.setState({ loaded: true });
+  } catch (e) {
+    // The saved queue could not be read: start empty, new publications still work.
+    console.error('Clipo: no se pudo leer la cola de publicación', e);
+    useStore.getState().notify('No se pudieron leer las publicaciones guardadas.');
   }
+  await refreshAccounts().catch((e) => console.error(e));
+  usePublish.setState({ loaded: true });
   // Local scheduling: checked every 20 s while Clipo is open.
-  window.setInterval(() => queue.tick(), 20_000);
+  window.setInterval(() => void queue.tick(), 20_000);
 }
 
 export async function refreshAccounts() {

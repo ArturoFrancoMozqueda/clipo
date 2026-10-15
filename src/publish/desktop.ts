@@ -19,12 +19,19 @@ export interface YouTubeBridge {
   upload(req: {
     jobId: string;
     accountId: string;
-    bytes: ArrayBuffer;
+    /** Either the whole video (old builds) or the id of a file sent with uploadBegin/uploadAppend. */
+    bytes?: ArrayBuffer;
+    fileId?: string;
     mime: string;
     metadata: YouTubeMetadata;
     thumbnail?: { bytes: ArrayBuffer; mime: string };
   }): Promise<{ videoId: string; note?: string }>;
   cancelUpload(jobId: string): Promise<void>;
+  /** Present in builds that take the video in pieces, so it never sits whole in memory. */
+  chunkedUpload?: boolean;
+  uploadBegin?(total: number, mime: string): Promise<{ fileId: string; chunkLimit: number }>;
+  uploadAppend?(fileId: string, bytes: ArrayBuffer): Promise<void>;
+  uploadDiscard?(fileId: string): Promise<void>;
   status(accountId: string, videoId: string): Promise<RemoteStatus>;
   onProgress(cb: (p: { jobId: string; sent: number; total: number }) => void): () => void;
 }

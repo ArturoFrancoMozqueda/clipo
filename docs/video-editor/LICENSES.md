@@ -130,3 +130,70 @@ se quieren agregar (paquete + `src/fontFiles.ts` + `FONTS` en `src/fonts.ts`).
 | Forum | Elegantes | 400 | OFL-1.1 | `@fontsource/forum` 5.3.0 | latin + latin-ext |
 | Tenor Sans | Elegantes | 400 | OFL-1.1 | `@fontsource/tenor-sans` 5.3.0 | latin + latin-ext |
 | Belleza | Elegantes | 400 | OFL-1.1 | `@fontsource/belleza` 5.3.0 | latin + latin-ext |
+
+---
+
+# Modelos y voces
+
+Revisado el 15 oct 2026 en las fichas de Hugging Face (API `huggingface.co/api/models/<repo>` y
+`MODEL_CARD` de cada voz) y en los repositorios originales. Los modelos **no se incluyen** en la app:
+se descargan la primera vez que se usan y quedan en la caché del navegador. Aun así, al usarlos Clipo
+los "distribuye" a sus usuarios y genera audio/subtítulos con ellos, así que su licencia aplica.
+
+Leyenda: ✅ uso comercial permitido · ⚠️ revisar antes de vender o cobrar por Clipo.
+
+| Función en Clipo | Modelo / recurso | Origen (revisión fijada) | Licencia | Estado |
+| --- | --- | --- | --- | --- |
+| Subtítulos "rápido" | Whisper base (timestamped, ONNX) | `onnx-community/whisper-base_timestamped` (base: `openai/whisper-base`) | Apache-2.0 en la ficha de OpenAI (código y pesos MIT en GitHub); la conversión ONNX no declara licencia propia | ✅ |
+| Subtítulos "preciso" | Whisper small (timestamped, ONNX) | `onnx-community/whisper-small_timestamped` (base: `openai/whisper-small`) | Igual que el anterior | ✅ |
+| Voces "Sofía" y "Mateo" | Supertonic TTS 2 (ONNX) | `onnx-community/Supertonic-TTS-2-ONNX` (base: `Supertone/supertonic-2`) | **BigScience OpenRAIL-M** (modelo); código de ejemplo MIT | ⚠️ |
+| Voz "Claudia" (México) | Piper `es_MX-claude-high` | `rhasspy/piper-voices` @ `375a0fe6` | Repo MIT; dataset Apache-2.0 | ⚠️ (ver lessac) |
+| Voz "Aldo" (México) | Piper `es_MX-ald-medium` | ídem | Repo MIT; dataset Unlicense; afinada desde `davefx` | ⚠️ (ver lessac) |
+| Voz "Daniela" (Argentina) | Piper `es_AR-daniela-high` | ídem | Repo MIT; dataset **CC BY-SA 4.0** (OpenSLR 61) | ⚠️ |
+| Voz "David" (España) | Piper `es_ES-davefx-medium` | ídem | Repo MIT; dataset CC0 | ⚠️ (ver lessac) |
+| Voces "Lucía" y "Martín" (España) | Piper `es_ES-sharvard-medium` | ídem | Repo MIT; dataset **CC BY 3.0** (Sharvard, Univ. de Edimburgo) | ⚠️ |
+| "Mi voz" (cambio de timbre) | OpenVoice tone color converter (ONNX) | `seasonstudio/openvoice_tone_clone_onnx` @ `abb763f5` | Original OpenVoice V1 y V2 **MIT** desde abril de 2024 (MyShell); el repo ONNX **no declara licencia** | ⚠️ (menor) |
+| Fonemas de Piper | espeak-ng compilado a WASM (`@diffusionstudio/piper-wasm`) | npm, incluido en la app | El paquete dice MIT, pero espeak-ng y sus datos son **GPL-3.0-or-later** | ⚠️ |
+| Recorte de persona / fondo | MediaPipe Selfie Segmenter (`public/models/selfie_segmenter.tflite`) | Google MediaPipe, incluido en la app | Apache-2.0 (ficha del modelo de MediaPipe) | ✅ |
+| Motor de IA | ONNX Runtime Web, transformers.js, MediaPipe Tasks | npm | MIT / Apache-2.0 / Apache-2.0 | ✅ |
+| Efectos de sonido | Kenney (`public/sfx/kenney/`) | kenney.nl | CC0 1.0 (`LICENSE.txt` incluido) | ✅ |
+| Stickers | Fluent Emoji (`public/stickers/fluent/`) | Microsoft | MIT (`LICENSE.txt` incluido) | ✅ |
+
+Integridad: Piper y OpenVoice se descargan de un **commit fijo** y cada archivo se compara con su
+SHA-256 antes de usarlo o guardarlo (`src/piperEngine.ts`, `src/toneConvert.ts`). Whisper y
+Supertonic (`src/captions.ts`, `src/voice.ts`) todavía se piden a la rama `main`: conviene fijar su
+revisión (`revision` en `pipeline()` y la URL de las voces) con los commits revisados hoy:
+`whisper-base_timestamped` `608c49e6…`, `whisper-small_timestamped` `65caa70f…`,
+`Supertonic-TTS-2-ONNX` `68d4d942…`.
+
+## ⚠️ Avisos y recomendaciones
+
+1. **Voces Piper afinadas desde "lessac"** (claude, ald vía davefx, daniela, davefx, sharvard). Según
+   sus fichas se entrenaron partiendo de la voz inglesa `en_US-lessac`, cuyo dataset (Blizzard 2013,
+   Lessac Technologies / CSTR) tiene una licencia propia pensada para investigación **no comercial**.
+   La comunidad de Piper discute si esa restricción pasa a las voces derivadas; no hay una respuesta
+   firme. **Recomendación:** antes de vender Clipo, consultar con un abogado o sustituir/añadir voces
+   entrenadas desde cero con datos de licencia libre; mientras tanto, no presentar las voces como
+   "libres de derechos" en la tienda.
+2. **Daniela (CC BY-SA 4.0) y Sharvard (CC BY 3.0)**: piden **atribución** (y, en BY-SA, compartir
+   igual las obras derivadas del *modelo*). Recomendación: mostrar en "Acerca de" / créditos el autor y
+   la licencia de cada voz; no modificar ni redistribuir los modelos con otra licencia.
+3. **Supertonic 2 (OpenRAIL-M)**: permite uso comercial, pero con **restricciones de uso** (sin
+   suplantación, desinformación, usos ilegales, etc.) que deben **trasladarse a los usuarios**.
+   Recomendación: incluir esas restricciones (Anexo A de la licencia) en los términos de uso de Clipo
+   y enlazar la licencia.
+4. **espeak-ng (GPL-3.0)** dentro de `piper_phonemize.wasm`/`.data`: distribuirlo dentro de la app
+   (web, Android, iOS, Windows) obliga a ofrecer el código fuente de esa parte y su licencia GPL.
+   Recomendación: publicar el aviso GPL y el enlace al código de espeak-ng/piper-phonemize; si Clipo
+   va a ser de código cerrado, valorar con un abogado si el WASM separado basta como "obra
+   independiente", o cambiar a un fonemizador con licencia permisiva. Ojo también con la tienda de
+   Apple: la GPL-3.0 es conflictiva con sus términos.
+5. **OpenVoice ONNX sin licencia declarada**: el modelo original es MIT, pero la conversión de
+   `seasonstudio` no indica licencia. Riesgo bajo; recomendación: pedir al autor que añada la licencia
+   o convertir los pesos MIT originales nosotros mismos y alojarlos.
+6. **"Mi voz" clona la voz del usuario**: aunque los modelos lo permitan, las tiendas y varias leyes
+   piden consentimiento de la persona cuya voz se usa. Clipo ya pide consentimiento explícito al grabar;
+   mantenerlo.
+7. **MMS-TTS** (`ttsWorker.ts` conserva una rama para modelos `mms`): los modelos MMS de Meta son
+   **CC BY-NC 4.0 (no comercial)**. Hoy no hay ninguna voz MMS en `VOICES`; no añadirlas si Clipo va
+   a ser de pago.

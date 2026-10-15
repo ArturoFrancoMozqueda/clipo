@@ -7,7 +7,8 @@ export interface CaptionWindow {
   samples: Float32Array;
 }
 
-export type WorkerIn = { type: 'run'; model: string; language: string; windows: CaptionWindow[] };
+/** `revision`: the model's commit on the Hub, so the download never changes under us. */
+export type WorkerIn = { type: 'run'; model: string; revision?: string; language: string; windows: CaptionWindow[] };
 
 export type WorkerOut =
   | { type: 'download'; loaded: number; total: number }
@@ -30,8 +31,9 @@ async function hasWebGPU() {
   }
 }
 
-async function load(model: string) {
-  if (loaded?.key === model) return loaded;
+async function load(model: string, revision?: string) {
+  const key = `${model}@${revision ?? 'main'}`;
+  if (loaded?.key === key) return loaded;
   const progress_callback = (p: ProgressInfo) => {
     if (p.status === 'progress_total') post({ type: 'download', loaded: p.loaded, total: p.total });
   };
@@ -42,8 +44,9 @@ async function load(model: string) {
       device,
       dtype,
       progress_callback,
+      ...(revision ? { revision } : {}),
     })) as AutomaticSpeechRecognitionPipeline;
-    return { key: model, asr, device };
+    return { key, asr, device };
   };
   if (await hasWebGPU()) {
     try {
@@ -61,7 +64,7 @@ self.onmessage = async (e: MessageEvent<WorkerIn>) => {
   const msg = e.data;
   if (msg.type !== 'run') return;
   try {
-    const { asr, device } = await load(msg.model);
+    const { asr, device } = await load(msg.model, msg.revision);
     post({ type: 'ready', device });
     // Word times come from the model's attention; if this model or device can't give them,
     // fall back to phrase times for the rest of the run (captions still work, just not per word).

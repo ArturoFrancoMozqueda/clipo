@@ -13,8 +13,13 @@ export const ASPECTS: Record<AspectId, { w: number; h: number; label: string; hi
 
 const even = (n: number) => Math.round(n / 2) * 2;
 
+/** Short side of the preview frame. Export sizes are chosen separately and never use this. */
+export const PREVIEW_SHORT = 720;
+/** Short side used while playing on devices that can't draw the full preview in time. */
+export const PREVIEW_SHORT_LOW = 540;
+
 /** Pixel size of the frame for an aspect, given the length of its short side. */
-export function canvasSize(aspect: AspectId, short = 720): [number, number] {
+export function canvasSize(aspect: AspectId, short = PREVIEW_SHORT): [number, number] {
   const { w, h } = ASPECTS[aspect];
   return w <= h ? [short, even((short * h) / w)] : [even((short * w) / h), short];
 }
@@ -32,15 +37,36 @@ export interface Placed {
   index: number;
 }
 
-/** Positions of the main-track clips; they always sit back to back. */
+/** Last layout per clip list: the preview asks for it every frame and projects are replaced, not mutated. */
+const layouts = new WeakMap<Clip[], Placed[]>();
+
+/**
+ * Positions of the main-track clips; they always sit back to back. The result is shared (cached
+ * per clip list and checked against the clips without allocating): treat it as read-only.
+ */
 export function layout(p: Project): Placed[] {
+  const hit = layouts.get(p.clips);
+  if (hit && hit.length === p.clips.length) {
+    let t = 0;
+    let ok = true;
+    for (let i = 0; i < hit.length && ok; i++) {
+      const c = p.clips[i];
+      ok = hit[i].clip === c && hit[i].start === t;
+      t += clipDur(c);
+      ok &&= hit[i].end === t;
+    }
+    if (ok) return hit;
+  }
   let t = 0;
-  return p.clips.map((clip, index) => {
+  const out = p.clips.map((clip, index) => {
     const start = t;
     t += clipDur(clip);
     return { clip, start, end: t, index };
   });
+  layouts.set(p.clips, out);
+  return out;
 }
+
 
 export function mainDuration(p: Project) {
   const l = layout(p);

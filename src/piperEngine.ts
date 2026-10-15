@@ -2,18 +2,45 @@
 // Text → phonemes with the espeak-ng based piper-phonemize WASM, phonemes → audio with ONNX Runtime.
 // Both runtimes ship with the app; each voice model (20–110 MB) is downloaded once and kept in
 // the browser's Cache Storage, so later narrations work offline.
-import * as ort from 'onnxruntime-web/wasm';
-import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
-import ortMjs from 'onnxruntime-web/ort-wasm-simd-threaded.mjs?url';
+// Same ONNX Runtime entry and WASM file as transformers.js, which shares this worker: one runtime
+// in the app, and transformers.js picks up the local wasmPaths set below instead of a CDN.
+import * as ort from 'onnxruntime-web/webgpu';
+import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
+import ortMjs from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import createPiperPhonemize from '@diffusionstudio/piper-wasm/build/piper_phonemize.js';
 import phonemizeWasm from '@diffusionstudio/piper-wasm/build/piper_phonemize.wasm?url';
 import phonemizeData from '@diffusionstudio/piper-wasm/build/piper_phonemize.data?url';
 
-const VOICES_BASE = 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0';
+// Downloads come from one fixed commit (the one the v1.0.0 tag points to) and are checked against
+// their SHA-256 before they are used or cached. Cache keys keep the v1.0.0 URLs, so voices that
+// earlier versions downloaded are reused.
+const VOICES_REPO = 'https://huggingface.co/rhasspy/piper-voices';
+const VOICES_REVISION = '375a0fe641dea077c2a47b4e9a056d6da521eed3';
+const VOICES_BASE = `${VOICES_REPO}/resolve/${VOICES_REVISION}`;
+const CACHE_BASE = `${VOICES_REPO}/resolve/v1.0.0`;
 const CACHE = 'clipo-voices-v1';
 
+/** SHA-256 of each voice file at VOICES_REVISION (Hugging Face API `?blobs=true`, and the .json files hashed). */
+const SHA256: Record<string, string> = {
+  'es/es_MX/claude/high/es_MX-claude-high.onnx': '3ef40a71ea63852cd8ab7e6fa7d2ecdcfa67a0b47c9c48e3f10e02ee02083ea0',
+  'es/es_MX/claude/high/es_MX-claude-high.onnx.json': '1afc81f703c0e4cb3b4d7c0dca096b8b54a98806807f0170cf5eb5557723c12d',
+  'es/es_MX/ald/medium/es_MX-ald-medium.onnx': '019b3803293c93e34a206dd2e53a3889209a514e786fd7144f7b70196c579b63',
+  'es/es_MX/ald/medium/es_MX-ald-medium.onnx.json': 'efab736e62e5321dd5d063d1b46e63c59ce655419816355b81d025c1a8d6b03c',
+  'es/es_AR/daniela/high/es_AR-daniela-high.onnx': '7ceb1fc0dab349418c5b54a639ae9ee595212d7c9ea422220d8419163d5cc985',
+  'es/es_AR/daniela/high/es_AR-daniela-high.onnx.json': 'aedbf69647e1d754c62ecf8e0366ca5f16af3e768e3c6b5329af6eb6bde3852b',
+  'es/es_ES/davefx/medium/es_ES-davefx-medium.onnx': '6658b03b1a6c316ee4c265a9896abc1393353c2d9e1bca7d66c2c442e222a917',
+  'es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json': '0e0dda87c732f6f38771ff274a6380d9252f327dca77aa2963d5fbdf9ec54842',
+  'es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx': '40febfb1679c69a4505ff311dc136e121e3419a13a290ef264fdf43ddedd0fb1',
+  'es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx.json': '7438c9b699c72b0c3388dae1b68d3f364dc66a2150fe554a1c11f03372957b2c',
+};
+
+async function sha256Hex(data: Uint8Array<ArrayBuffer>): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+  return Array.from(d, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 ort.env.wasm.wasmPaths = { wasm: ortWasm, mjs: ortMjs };
-// Threads need cross-origin isolation, which Clipo doesn't enable (see PUBLICAR.md).
+// Threads need cross-origin isolation (COOP/COEP; see PUBLICAR.md); without it, one thread.
 ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
 
 interface PiperConfig {
@@ -31,12 +58,13 @@ interface LoadedVoice {
 
 export type DownloadProgress = (loaded: number, total: number) => void;
 
-/** Fetch a file, reporting progress, from the cache when we already have it. */
-async function cachedFetch(url: string, onProgress?: DownloadProgress): Promise<ArrayBuffer> {
+/** Fetch a voice file (path inside piper-voices), reporting progress, from the cache when we already have it. */
+async function cachedFetch(file: string, onProgress?: DownloadProgress): Promise<ArrayBuffer> {
+  const key = `${CACHE_BASE}/${file}`;
   const cache = await caches.open(CACHE).catch(() => null);
-  const hit = await cache?.match(url);
+  const hit = await cache?.match(key);
   if (hit) return hit.arrayBuffer();
-  const res = await fetch(url);
+  const res = await fetch(`${VOICES_BASE}/${file}`);
   if (!res.ok || !res.body) throw new Error(`download ${res.status}`);
   const total = Number(res.headers.get('content-length')) || 0;
   const reader = res.body.getReader();
@@ -55,7 +83,11 @@ async function cachedFetch(url: string, onProgress?: DownloadProgress): Promise<
     buf.set(p, at);
     at += p.length;
   }
-  await cache?.put(url, new Response(buf, { headers: { 'content-type': 'application/octet-stream' } })).catch(() => {});
+  // A corrupted or tampered download is never cached nor handed to ONNX Runtime.
+  const want = SHA256[file];
+  if (want && (await sha256Hex(buf)) !== want) throw new Error(`integrity: ${file} does not match its SHA-256`);
+  if (!want) console.warn('[piper] no pinned SHA-256 for', file);
+  await cache?.put(key, new Response(buf, { headers: { 'content-type': 'application/octet-stream' } })).catch(() => {});
   return buf.buffer;
 }
 
@@ -66,8 +98,8 @@ export function loadVoice(path: string, onProgress?: DownloadProgress) {
   let v = voices.get(path);
   if (!v) {
     v = (async () => {
-      const config = JSON.parse(new TextDecoder().decode(await cachedFetch(`${VOICES_BASE}/${path}.onnx.json`))) as PiperConfig;
-      const model = await cachedFetch(`${VOICES_BASE}/${path}.onnx`, onProgress);
+      const config = JSON.parse(new TextDecoder().decode(await cachedFetch(`${path}.onnx.json`))) as PiperConfig;
+      const model = await cachedFetch(`${path}.onnx`, onProgress);
       const session = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });
       return { config, session };
     })();

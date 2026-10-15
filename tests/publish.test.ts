@@ -175,7 +175,7 @@ test('runner uploads one at a time and saves every state', async () => {
 
 test('runner records the failure reason and retries on demand', async () => {
   let calls = 0;
-  const pub = fakePublisher(async (input) => {
+  const pub = fakePublisher(async () => {
     calls++;
     if (calls === 1) throw new PublishError('Se acabó el cupo diario', true);
     return { remoteId: 'v', url: 'https://y/v' };
@@ -281,4 +281,46 @@ test('Shorts must be vertical or square and up to 3 minutes', () => {
   assert.deepEqual(checkYouTube('youtube', { ...vertical, width: 1920, height: 1080, duration: 600 }, post), []);
   assert.equal(youtubeUrl('youtube_shorts', 'abc'), 'https://www.youtube.com/shorts/abc');
   assert.equal(youtubeUrl('youtube', 'abc'), 'https://www.youtube.com/watch?v=abc');
+});
+
+// ---------- storage failures ----------
+
+test('the queue keeps going when saving a job fails', async () => {
+  let saves = 0;
+  const pub = fakePublisher(async (input) => ({ remoteId: input.jobId, url: 'u' }));
+  const q = new PublishQueue({
+    publisherFor: () => pub,
+    storage: {
+      saveJob: async () => {
+        saves++;
+        throw new Error('QuotaExceededError');
+      },
+      getBlob: async () => new Blob(['v']),
+    },
+  });
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => unhandled.push(e);
+  process.on('unhandledRejection', onUnhandled);
+  await q.add(createJobs(batch()));
+  await q.idle;
+  assert.ok(saves > 0);
+  assert.deepEqual(q.list().map((j) => j.status.kind), ['published', 'published']);
+  // Not stuck: a later job still runs.
+  await q.add(createJobs(batch({ batchId: 'b2', targets: [{ network: 'youtube', account: { id: 'UC1', name: 'c' } }] })));
+  await q.idle;
+  assert.equal(q.list()[2].status.kind, 'published');
+  await q.tick();
+  await new Promise((r) => setTimeout(r, 0));
+  process.off('unhandledRejection', onUnhandled);
+  assert.deepEqual(unhandled, []);
+});
+
+test('loading a saved queue survives storage failures', async () => {
+  const q = new PublishQueue({
+    publisherFor: () => undefined,
+    storage: { saveJob: async () => { throw new Error('closed'); }, getBlob: async () => undefined },
+    now: () => T0,
+  });
+  await q.load([{ ...createJobs(batch())[0], status: { kind: 'uploading', pct: 10 } }]);
+  assert.equal(q.list()[0].status.kind, 'error');
 });

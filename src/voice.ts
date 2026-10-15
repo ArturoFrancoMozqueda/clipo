@@ -101,13 +101,34 @@ export interface Recording {
  * Recording stops by itself when playback stops (end of video, pause, seek).
  */
 export async function startRecording(stream: MediaStream, onStopped: (saved: boolean) => void): Promise<Recording> {
-  const rec = new MediaRecorder(stream);
+  const releaseMic = () => stream.getTracks().forEach((t) => t.stop());
+  let made: MediaRecorder | undefined;
   const chunks: Blob[] = [];
-  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  const stopped = new Promise<void>((r) => (rec.onstop = () => r()));
-  const started = new Promise<void>((r) => (rec.onstart = () => r()));
-  rec.start(500);
-  await started;
+  let stopped!: Promise<void>;
+  try {
+    const r = (made = new MediaRecorder(stream));
+    r.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    stopped = new Promise<void>((done) => (r.onstop = () => done()));
+    const started = new Promise<void>((resolve, reject) => {
+      r.onstart = () => resolve();
+      r.onerror = (e) => reject((e as Event & { error?: unknown }).error ?? new Error('failed'));
+      setTimeout(() => reject(new Error('timeout')), 5000);
+    });
+    started.catch(() => {}); // awaited below; this only avoids an unhandled rejection if start() throws
+    r.start(500);
+    await started;
+  } catch (e) {
+    // Never leave the microphone on when the recorder could not start.
+    try {
+      if (made && made.state !== 'inactive') made.stop();
+    } catch {
+      /* already stopped */
+    }
+    releaseMic();
+    console.error(e);
+    throw new Error('failed');
+  }
+  const rec = made;
   const recWall = performance.now();
 
   const s = useStore.getState();
@@ -123,9 +144,14 @@ export async function startRecording(stream: MediaStream, onStopped: (saved: boo
     done = true;
     unsub();
     engine.pause();
-    if (rec.state !== 'inactive') rec.stop();
-    await stopped;
-    stream.getTracks().forEach((t) => t.stop());
+    try {
+      if (rec.state !== 'inactive') rec.stop();
+      // A recorder that broke may never fire 'stop'.
+      await Promise.race([stopped, new Promise((r) => setTimeout(r, 3000))]);
+    } catch (e) {
+      console.error(e);
+    }
+    releaseMic();
     if (!keep) return onStopped(false);
     try {
       const { samples, sampleRate } = await decodeMono(new Blob(chunks, { type: rec.mimeType }));
@@ -140,6 +166,8 @@ export async function startRecording(stream: MediaStream, onStopped: (saved: boo
       onStopped(false);
     }
   };
+  // The recorder failing mid-take (mic unplugged…) keeps what was captured so far.
+  rec.onerror = () => void end(true);
   if (hasVideo) unsub = useStore.subscribe((st, prev) => void (prev.playing && !st.playing && end(true)));
   return { start, finish: () => end(true), discard: () => void end(false) };
 }
@@ -165,7 +193,10 @@ export interface Voice {
 }
 
 const SUPERTONIC = 'onnx-community/Supertonic-TTS-2-ONNX';
-const voiceUrl = (v: string) => `https://huggingface.co/${SUPERTONIC}/resolve/main/voices/${v}.bin`;
+/** Fixed commit of the Supertonic repo (Hugging Face API `sha`, 2026-10-15), so a change upstream can't swap the files. */
+export const SUPERTONIC_REVISION = '68d4d9420d0e0e51d14656e1ec5c9b091490b49e';
+// TODO: ttsWorker.ts loads the model with pipeline(); pass `revision: SUPERTONIC_REVISION` there too.
+const voiceUrl = (v: string) => `https://huggingface.co/${SUPERTONIC}/resolve/${SUPERTONIC_REVISION}/voices/${v}.bin`;
 
 // Piper voices first: natural sounding, light, and each one an actual Spanish speaker.
 // Licenses (model cards): claude Apache-2.0, ald Unlicense, daniela CC BY-SA 4.0, davefx CC0, sharvard CC BY 3.0.

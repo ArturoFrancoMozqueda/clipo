@@ -10,10 +10,15 @@ export function Toast() {
     const t = setTimeout(() => setVisible(false), 2600);
     return () => clearTimeout(t);
   }, [toast]);
-  if (!toast || !visible) return null;
+  const show = !!toast && visible;
+  // The live region stays mounted so screen readers announce every change of its text.
   return (
-    <div className="toast" role="status" key={toast.id}>
-      {toast.text}
+    <div className="toast-live" role="status" aria-live="polite">
+      {show && (
+        <div className="toast" key={toast.id}>
+          {toast.text}
+        </div>
+      )}
     </div>
   );
 }

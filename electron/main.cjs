@@ -21,22 +21,75 @@ protocol.registerSchemesAsPrivileged([
 if (SMOKE) app.setPath('userData', process.env.CLIPO_SMOKE_DATA || fs.mkdtempSync(path.join(app.getPath('temp'), 'clipo-smoke-')));
 
 // One window only: opening Clipo again focuses the running one.
-if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
+const gotLock = SMOKE || app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
 
 let publishing = null;
+let mainWindow = null;
+
+const ORIGIN = `${SCHEME}://${HOST}`;
+// (URL.origin is "null" for custom schemes, so compare scheme and host.)
+const isAppUrl = (url) => {
+  try {
+    const u = new URL(url);
+    return u.protocol === `${SCHEME}:` && u.host === HOST;
+  } catch {
+    return false;
+  }
+};
+/** Only plain https:// links leave the app, and only to the user's browser. */
+function openExternal(url) {
+  try {
+    if (new URL(url).protocol === 'https:') shell.openExternal(url);
+  } catch {}
+}
+
+// Hosts the page itself talks to: the AI models (Hugging Face and its download CDNs) and the ONNX
+// Runtime CDN that transformers.js falls back to. Uploads to YouTube go through the main process.
+const MODEL_HOSTS = 'https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co https://cdn.jsdelivr.net';
+// Channel avatars and video thumbnails shown in Publicar.
+const IMAGE_HOSTS = 'https://yt3.ggpht.com https://*.ggpht.com https://i.ytimg.com https://*.googleusercontent.com';
+const CSP = [
+  "default-src 'self'",
+  `script-src 'self' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net`,
+  "worker-src 'self' blob:",
+  `connect-src 'self' blob: data: ${MODEL_HOSTS}`,
+  `img-src 'self' blob: data: ${IMAGE_HOSTS}`,
+  "media-src 'self' blob: data:",
+  "font-src 'self' data: blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join('; ');
 
 /** Map app://clipo/<path> to a file inside dist/, never outside it. Unknown paths get the app shell. */
 function serve(request) {
   const { pathname } = new URL(request.url);
-  let file = path.normalize(path.join(DIST, decodeURIComponent(pathname)));
-  if (!file.startsWith(DIST)) return new Response('Not found', { status: 404 });
-  if (pathname.endsWith('/') || !fs.existsSync(file)) file = path.join(DIST, 'index.html');
+  let file;
+  try {
+    file = path.normalize(path.join(DIST, decodeURIComponent(pathname)));
+  } catch {
+    return new Response('Bad request', { status: 400 });
+  }
+  const rel = path.relative(DIST, file);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return new Response('Not found', { status: 404 });
+  if (pathname.endsWith('/') || !fs.existsSync(file) || !fs.statSync(file).isFile()) file = path.join(DIST, 'index.html');
   return net.fetch(pathToFileURL(file).toString()).then((res) => {
+    const headers = new Headers(res.headers);
     // Cross-origin isolation lets the AI models use every CPU core (WebAssembly threads).
     // "credentialless" keeps cross-origin downloads (models, CDNs) working without extra headers.
-    const headers = new Headers(res.headers);
     headers.set('Cross-Origin-Opener-Policy', 'same-origin');
     headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
+    headers.set('X-Content-Type-Options', 'nosniff');
+    headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    // The policy goes on the page only: workers get their own (none), because the ONNX Runtime
+    // glue they run builds functions at runtime (WebGPU), which a page CSP would block.
+    if (file.endsWith('.html')) {
+      headers.set('Content-Security-Policy', CSP);
+      headers.set('Permissions-Policy', 'microphone=(self), camera=(self), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=()');
+    }
     return new Response(res.body, { status: res.status, headers });
   });
 }
@@ -61,7 +114,11 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
     },
   });
-  win.loadURL(`${SCHEME}://${HOST}/index.html`);
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+  win.loadURL(`${ORIGIN}/index.html`);
 
   // Closing during an upload would cut it: ask first.
   win.on('close', (e) => {
@@ -80,14 +137,19 @@ function createWindow() {
 
   // Links to websites open in the user's browser, never inside the editor window.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    openExternal(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => {
-    if (url.startsWith(`${SCHEME}://`)) return;
+    if (isAppUrl(url)) return;
     e.preventDefault();
-    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    openExternal(url);
   });
+  win.webContents.on('will-redirect', (e, url) => {
+    if (!isAppUrl(url)) e.preventDefault();
+  });
+  // No <webview> tags in Clipo: refuse any attempt to attach one.
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
 
   if (SMOKE) {
     win.webContents.on('console-message', (e) => {
@@ -126,21 +188,40 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // A second copy that lost the single-instance lock is quitting: don't open another window.
+  if (!gotLock) return;
   protocol.handle(SCHEME, serve);
 
-  // Microphone for "Grabar voz"; everything else stays denied.
-  const allowed = new Set(['media', 'fullscreen', 'clipboard-sanitized-write']);
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)));
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+  // Only Clipo's own page in its own window, and only these: the microphone for "Grabar voz" /
+  // "Mi voz" (audio, never the camera), fullscreen and writing to the clipboard.
+  const allowed = new Set(['fullscreen', 'clipboard-sanitized-write']);
+  const ours = (wc, origin) => !!wc && !!mainWindow && wc === mainWindow.webContents && isAppUrl(origin || '');
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details = {}) => {
+    const origin = details.securityOrigin || details.requestingUrl || wc?.getURL();
+    if (!ours(wc, origin)) return cb(false);
+    if (permission === 'media') {
+      const types = details.mediaTypes || [];
+      return cb(types.length > 0 && types.every((t) => t === 'audio'));
+    }
+    cb(allowed.has(permission));
+  });
+  session.defaultSession.setPermissionCheckHandler((wc, permission, origin, details = {}) => {
+    if (!ours(wc, origin || details.requestingUrl || wc?.getURL())) return false;
+    if (permission === 'media') return details.mediaType !== 'video';
+    return allowed.has(permission);
+  });
 
   publishing = youtube.register({ app, ipcMain, shell, safeStorage, BrowserWindow });
 
   Menu.setApplicationMenu(null);
   const win = createWindow();
   app.on('second-instance', () => {
+    if (win.isDestroyed()) return;
     if (win.isMinimized()) win.restore();
     win.focus();
   });
 });
 
 app.on('window-all-closed', () => app.quit());
+// Temp copies of videos sent for upload never outlive the app.
+app.on('will-quit', () => publishing?.cleanup?.());

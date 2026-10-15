@@ -1,25 +1,59 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { CheckCircle2, Download, Send, Share2, TriangleAlert, VolumeX } from 'lucide-react';
 import type { AudioItem, Clip, OverlayItem, PanelId, SelectionKind, StickerItem, TextItem } from '../types';
 import { itemsOf, useStore } from '../store';
-import { canExport, exportVideo, type ExportProgress } from '../exporter';
+import type { ExportProgress } from '../exporter';
+import { canExport } from '../exportSupport';
+import { canShareFile, saveFile, shareFile } from '../nativeShare';
 import { FILTERS } from '../filters';
 import { clipDur, fmtTime, totalDuration } from '../model';
 import { setAspect } from '../ops';
 import { FormatPicker } from './FormatPicker';
-import { CropPanel, EffectsPanel, LutSection, StickersPanel, TransitionPanel } from './VisualPanels';
-import { CaptionsPanel, TextPanel } from './TextPanels';
 import { MediaLibrary } from './MediaLibrary';
-import { SfxPanel } from './SoundPanels';
 import { showOnboarding } from './Onboarding';
-import { RecordPanel, TtsPanel } from './VoicePanels';
 import { AdvancedToggle, ColorPanel, KeyframesPanel, OverlayPanel } from './AdvancedPanels';
-import { BackgroundPanel } from './BackgroundPanel';
 import { BgError } from '../segmentation';
-import { AudioRoleSection, NormalizeOption, SmartAudioPanel, VoiceFxSection } from './AudioPanels';
-import { ReframeSection, SocialPanel } from './SocialPanel';
-import { PublishPanel } from './PublishPanel';
-import { handOffVideo } from '../publish/store';
+
+/**
+ * A named export of a module that is only downloaded the first time it's shown, so the editor
+ * starts without the code of every panel (captions, voice, publishing…).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lazyNamed<M extends Record<string, any>, K extends keyof M>(load: () => Promise<M>, key: K): M[K] {
+  return lazy(() => load().then((m) => ({ default: m[key] as ComponentType<unknown> }))) as unknown as M[K];
+}
+const visual = () => import('./VisualPanels');
+const CropPanel = lazyNamed(visual, 'CropPanel');
+const EffectsPanel = lazyNamed(visual, 'EffectsPanel');
+const LutSection = lazyNamed(visual, 'LutSection');
+const StickersPanel = lazyNamed(visual, 'StickersPanel');
+const TransitionPanel = lazyNamed(visual, 'TransitionPanel');
+const texts = () => import('./TextPanels');
+const CaptionsPanel = lazyNamed(texts, 'CaptionsPanel');
+const TextPanel = lazyNamed(texts, 'TextPanel');
+const SfxPanel = lazyNamed(() => import('./SoundPanels'), 'SfxPanel');
+const voice = () => import('./VoicePanels');
+const RecordPanel = lazyNamed(voice, 'RecordPanel');
+const TtsPanel = lazyNamed(voice, 'TtsPanel');
+const BackgroundPanel = lazyNamed(() => import('./BackgroundPanel'), 'BackgroundPanel');
+const audio = () => import('./AudioPanels');
+const AudioRoleSection = lazyNamed(audio, 'AudioRoleSection');
+const NormalizeOption = lazyNamed(audio, 'NormalizeOption');
+const SmartAudioPanel = lazyNamed(audio, 'SmartAudioPanel');
+const VoiceFxSection = lazyNamed(audio, 'VoiceFxSection');
+const social = () => import('./SocialPanel');
+const ReframeSection = lazyNamed(social, 'ReframeSection');
+const SocialPanel = lazyNamed(social, 'SocialPanel');
+const PublishPanel = lazyNamed(() => import('./PublishPanel'), 'PublishPanel');
+
+/** Shown for the moment a panel's code takes to arrive. */
+function PanelLoading() {
+  return (
+    <p className="muted small" role="status">
+      <span className="spinner" /> Cargando…
+    </p>
+  );
+}
 
 const TITLES: Record<PanelId, string> = {
   media: 'Agregar videos y fotos',
@@ -91,7 +125,9 @@ export function Sheet() {
           </button>
         )}
       </header>
-      <div className="sheet-body">{body[panel]}</div>
+      <div className="sheet-body">
+        <Suspense fallback={<PanelLoading />}>{body[panel]}</Suspense>
+      </div>
     </section>
   );
 }
@@ -280,13 +316,18 @@ function ExportPanel() {
     abort.current = ac;
     setState({ kind: 'running', progress: null });
     try {
+      const { exportVideo } = await import('../exporter');
       const { blob, ext } = await exportVideo(quality, (progress) => !ac.signal.aborted && setState({ kind: 'running', progress }), ac.signal);
       const safe = project.name.replace(/[\\/:*?"<>|]+/g, '').trim() || 'video';
       const file = new File([blob], `${safe}.${ext}`, { type: blob.type });
       setState({ kind: 'done', url: URL.createObjectURL(file), file });
     } catch (e) {
       if ((e as Error).message === 'cancelled') setState({ kind: 'idle' });
-      else setState({ kind: 'error', message: e instanceof BgError ? e.message : 'Algo salió mal al guardar. Intenta otra vez con calidad 720p.' });
+      else {
+        const { ExportError } = await import('../exporter');
+        const known = e instanceof BgError || e instanceof ExportError;
+        setState({ kind: 'error', message: known ? (e as Error).message : 'Algo salió mal al guardar. Intenta otra vez con calidad 720p.' });
+      }
     }
   };
 
@@ -308,23 +349,27 @@ function ExportPanel() {
   }
 
   if (state.kind === 'done') {
-    const share = () => navigator.share({ files: [state.file], title: project.name }).catch(() => {});
-    const canShare = typeof navigator.canShare === 'function' && navigator.canShare({ files: [state.file] });
+    const share = () => void shareFile(state.file, project.name);
+    const canShare = canShareFile(state.file);
     return (
       <div className="export-done">
         <p className="ok"><CheckCircle2 /> ¡Tu video está listo!</p>
         <video src={state.url} controls playsInline className="export-video" />
         <div className="row">
-          <a className="btn-primary" href={state.url} download={state.file.name}>
+          <button className="btn-primary" onClick={() => void saveFile(state.file)}>
             <Download size={18} /> Descargar
-          </a>
+          </button>
           {canShare && (
             <button className="btn-primary alt" onClick={share}>
               <Share2 size={18} /> Compartir
             </button>
           )}
         </div>
-        <button className="btn-primary full" onClick={() => { handOffVideo(state.file); useStore.getState().setPanel('publish'); }}>
+        <button className="btn-primary full" onClick={async () => {
+          const { handOffVideo } = await import('../publish/store');
+          handOffVideo(state.file);
+          useStore.getState().setPanel('publish');
+        }}>
           <Send size={18} /> Publicar en redes
         </button>
         <button className="btn-ghost" onClick={() => setState({ kind: 'idle' })}>Volver a guardar</button>

@@ -50,12 +50,24 @@ export const youtubePublisher: Publisher = {
     const off = d.youtube.onProgress((p) => p.jobId === input.jobId && p.total > 0 && onProgress((p.sent / p.total) * 100));
     const abort = () => void d.youtube.cancelUpload(input.jobId);
     signal.addEventListener('abort', abort);
+    const yt = d.youtube;
+    const mime = input.video.type || 'video/mp4';
+    let fileId: string | undefined;
     try {
-      const res = await d.youtube.upload({
+      if (yt.chunkedUpload && yt.uploadBegin && yt.uploadAppend) {
+        // Hand the video over in pieces, one after another, so it never sits whole in memory.
+        const begun = await yt.uploadBegin(input.video.size, mime);
+        fileId = begun.fileId;
+        for (let at = 0; at < input.video.size; at += begun.chunkLimit) {
+          if (signal.aborted) throw new DOMException('Cancelado', 'AbortError');
+          await yt.uploadAppend(fileId, await input.video.slice(at, at + begun.chunkLimit).arrayBuffer());
+        }
+      }
+      const res = await yt.upload({
         jobId: input.jobId,
         accountId: input.accountId,
-        bytes: await input.video.arrayBuffer(),
-        mime: input.video.type || 'video/mp4',
+        ...(fileId ? { fileId } : { bytes: await input.video.arrayBuffer() }),
+        mime,
         metadata: buildYouTubeMetadata(input.network, input.videoInfo, input.post, input.options),
         thumbnail: input.thumbnail ? { bytes: await input.thumbnail.arrayBuffer(), mime: input.thumbnail.type || 'image/jpeg' } : undefined,
       });
@@ -65,6 +77,8 @@ export const youtubePublisher: Publisher = {
       }
       return { remoteId: res.videoId, url: youtubeUrl(input.network, res.videoId), note: notes.filter(Boolean).join(' ') || undefined };
     } catch (e) {
+      // A retry sends the video again, so the half-used copy is not needed.
+      if (fileId) void yt.uploadDiscard?.(fileId).catch(() => {});
       const { message, retryable } = bridgeError(e);
       throw new PublishError(message, retryable);
     } finally {

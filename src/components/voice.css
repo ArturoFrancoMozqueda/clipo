@@ -19,4 +19,4 @@
 .voice-play:disabled, .voice-pick:disabled { opacity: .5; }
 
 /* The voice list needs room on phones; on wide screens the sheet is a full-height side panel already. */
-@media (max-width: 1023px) { .sheet-tts { max-height: 80dvh; } }
+@media (max-width: 1023px) { .sheet-tts { max-height: min(80vh, var(--room, 80vh)); max-height: min(80dvh, var(--room, 80dvh)); } }

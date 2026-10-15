@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Hand, MousePointerClick, Plus, Upload } from 'lucide-react';
+import { Modal } from './Modal';
 
 const KEY = 'clipo.onboarded';
 
@@ -40,8 +41,7 @@ export function Onboarding() {
   const last = step === STEPS.length - 1;
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal onboarding" role="dialog" aria-labelledby="ob-title">
+    <Modal onClose={done} labelledBy="ob-title" className="onboarding">
         <div className="ob-icon"><s.icon size={36} /></div>
         <h3 id="ob-title">{s.title}</h3>
         <p>{s.text}</p>
@@ -54,7 +54,6 @@ export function Onboarding() {
             {last ? '¡Empezar!' : 'Siguiente'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

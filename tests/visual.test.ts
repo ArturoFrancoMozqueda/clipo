@@ -1,11 +1,14 @@
 // Run with: npm test. Pure logic of LUTs (.cube), crop/flip framing and the transition/effect math.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  LUT_MAX_SIZE, applyLutToPixels, base64ToBytes, bytesToBase64, lutBytes, lutFromCube, lutToBytes, parseCube,
-} from '../src/lut.ts';
+import './helpers/hooks.ts';
 import { CROP_MIN, cropEdges, cropForAspect, cropRect, hasFraming, normCrop, pointInFrame, setCropEdge } from '../src/framing.ts';
 import { coverScale, grainValues, hash, irisRadius, peak, pixelBlock, pushOffsets, smoothNoise } from '../src/fxmath.ts';
+
+// lut.ts imports other app modules Vite-style (no extension): load it through the test hooks.
+const {
+  LUT_MAX_SIZE, applyLutToPixels, base64ToBytes, bytesToBase64, lutBytes, lutFromCube, lutToBytes, parseCube,
+} = await import('../src/lut.ts');
 
 const near = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
 

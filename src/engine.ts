@@ -1,30 +1,42 @@
 import { useStore } from './store';
-import type { Asset, Clip, OverlayItem, Project, Selection } from './types';
-import { activeClip, audioDur, canvasSize, clamp, layout, overlayDur, overlaysOf, totalDuration, type Placed } from './model';
-import { applyFallback, getFilter, supportsCanvasFilter } from './filters';
-import { drawText, type Box } from './textStyles';
+import type { Asset, Project, Selection } from './types';
 import {
-  applyEffectOverlay, applyEffectTransform, drawSticker, drawTransition, effectCss, sourceTime, stickerHandle,
-  stickerHandleRadius, stickersOf, textPose, transitionAt, transitionLength, type StickerBox,
-} from './visuals';
-import { applyColorPixels, colorCss, drawVignette } from './color';
-import { poseAt, type Pose } from './keyframes';
-import { maskFor, maskImageOf, type Mask } from './segmentation';
-import { applyLut } from './lut';
-import { framed, hasFraming, pointInFrame } from './framing';
+  activeClip, audioDur, canvasSize, clamp, layout, overlayDur, overlaysOf, PREVIEW_SHORT, PREVIEW_SHORT_LOW, totalDuration, type Placed,
+} from './model';
+import { sourceTime, stickerHandle, stickerHandleRadius, stickersOf, transitionAt, transitionLength, type StickerBox } from './visuals';
 import { analyzeAsset, buildVoiceFx, mixOf, projectDuckCurve, voiceAssets, type FxChain } from './audioFx';
 import { audioRole, curveAt, type ActivityByAsset } from './audioDsp';
 import type { VoiceFxId } from './types';
-import { coverRect, trackAt } from './reframe';
+import type { Box } from './textStyles';
+import { bgClip, bgClipId, bgTime, renderFrame, type FrameImage, type MediaRef } from './render';
+import { onRedraw } from './redraw';
+
+// The drawing pipeline lives in render.ts; these re-exports keep the old import paths working.
+export { bgClipId, renderFrame } from './render';
+export type { FrameImage, FrameLookup, MediaRef, RenderOptions, RenderResult } from './render';
 
 interface MediaRec<E extends HTMLMediaElement> {
   el: E;
+  /** File it plays. It is the element's src only while the element is live (see the pool below). */
+  url: string;
+  live: boolean;
+  /** Frame stamp of the last tick that needed it, for evicting the least recently used. */
+  used: number;
   gain: GainNode | null;
-  /** Web Audio source of the element, once the audio graph exists. */
+  /** Web Audio source of the element, once the audio graph exists (made once per element). */
   src?: MediaElementAudioSourceNode | null;
   /** Voice effect currently wired between src and gain. */
   fx?: { id: VoiceFxId; chain: FxChain | null };
 }
+
+/**
+ * Media pool: every clip keeps its own element (and its Web Audio wiring, which can only be made
+ * once per element), but only the ones near the playhead hold a file. Phones run out of video
+ * decoders fast (a video split in 20 parts used to open 20 of them), so beyond these counts the
+ * least recently needed elements drop their file and load it again when they are needed.
+ */
+const MAX_LIVE_VIDEOS = 4;
+const MAX_LIVE_AUDIOS = 8;
 
 /** Ordered by preference; MP4 is the most widely shareable result. */
 const MIME_CANDIDATES = [
@@ -36,17 +48,27 @@ const MIME_CANDIDATES = [
   'video/webm',
 ];
 
+/** The real-time export gives up when the clock hasn't moved for this long (a stuck decoder). */
+const EXPORT_STALL_MS = 20_000;
+/** Average drawing time (ms) above which playback switches to the lighter preview size. */
+const SLOW_FRAME_MS = 12;
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Seek a media element unless it's already there (or still busy / without metadata). */
+function seekTo(el: HTMLMediaElement, t: number, tolerance: number) {
+  if (el.readyState >= 1 && !el.seeking && Math.abs(el.currentTime - t) > tolerance) el.currentTime = t;
+}
+
 /**
- * Plays the project by driving hidden media elements from one master clock
- * and compositing every frame onto the preview canvas. Export records that
- * same canvas plus the mixed audio.
+ * Plays the project by driving hidden media elements from one master clock and compositing frames
+ * onto the preview canvas. It only draws when something changed (or while playing), so a paused
+ * editor costs nothing. Export records that same canvas plus the mixed audio.
  */
 class Engine {
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
-  private host: HTMLDivElement;
+  private hostEl: HTMLDivElement | null = null;
   private videos = new Map<string, MediaRec<HTMLVideoElement>>(); // by clip or overlay id
   private audios = new Map<string, MediaRec<HTMLAudioElement>>(); // by audio item id
   private images = new Map<string, HTMLImageElement>(); // by asset id
@@ -63,6 +85,23 @@ class Engine {
   private voiceActivity: ActivityByAsset = {};
   private activityVersion = 0;
   private duck: { project: Project; version: number; curve: Float32Array | null } | null = null;
+  /** Pending animation frame (0 = the loop is idle). */
+  private raf = 0;
+  /** Something visible changed since the last drawn frame. */
+  private dirty = true;
+  /** True while a frame runs: the time it writes to the store is already being drawn. */
+  private ticking = false;
+  /** Frames in a row that couldn't be drawn because a picture wasn't decoded yet. */
+  private misses = 0;
+  private stamp = 0;
+  private resizeWatch: MutationObserver | null = null;
+  /** Average drawing time while playing, and whether this device needs the lighter preview. */
+  private cost = 0;
+  private costFrames = 0;
+  private slow = false;
+  /** Set while playback draws at the lighter size: the sizes to go back to. */
+  private lowered: { w: number; h: number; fullW: number; fullH: number } | null = null;
+  private hold = false;
   /** Bounding boxes of the visible texts, for tapping and dragging in the preview. */
   textBoxes: Box[] = [];
   /** Boxes of the visible stickers, topmost last. */
@@ -70,31 +109,73 @@ class Engine {
   /** Boxes of the visible overlays (picture-in-picture), topmost last. */
   overlayBoxes: StickerBox[] = [];
   exporting = false;
+
   /** Set by the fast exporter so the preview stops redrawing and leaves it the processor. */
-  holdPreview = false;
+  get holdPreview() {
+    return this.hold;
+  }
+  set holdPreview(v: boolean) {
+    this.hold = v;
+    if (!v) this.markDirty();
+  }
 
   constructor() {
-    this.host = document.createElement('div');
-    this.host.className = 'media-host';
-    document.body.appendChild(this.host);
     useStore.subscribe((s, prev) => {
       if (s.project !== prev.project || s.urls !== prev.urls) this.sync(s.project, s.urls);
+      // Time and play state written by the frame loop itself are drawn by that same frame.
+      const own = this.ticking && s.project === prev.project && s.selection === prev.selection;
+      if (!own) this.markDirty();
     });
-    const loop = (now: number) => {
-      this.tick(now);
-      requestAnimationFrame(loop);
-    };
-    requestAnimationFrame(loop);
+    const s = useStore.getState();
+    this.sync(s.project, s.urls);
+    onRedraw(this.markDirty);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          this.resumeAudio();
+          this.markDirty();
+        }
+      });
+    }
   }
+
+  /** Draw again on the next animation frame (cheap to call often; the loop idles otherwise). */
+  markDirty = () => {
+    this.dirty = true;
+    if (!this.raf && typeof requestAnimationFrame !== 'undefined') this.raf = requestAnimationFrame(this.frame);
+  };
+
+  private frame = (now: number) => {
+    this.raf = 0;
+    this.dirty = false;
+    this.ticking = true;
+    try {
+      this.tick(now);
+    } finally {
+      this.ticking = false;
+    }
+    // Keep going while playing (the clock moves) or when this frame asked for another one.
+    if (useStore.getState().playing || this.dirty) this.markDirty();
+    else this.lastNow = 0; // the next frame after a pause doesn't count the idle time
+  };
 
   attach(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    // Resizing a canvas clears it (a new format, the export size): draw again.
+    this.resizeWatch?.disconnect();
+    if (typeof MutationObserver !== 'undefined') {
+      this.resizeWatch = new MutationObserver(this.markDirty);
+      this.resizeWatch.observe(canvas, { attributes: true, attributeFilter: ['width', 'height'] });
+    }
+    this.markDirty();
   }
 
   detach(canvas: HTMLCanvasElement) {
     if (this.canvas === canvas) {
       this.pause();
+      this.resizeWatch?.disconnect();
+      this.resizeWatch = null;
       this.canvas = null;
       this.ctx = null;
     }
@@ -102,7 +183,33 @@ class Engine {
 
   // ---------- media elements ----------
 
+  private get host() {
+    if (!this.hostEl) {
+      this.hostEl = document.createElement('div');
+      this.hostEl.className = 'media-host';
+      document.body.appendChild(this.hostEl);
+    }
+    return this.hostEl;
+  }
+
+  private image(id: string, url: string) {
+    let img = this.images.get(id);
+    if (!img) {
+      img = new Image();
+      img.addEventListener('load', this.markDirty);
+      img.src = url;
+      this.images.set(id, img);
+    }
+  }
+
+  private video(id: string, url: string) {
+    const r = this.videos.get(id);
+    if (!r) this.videos.set(id, this.make('video', url));
+    else this.relink(r, url);
+  }
+
   private sync(p: Project | null, urls: Record<string, string>) {
+    if (typeof document === 'undefined') return;
     const keepV = new Set<string>();
     const keepA = new Set<string>();
     const keepI = new Set<string>();
@@ -113,14 +220,10 @@ class Engine {
         if (!a || !url) continue;
         if (a.kind === 'video') {
           keepV.add(c.id);
-          if (!this.videos.has(c.id)) this.videos.set(c.id, this.make('video', url));
+          this.video(c.id, url);
         } else if (a.kind === 'image') {
           keepI.add(c.assetId);
-          if (!this.images.has(c.assetId)) {
-            const img = new Image();
-            img.src = url;
-            this.images.set(c.assetId, img);
-          }
+          this.image(c.assetId, url);
         }
         // Photo or video shown behind a cut-out person.
         const bgId = c.bgRemoval?.mode === 'media' ? c.bgRemoval.assetId : undefined;
@@ -130,14 +233,10 @@ class Engine {
           if (bg.kind === 'video') {
             const id = bgClipId(c.id);
             keepV.add(id);
-            if (!this.videos.has(id)) this.videos.set(id, this.make('video', bgUrl));
+            this.video(id, bgUrl);
           } else if (bg.kind === 'image') {
             keepI.add(bg.id);
-            if (!this.images.has(bg.id)) {
-              const img = new Image();
-              img.src = bgUrl;
-              this.images.set(bg.id, img);
-            }
+            this.image(bg.id, bgUrl);
           }
         }
       }
@@ -145,11 +244,7 @@ class Engine {
         const url = st.assetId && urls[st.assetId];
         if (!url) continue;
         keepI.add(st.assetId!);
-        if (!this.images.has(st.assetId!)) {
-          const img = new Image();
-          img.src = url;
-          this.images.set(st.assetId!, img);
-        }
+        this.image(st.assetId!, url);
       }
       for (const ov of overlaysOf(p)) {
         const a = p.assets[ov.assetId];
@@ -157,21 +252,19 @@ class Engine {
         if (!a || !url) continue;
         if (a.kind === 'video') {
           keepV.add(ov.id);
-          if (!this.videos.has(ov.id)) this.videos.set(ov.id, this.make('video', url));
+          this.video(ov.id, url);
         } else if (a.kind === 'image') {
           keepI.add(ov.assetId);
-          if (!this.images.has(ov.assetId)) {
-            const img = new Image();
-            img.src = url;
-            this.images.set(ov.assetId, img);
-          }
+          this.image(ov.assetId, url);
         }
       }
       for (const au of p.audios) {
         const url = urls[au.assetId];
         if (!url) continue;
         keepA.add(au.id);
-        if (!this.audios.has(au.id)) this.audios.set(au.id, this.make('audio', url));
+        const r = this.audios.get(au.id);
+        if (!r) this.audios.set(au.id, this.make('audio', url));
+        else this.relink(r, url);
       }
       // Ducking needs to know when people talk: analyze the sound of the clips and voice items once.
       if (mixOf(p).duck > 0) {
@@ -185,27 +278,77 @@ class Engine {
         }
       }
     }
-    for (const [id, r] of this.videos) if (!keepV.has(id)) { r.fx?.chain?.dispose(); this.dispose(r.el); this.videos.delete(id); }
-    for (const [id, r] of this.audios) if (!keepA.has(id)) { r.fx?.chain?.dispose(); this.dispose(r.el); this.audios.delete(id); }
+    for (const [id, r] of this.videos) if (!keepV.has(id)) { this.dispose(r); this.videos.delete(id); }
+    for (const [id, r] of this.audios) if (!keepA.has(id)) { this.dispose(r); this.audios.delete(id); }
     for (const id of [...this.images.keys()]) if (!keepI.has(id)) this.images.delete(id);
   }
 
+  /** A pooled element for a file. It gets the file (src) only when the playhead needs it. */
   private make<K extends 'video' | 'audio'>(kind: K, url: string): MediaRec<HTMLElementTagNameMap[K]> {
     const el = document.createElement(kind);
-    el.preload = 'auto';
+    el.preload = 'none';
     el.setAttribute('playsinline', '');
-    el.src = url;
+    // A new picture (or the metadata needed to seek) arrived: draw again.
+    for (const ev of ['loadedmetadata', 'loadeddata', 'canplay', 'seeked', 'resize']) el.addEventListener(ev, this.markDirty);
     this.host.appendChild(el);
-    const r: MediaRec<HTMLElementTagNameMap[K]> = { el, gain: null };
+    const r: MediaRec<HTMLElementTagNameMap[K]> = { el, url, live: false, used: 0, gain: null };
     this.connect(r);
     return r;
   }
 
-  private dispose(el: HTMLMediaElement) {
-    el.pause();
-    el.removeAttribute('src');
-    el.load();
-    el.remove();
+  /** The file behind an item changed (e.g. relinked): load the new one if it is live. */
+  private relink(r: MediaRec<HTMLMediaElement>, url: string) {
+    if (r.url === url) return;
+    r.url = url;
+    if (r.live) {
+      r.el.src = url;
+      this.markDirty();
+    }
+  }
+
+  /** This element is needed now: give it its file. */
+  private need(r: MediaRec<HTMLMediaElement>) {
+    r.used = this.stamp;
+    if (r.live) return;
+    r.live = true;
+    r.el.preload = 'auto';
+    r.el.src = r.url;
+  }
+
+  /** Give the file back (frees the decoder and its buffers); the element and its audio wiring stay. */
+  private release(r: MediaRec<HTMLMediaElement>) {
+    if (!r.live) return;
+    r.live = false;
+    r.el.pause();
+    r.el.preload = 'none';
+    r.el.removeAttribute('src');
+    r.el.load();
+  }
+
+  /** Keep at most `max` live elements, releasing the ones not needed this frame, oldest first. */
+  private trim(pool: Map<string, MediaRec<HTMLMediaElement>>, max: number) {
+    let live = 0;
+    for (const r of pool.values()) if (r.live) live++;
+    if (live <= max) return;
+    const idle = [...pool.values()].filter((r) => r.live && r.used !== this.stamp).sort((a, b) => a.used - b.used);
+    for (const r of idle) {
+      if (live <= max) break;
+      this.release(r);
+      live--;
+    }
+  }
+
+  private dispose(r: MediaRec<HTMLMediaElement>) {
+    r.fx?.chain?.dispose();
+    r.src?.disconnect();
+    r.gain?.disconnect();
+    r.src = null;
+    r.gain = null;
+    for (const ev of ['loadedmetadata', 'loadeddata', 'canplay', 'seeked', 'resize']) r.el.removeEventListener(ev, this.markDirty);
+    r.el.pause();
+    r.el.removeAttribute('src');
+    r.el.load();
+    r.el.remove();
   }
 
   /** Audio graph: element -> gain -> master -> (speakers via monitor, recorder). */
@@ -213,6 +356,15 @@ class Engine {
     if (!this.actx) {
       const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AC) return;
+      // iOS: Web Audio follows the silent switch unless the page declares itself a media player.
+      const nav = navigator as Navigator & { audioSession?: { type: string } };
+      if (nav.audioSession) {
+        try {
+          nav.audioSession.type = 'playback';
+        } catch {
+          /* older WebKit: read-only */
+        }
+      }
       const actx = new AC();
       this.actx = actx;
       this.master = actx.createGain();
@@ -222,12 +374,19 @@ class Engine {
       this.monitor.connect(actx.destination);
       this.master.connect(this.recDest);
       for (const r of [...this.videos.values(), ...this.audios.values()]) this.connect(r);
+      // iOS suspends ("interrupted") the context on calls, Siri or the lock screen; the next touch brings it back.
+      document.addEventListener('pointerdown', () => this.resumeAudio(), { capture: true, passive: true });
     }
-    if (this.actx.state === 'suspended') this.actx.resume().catch(() => {});
+    this.resumeAudio();
+  }
+
+  private resumeAudio() {
+    const st = this.actx?.state as string | undefined;
+    if (st === 'suspended' || st === 'interrupted') this.actx!.resume().catch(() => {});
   }
 
   private connect(r: MediaRec<HTMLMediaElement>) {
-    if (!this.actx || !this.master) return;
+    if (!this.actx || !this.master || r.src) return;
     try {
       const src = this.actx.createMediaElementSource(r.el);
       const g = this.actx.createGain();
@@ -292,12 +451,14 @@ class Engine {
     this.playT = t;
     this.playWall = performance.now();
     s.setPlaying(true);
+    this.markDirty();
   }
 
   pause() {
     const s = useStore.getState();
     if (s.playing) s.setPlaying(false);
     this.pauseAll();
+    this.fitResolution(false);
   }
 
   toggle() {
@@ -317,9 +478,11 @@ class Engine {
   private tick(now: number) {
     const s = useStore.getState();
     const p = s.project;
-    const dt = now - this.lastNow;
+    // Clamped: the loop sleeps while nothing changes, and a long gap isn't buffering time.
+    const dt = this.lastNow ? clamp(now - this.lastNow, 0, 250) : 0;
     this.lastNow = now;
-    if (!p || !this.ctx || !this.canvas || this.holdPreview) return;
+    if (!p || !this.ctx || !this.canvas || this.hold) return;
+    this.stamp++;
 
     const placed = layout(p);
     let t = s.time;
@@ -343,8 +506,47 @@ class Engine {
       } else s.setTime(t);
     }
     const playing = useStore.getState().playing;
+    this.fitResolution(playing, p);
+    const t0 = performance.now();
     this.updateMedia(p, t, playing, placed);
-    this.render(p, t, s.selection, placed);
+    const drawn = this.render(p, t, s.selection, placed);
+    if (playing && !this.exporting && !this.lowered && drawn) this.measure(performance.now() - t0);
+    // A picture isn't decoded yet: media events wake the loop, but retry for a moment anyway.
+    if (drawn) this.misses = 0;
+    else if (this.misses++ < 30) this.dirty = true;
+  }
+
+  /** Track how long drawing takes while playing; a device that keeps missing the frame budget gets the lighter preview. */
+  private measure(ms: number) {
+    this.cost = this.costFrames ? this.cost * 0.9 + ms * 0.1 : ms;
+    if (++this.costFrames > 45 && this.cost > SLOW_FRAME_MS) this.slow = true;
+  }
+
+  /**
+   * While playing on a slow device, draw the preview at PREVIEW_SHORT_LOW (CSS keeps its on-screen
+   * size); back to full size when paused, so editing and snapshots stay sharp. Export sizes are untouched.
+   */
+  private fitResolution(playing: boolean, p = useStore.getState().project) {
+    const c = this.canvas;
+    if (!c) return;
+    if (playing && this.slow && !this.exporting && p) {
+      if (this.lowered) return;
+      const [fw, fh] = canvasSize(p.aspect, PREVIEW_SHORT);
+      if (c.width !== fw || c.height !== fh) return; // not the regular preview size: leave it
+      const [w, h] = canvasSize(p.aspect, PREVIEW_SHORT_LOW);
+      this.lowered = { w, h, fullW: fw, fullH: fh };
+      c.width = w;
+      c.height = h;
+    } else if (this.lowered) {
+      const r = this.lowered;
+      this.lowered = null;
+      // Someone else resized it meanwhile (a new format): keep their size.
+      if (c.width === r.w && c.height === r.h) {
+        c.width = r.fullW;
+        c.height = r.fullH;
+      }
+      this.markDirty();
+    }
   }
 
   private updateMedia(p: Project, t: number, playing: boolean, placed: Placed[]) {
@@ -359,37 +561,42 @@ class Engine {
       const dur = p.assets[l.clip.assetId]?.duration ?? l.clip.out;
       this.setFx(r, l.clip.voiceFx);
       if (cur && l.index === cur.index) {
+        this.need(r);
         const frozen = l.clip.freeze != null;
         const src = frozen ? sourceTime(l, t, dur) : clamp(l.clip.in + (t - l.start) * l.clip.speed, l.clip.in, l.clip.out);
         this.setVolume(r, frozen ? 0 : l.clip.volume);
         if (playing && !frozen) {
           if (el.playbackRate !== l.clip.speed) el.playbackRate = l.clip.speed;
-          if (Math.abs(el.currentTime - src) > 0.3 && !el.seeking) el.currentTime = src;
+          seekTo(el, src, 0.3);
           if (el.paused) el.play().catch(() => {});
         } else {
           if (!el.paused) el.pause();
-          if (Math.abs(el.currentTime - src) > 0.02 && !el.seeking) el.currentTime = src;
+          seekTo(el, src, 0.02);
         }
       } else if (partner && l.index === partner.index) {
+        this.need(r);
         const raw = l.clip.in + (t - l.start) * l.clip.speed;
         const src = sourceTime(l, t, dur);
         const held = Math.abs(raw - src) > 0.01; // ran out of footage: hold the edge frame
         this.setVolume(r, 0);
         if (playing && !held) {
           if (el.playbackRate !== l.clip.speed) el.playbackRate = l.clip.speed;
-          if (Math.abs(el.currentTime - src) > 0.3 && !el.seeking) el.currentTime = src;
+          seekTo(el, src, 0.3);
           if (el.paused) el.play().catch(() => {});
         } else {
           if (!el.paused) el.pause();
-          if (Math.abs(el.currentTime - src) > (playing ? 0.1 : 0.02) && !el.seeking) el.currentTime = src;
+          seekTo(el, src, playing ? 0.1 : 0.02);
         }
       } else {
         if (!el.paused) el.pause();
-        // Pre-roll the next clip (to where its transition starts) so the cut is seamless.
-        if (cur && l.index === cur.index + 1) {
-          const lead = transitionLength(cur.clip, l.clip) / 2;
-          const src = sourceTime(l, l.start - lead, dur);
-          if (Math.abs(el.currentTime - src) > 0.05 && !el.seeking) el.currentTime = src;
+        // Pre-roll the next clip (to where its transition starts) so the cut is seamless. While
+        // playing also the one after when it starts soon: a very short clip leaves no time to load it.
+        const ahead = cur ? l.index - cur.index : 0;
+        if (cur && (ahead === 1 || (ahead === 2 && playing && l.start - t < 3))) {
+          this.need(r);
+          const prev = placed[l.index - 1].clip;
+          const lead = transitionLength(prev, l.clip) / 2;
+          seekTo(el, sourceTime(l, l.start - lead, dur), 0.05);
         }
       }
     }
@@ -400,20 +607,24 @@ class Engine {
       const el = r.el;
       const local = t - ov.start;
       if (local >= 0 && local < overlayDur(ov)) {
+        this.need(r);
         const src = ov.in + local;
         this.setVolume(r, ov.volume);
         if (playing) {
           if (el.playbackRate !== 1) el.playbackRate = 1;
-          if (Math.abs(el.currentTime - src) > 0.3 && !el.seeking) el.currentTime = src;
+          seekTo(el, src, 0.3);
           if (el.paused) el.play().catch(() => {});
         } else {
           if (!el.paused) el.pause();
-          if (Math.abs(el.currentTime - src) > 0.02 && !el.seeking) el.currentTime = src;
+          seekTo(el, src, 0.02);
         }
       } else {
         if (!el.paused) el.pause();
         // Pre-roll so the overlay appears on time.
-        if (local < 0 && local > -3 && Math.abs(el.currentTime - ov.in) > 0.05 && !el.seeking) el.currentTime = ov.in;
+        if (local < 0 && local > -3) {
+          this.need(r);
+          seekTo(el, ov.in, 0.05);
+        }
       }
     }
 
@@ -426,17 +637,19 @@ class Engine {
       const visible = bg && ((cur && l.index === cur.index) || (partner && l.index === partner.index));
       if (!visible) {
         if (!el.paused) el.pause();
+        if (bg && cur && l.index === cur.index + 1) this.need(r); // load it before its clip starts
         continue;
       }
+      this.need(r);
       const src = bgTime(bg.asset, l, t);
       this.setVolume(r, 0);
       if (playing) {
         if (el.playbackRate !== 1) el.playbackRate = 1;
-        if (Math.abs(el.currentTime - src) > 0.3 && !el.seeking) el.currentTime = src;
+        seekTo(el, src, 0.3);
         if (el.paused) el.play().catch(() => {});
       } else {
         if (!el.paused) el.pause();
-        if (Math.abs(el.currentTime - src) > 0.02 && !el.seeking) el.currentTime = src;
+        seekTo(el, src, 0.02);
       }
     }
 
@@ -446,6 +659,7 @@ class Engine {
       const end = a.start + audioDur(a);
       const el = r.el;
       if (t >= a.start && t < end) {
+        this.need(r);
         const src = a.in + (t - a.start);
         let fade = 1;
         if (a.fadeIn > 0) fade = Math.min(fade, (t - a.start) / a.fadeIn);
@@ -454,17 +668,23 @@ class Engine {
         this.setFx(r, a.voiceFx);
         this.setVolume(r, a.volume * clamp(fade, 0, 1) * duck);
         if (playing) {
-          if (Math.abs(el.currentTime - src) > 0.3 && !el.seeking) el.currentTime = src;
+          seekTo(el, src, 0.3);
           if (el.paused) el.play().catch(() => {});
         } else {
           if (!el.paused) el.pause();
-          if (Math.abs(el.currentTime - src) > 0.05 && !el.seeking) el.currentTime = src;
+          seekTo(el, src, 0.05);
         }
       } else {
         if (!el.paused) el.pause();
-        if (t < a.start && Math.abs(el.currentTime - a.in) > 0.05 && !el.seeking) el.currentTime = a.in;
+        if (t < a.start && t > a.start - 5) {
+          this.need(r);
+          seekTo(el, a.in, 0.05);
+        }
       }
     }
+
+    this.trim(this.videos, MAX_LIVE_VIDEOS);
+    this.trim(this.audios, MAX_LIVE_AUDIOS);
   }
 
   /** The decoded picture a preview media element is showing, or null if it is not ready yet. */
@@ -477,16 +697,20 @@ class Engine {
     return img && img.complete && img.naturalWidth ? { src: img, w: img.naturalWidth, h: img.naturalHeight } : null;
   }
 
+  private lookup = (clip: MediaRef, asset: Asset) => this.frameOf(clip, asset);
+  private stickerImage = (id: string) => this.images.get(id);
+
+  /** Draws the frame; false when a picture wasn't ready (the previous frame stays on screen). */
   private render(p: Project, t: number, selection: Selection, placed: Placed[]) {
     const ctx = this.ctx!;
     const W = this.canvas!.width;
     const H = this.canvas!.height;
     // The preview's media elements are already seeked by updateMedia, so the source time is not needed here.
-    const r = renderFrame(ctx, p, t, W, H, (clip, asset) => this.frameOf(clip, asset), placed, {
-      stickerImage: (id) => this.images.get(id),
+    const r = renderFrame(ctx, p, t, W, H, this.lookup, placed, {
+      stickerImage: this.stickerImage,
       live: useStore.getState().playing && !this.exporting,
     });
-    if (!r) return; // keep the previous frame until this one is decoded
+    if (!r) return false; // keep the previous frame until this one is decoded
 
     if (!this.exporting && (selection?.kind === 'sticker' || selection?.kind === 'overlay')) {
       const b = (selection.kind === 'sticker' ? r.stickers : r.overlays).find((x) => x.id === selection.id);
@@ -506,6 +730,7 @@ class Engine {
     this.stickerBoxes = r.stickers;
     this.overlayBoxes = r.overlays;
     this.textBoxes = r.texts;
+    return true;
   }
 
   /** A small RGBA sample of what a clip or overlay shows right now (for automatic color). */
@@ -560,14 +785,55 @@ class Engine {
     return MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
   }
 
-  /** Record the project in real time. Resolves with the finished file. */
-  async exportVideo(short: number): Promise<{ blob: Blob; ext: string }> {
+  /**
+   * Record the project in real time. Resolves with the finished file. Rejects with Error('cancelled')
+   * when `signal` aborts or cancelExport() is called (at any point, also while it is starting), and
+   * with a message for the user if the app goes to the background or playback stops advancing.
+   */
+  async exportVideo(short: number, signal?: AbortSignal): Promise<{ blob: Blob; ext: string }> {
     const s = useStore.getState();
     const p = s.project;
     const canvas = this.canvas;
     const mime = Engine.pickMime();
     if (!p || !canvas) throw new Error('No hay proyecto abierto');
     if (mime === null || !('captureStream' in canvas)) throw new Error('unsupported');
+    if (signal?.aborted) throw new Error('cancelled');
+
+    // Every way of stopping ends up here, so a cancel during the first await isn't lost.
+    let fail: (e: Error) => void = () => {};
+    let stopped = false;
+    const failed = new Promise<never>((_, reject) => (fail = reject));
+    failed.catch(() => {});
+    const stop = (e: Error) => {
+      if (stopped) return;
+      stopped = true;
+      fail(e);
+    };
+    /** Wait for `x`, but give up as soon as the export is stopped. */
+    const guard = <T,>(x: Promise<T>) => Promise.race([x, failed]);
+    this.abortExport = () => stop(new Error('cancelled'));
+    const onAbort = () => stop(new Error('cancelled'));
+    signal?.addEventListener('abort', onAbort);
+    // A background tab stops drawing frames, so the recording would hang or come out frozen.
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden') {
+        stop(new Error('La exportación se detuvo porque la app pasó a segundo plano. Mantén Clipo abierto en pantalla mientras exporta.'));
+      }
+    };
+    document.addEventListener('visibilitychange', onHidden);
+    // Watchdog: the clock waits for buffering, but not forever.
+    let lastT = -1;
+    let lastMove = performance.now();
+    const watchdog = setInterval(() => {
+      const st = useStore.getState();
+      if (!st.playing) return;
+      if (st.time !== lastT) {
+        lastT = st.time;
+        lastMove = performance.now();
+      } else if (performance.now() - lastMove > EXPORT_STALL_MS) {
+        stop(new Error('La exportación se quedó detenida (el video no avanzaba). Vuelve a intentarlo.'));
+      }
+    }, 1000);
 
     this.pause();
     this.ensureAudio();
@@ -580,6 +846,7 @@ class Engine {
     s.setExporting(true);
     if (this.monitor) this.monitor.gain.value = 0; // don't blast the export through the speakers
     s.setTime(0);
+    this.markDirty();
 
     const stream = canvas.captureStream(30);
     this.recDest?.stream.getAudioTracks().forEach((tr) => stream.addTrack(tr));
@@ -588,25 +855,29 @@ class Engine {
     rec.ondataavailable = (e) => {
       if (e.data.size) chunks.push(e.data);
     };
-    const stopped = new Promise<void>((r) => (rec.onstop = () => r()));
+    const recorded = new Promise<void>((r) => (rec.onstop = () => r()));
 
     try {
-      await sleep(500); // let the first frame seek and draw
+      await guard(sleep(500)); // let the first frame seek and draw
       rec.start(1000);
-      await new Promise<void>((resolve, reject) => {
-        this.onEnded = resolve;
-        this.abortExport = () => reject(new Error('cancelled'));
-        this.play();
-      });
-      await sleep(300); // flush the last frames
+      await guard(
+        new Promise<void>((resolve) => {
+          this.onEnded = resolve;
+          this.play();
+        }),
+      );
+      await guard(sleep(300)); // flush the last frames
       rec.stop();
-      await stopped;
+      await guard(recorded);
       const type = rec.mimeType || mime || 'video/webm';
       return { blob: new Blob(chunks, { type }), ext: type.includes('mp4') ? 'mp4' : 'webm' };
     } catch (e) {
       if (rec.state !== 'inactive') rec.stop();
       throw e;
     } finally {
+      clearInterval(watchdog);
+      document.removeEventListener('visibilitychange', onHidden);
+      signal?.removeEventListener('abort', onAbort);
       stream.getVideoTracks().forEach((tr) => tr.stop());
       this.onEnded = null;
       this.abortExport = null;
@@ -617,6 +888,7 @@ class Engine {
       this.exporting = false;
       useStore.getState().setPlaying(false);
       useStore.getState().setExporting(false);
+      this.markDirty();
     }
   }
 
@@ -627,378 +899,25 @@ class Engine {
   }
 }
 
-/** A decoded picture of a clip, ready to draw. A zero size means "nothing to show" (drawn black). */
-export interface FrameImage {
-  src: CanvasImageSource;
-  w: number;
-  h: number;
-}
-
-/** What a frame lookup needs to know about a main-track clip or an overlay. */
-export type MediaRef = Pick<Clip, 'id' | 'assetId'>;
-
-/** Returns the picture of `clip` (or an overlay) at source time `srcTime` (seconds), or null while it isn't ready. */
-export type FrameLookup = (clip: MediaRef, asset: Asset, srcTime: number) => FrameImage | null;
-
-export interface RenderOptions {
-  /** Image for a sticker made from a picture. */
-  stickerImage?: (assetId: string) => HTMLImageElement | undefined;
-  /**
-   * Fail (return null) when the other clip of a transition isn't ready, instead of showing the
-   * current clip alone. The export uses it so every transition frame is complete.
-   */
-  waitForAll?: boolean;
-  /** Smooth playback matters more than detail (cheaper background removal). */
-  live?: boolean;
-}
-
-export interface RenderResult {
-  texts: Box[];
-  stickers: StickerBox[];
-  overlays: StickerBox[];
-}
-
-const small = document.createElement('canvas');
-/** The cut-out person of a clip with "Quitar fondo", before it goes over the new background. */
-const cutLayer = document.createElement('canvas');
-/** Offscreen frames of the outgoing and incoming clip during a transition. */
-const layers = [document.createElement('canvas'), document.createElement('canvas')];
-/** Offscreen picture of one overlay, colored before it is blended onto the frame. */
-const ovLayer = document.createElement('canvas');
-
-function layer(i: number, W: number, H: number) {
-  const c = layers[i];
-  if (c.width !== W || c.height !== H) {
-    c.width = W;
-    c.height = H;
-  }
-  return c;
-}
+let instance: Engine | null = null;
+const getEngine = () => (instance ??= new Engine());
 
 /**
- * Draws the whole project at time t: pictures with filters, effects and transitions, then stickers
- * and texts. Shared by the live preview and the fast export so both look identical. Returns the
- * on-screen boxes, or null (nothing drawn) when a picture it needs isn't ready yet.
+ * The app's engine, created on first use (importing this module touches no DOM, so modules that
+ * import it stay loadable in Node tests).
  */
-export function renderFrame(
-  ctx: CanvasRenderingContext2D,
-  p: Project,
-  t: number,
-  W: number,
-  H: number,
-  lookup: FrameLookup,
-  placed: Placed[] = layout(p),
-  opts: RenderOptions = {},
-): RenderResult | null {
-  const frameAt = (l: Placed): FrameImage | null | undefined => {
-    const asset = p.assets[l.clip.assetId];
-    if (asset?.kind !== 'video' && asset?.kind !== 'image') return undefined; // missing file: draw black
-    const f = lookup(l.clip, asset, sourceTime(l, t, asset.duration));
-    return f && framed(l.clip, f); // crop and flip
-  };
+export const engine: Engine = new Proxy({} as Engine, {
+  get(_, key) {
+    const e = getEngine();
+    const v = Reflect.get(e, key, e);
+    return typeof v === 'function' ? v.bind(e) : v;
+  },
+  set(_, key, value) {
+    return Reflect.set(getEngine(), key, value);
+  },
+  has(_, key) {
+    return key in getEngine();
+  },
+});
 
-  /** Mask and background of a clip with "Quitar fondo"; null when the export must wait for them. */
-  const cutoutOf = (l: Placed, f: FrameImage): Cutout | null | undefined => {
-    const bgr = l.clip.bgRemoval;
-    const asset = p.assets[l.clip.assetId];
-    if (!bgr || !asset) return undefined;
-    const st = sourceTime(l, t, asset.duration);
-    const framing = hasFraming(l.clip) ? `#${JSON.stringify([l.clip.crop, l.clip.flipH, l.clip.flipV])}` : ''; // cropped/flipped pictures get their own masks
-    const key = (asset.kind === 'image' ? `${asset.id}@img` : `${asset.id}@${Math.round(st * 30)}`) + framing;
-    const mask = maskFor(key, asset.id, f.src, f.w, f.h, !!opts.live);
-    if (!mask && opts.waitForAll) return null;
-    let bgFrame: FrameImage | null = null;
-    const bg = bgClip(p, l);
-    if (bg) {
-      bgFrame = lookup(bg.clip, bg.asset, bgTime(bg.asset, l, t));
-      if (!bgFrame && opts.waitForAll) return null;
-    }
-    return { bg: bgr, mask, bgFrame };
-  };
-
-  const cur = activeClip(p, t, placed);
-  const tr = cur ? transitionAt(placed, t) : null;
-  const source = cur ? frameAt(cur) : undefined;
-  if (source === null) return null;
-
-  if (tr && cur) {
-    const partner = tr.out.index === cur.index ? tr.in : tr.out;
-    const other = frameAt(partner);
-    if (other === null && opts.waitForAll) return null;
-    // Render both clips offscreen, then mix them. If the other clip isn't decoded yet, show the current one alone.
-    const parts = [tr.out, tr.in].map((l) => {
-      const f = l.index === cur.index ? source : other;
-      return f && f.w && f.h ? { l, f, cut: cutoutOf(l, f) } : null;
-    });
-    if (parts.some((x) => x?.cut === null)) return null;
-    const [a, b] = parts.map((x, i) => {
-      if (!x) return null;
-      const c = layer(i, W, H);
-      drawClip(c.getContext('2d')!, x.l, x.f, t, W, H, x.cut ?? undefined, lutOf(p, x.l.clip));
-      return c;
-    });
-    drawTransition(ctx, tr.type, a ?? b, b ?? a, tr.k, W, H, tr.dir);
-  } else if (cur && source && source.w && source.h) {
-    const cut = cutoutOf(cur, source);
-    if (cut === null) return null;
-    drawClip(ctx, cur, source, t, W, H, cut, lutOf(p, cur.clip));
-  } else {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
-  }
-
-  // Picture-in-picture track, above the main one.
-  const overlays: StickerBox[] = [];
-  for (const ov of overlaysOf(p)) {
-    const local = t - ov.start;
-    if (local < 0 || local >= overlayDur(ov)) continue;
-    const asset = p.assets[ov.assetId];
-    if (asset?.kind !== 'video' && asset?.kind !== 'image') continue;
-    const f = lookup(ov, asset, clamp(ov.in + local, 0, Math.max(0, asset.duration - 0.05)));
-    if (f === null && opts.waitForAll) return null;
-    if (!f || !f.w || !f.h) continue; // not decoded yet in the preview: skip it this frame
-    overlays.push(drawOverlay(ctx, ov, poseAt(ov, local), f, W, H));
-  }
-
-  const stickers: StickerBox[] = [];
-  for (const st of stickersOf(p)) {
-    if (t < st.start || t >= st.start + st.duration) continue;
-    const pose = poseAt(st, t - st.start);
-    ctx.save();
-    ctx.globalAlpha = clamp(pose.opacity, 0, 1);
-    const b = drawSticker(ctx, { ...st, ...pose }, st.assetId ? opts.stickerImage?.(st.assetId) : undefined, W, H);
-    ctx.restore();
-    if (b) stickers.push(b);
-  }
-
-  const texts: Box[] = [];
-  for (const item of p.texts) {
-    if (t < item.start || t >= item.start + item.duration || !item.text.trim()) continue;
-    const pose = poseAt(item, t - item.start);
-    ctx.save();
-    ctx.globalAlpha = clamp(pose.opacity, 0, 1);
-    if (pose.rotation) {
-      ctx.translate(pose.x * W, pose.y * H);
-      ctx.rotate(pose.rotation);
-      ctx.translate(-pose.x * W, -pose.y * H);
-    }
-    texts.push(drawText(ctx, { ...item, x: pose.x, y: pose.y, size: pose.size }, W, H, item.anim ? textPose(item, t - item.start) : undefined, t - item.start));
-    ctx.restore();
-  }
-  return { texts, stickers, overlays };
-}
-
-const BLEND_OPS: Record<OverlayItem['blend'], GlobalCompositeOperation> = {
-  normal: 'source-over',
-  multiply: 'multiply',
-  screen: 'screen',
-  overlay: 'overlay',
-  darken: 'darken',
-  lighten: 'lighten',
-  'soft-light': 'soft-light',
-  difference: 'difference',
-};
-
-/** Paint one overlay: colored on its own layer, then placed with its pose, opacity and blend mode. */
-function drawOverlay(ctx: CanvasRenderingContext2D, ov: OverlayItem, pose: Pose, f: FrameImage, W: number, H: number): StickerBox {
-  const w = Math.max(1, pose.size * W);
-  const h = (w * f.h) / f.w;
-  const cx = pose.x * W;
-  const cy = pose.y * H;
-  // The layer never needs many more pixels than the output frame has.
-  const k = Math.min(1, (2 * Math.max(W, H)) / Math.max(w, h));
-  const lw = Math.max(1, Math.round(w * k));
-  const lh = Math.max(1, Math.round(h * k));
-  if (ovLayer.width !== lw || ovLayer.height !== lh) {
-    ovLayer.width = lw;
-    ovLayer.height = lh;
-  }
-  const lc = ovLayer.getContext('2d')!;
-  lc.clearRect(0, 0, lw, lh);
-  drawFrame(lc, f.src, f.w, f.h, lw, lh, { fit: 'fill', filter: ov.filter ?? 'none', color: ov.color } as Clip, '');
-  drawVignette(lc, ov.color, lw, lh);
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(pose.rotation);
-  ctx.globalAlpha = clamp(pose.opacity, 0, 1);
-  ctx.globalCompositeOperation = BLEND_OPS[ov.blend] ?? 'source-over';
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(ovLayer, -w / 2, -h / 2, w, h);
-  ctx.restore();
-  return { id: ov.id, cx, cy, w, h, rot: pose.rotation };
-}
-
-/** "Quitar fondo" data for one frame of a clip. Without a mask (model still loading) the clip draws as usual. */
-interface Cutout {
-  bg: NonNullable<Clip['bgRemoval']>;
-  mask: Mask | null;
-  /** Picture for the 'media' background, null while not decoded. */
-  bgFrame: FrameImage | null;
-}
-
-/** Id under which the background video of a clip is decoded (preview element / export reader). */
-export const bgClipId = (clipId: string) => `${clipId}~bg`;
-
-/** The background photo/video of a clip as a pseudo-clip the frame lookups understand. */
-function bgClip(p: Project, l: Placed): { clip: Clip; asset: Asset } | null {
-  const b = l.clip.bgRemoval;
-  const asset = b?.mode === 'media' && b.assetId ? p.assets[b.assetId] : undefined;
-  if (!asset || (asset.kind !== 'video' && asset.kind !== 'image')) return null;
-  return { clip: { ...l.clip, id: bgClipId(l.clip.id), assetId: asset.id, in: 0, out: asset.duration, speed: 1, bgRemoval: undefined }, asset };
-}
-
-/** Background videos start with the clip and loop. */
-function bgTime(asset: Asset, l: Placed, t: number) {
-  if (asset.kind !== 'video' || asset.duration <= 0) return 0;
-  const d = Math.max(0.1, asset.duration - 0.05);
-  return Math.max(0, t - l.start) % d;
-}
-
-/** The imported LUT of a clip and how strongly it applies. */
-function lutOf(p: Project, c: Clip) {
-  const l = c.lut && p.luts?.[c.lut.id];
-  return l ? { data: l, amount: c.lut!.amount } : undefined;
-}
-
-/** Paint one main-track clip (picture, color filter, LUT and effect) filling the whole frame. */
-function drawClip(
-  ctx: CanvasRenderingContext2D, l: Placed, f: FrameImage, t: number, W: number, H: number, cut?: Cutout,
-  lut?: ReturnType<typeof lutOf>,
-) {
-  const local = t - l.start;
-  ctx.save();
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
-  applyEffectTransform(ctx, l.clip, local, W, H);
-  // "Reencuadre automático": the saved path of the person, at this moment of the source.
-  const at = l.clip.freeze ?? l.clip.in + local * l.clip.speed;
-  const focus = l.clip.reframe?.points.length ? pointInFrame(l.clip, trackAt(l.clip.reframe.points, at)) : undefined;
-  drawFrame(ctx, f.src, f.w, f.h, W, H, l.clip, effectCss(l.clip, W), cut?.mask ? cut : undefined, focus);
-  ctx.restore();
-  if (lut) applyLut(ctx, lut.data, lut.amount, W, H);
-  applyEffectOverlay(ctx, l.clip, local, W, H);
-  drawVignette(ctx, l.clip.color, W, H);
-}
-
-/** Cover the frame with `src`; with `blurDiv`, blurred by stretching a tiny copy (works without canvas filters). */
-function drawCover(ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: number, sh: number, W: number, H: number, blurDiv = 0) {
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  if (!blurDiv) {
-    const k = Math.max(W / sw, H / sh);
-    ctx.drawImage(src, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
-    return;
-  }
-  const bw = Math.max(8, Math.round(W / blurDiv));
-  const bh = Math.max(8, Math.round(H / blurDiv));
-  if (small.width !== bw || small.height !== bh) {
-    small.width = bw;
-    small.height = bh;
-  }
-  const k = Math.max(bw / sw, bh / sh);
-  small.getContext('2d')!.drawImage(src, (bw - sw * k) / 2, (bh - sh * k) / 2, sw * k, sh * k);
-  ctx.drawImage(small, 0, 0, W, H);
-}
-
-/** New background behind a cut-out person. */
-function drawBackground(ctx: CanvasRenderingContext2D, cut: Cutout, src: CanvasImageSource, sw: number, sh: number, W: number, H: number) {
-  const { bg, bgFrame } = cut;
-  if (bg.mode === 'blur') drawCover(ctx, src, sw, sh, W, H, 20);
-  else if (bg.mode === 'media' && bgFrame && bgFrame.w && bgFrame.h) drawCover(ctx, bgFrame.src, bgFrame.w, bgFrame.h, W, H);
-  else {
-    ctx.fillStyle = bg.mode === 'color' ? bg.color : '#000';
-    ctx.fillRect(-W * 0.1, -H * 0.1, W * 1.2, H * 1.2); // margin for shake / zoom effects
-  }
-}
-
-function drawFrame(
-  ctx: CanvasRenderingContext2D, src: CanvasImageSource, sw: number, sh: number, W: number, H: number, clip: Clip, extraCss: string,
-  cut?: Cutout, focus?: { x: number; y: number },
-) {
-  const fit = clip.fit;
-  const cc = colorCss(clip.color);
-  if (cut) drawBackground(ctx, cut, src, sw, sh, W, H);
-  else if (fit === 'fit') {
-    // Blurred, darkened copy behind the picture instead of black bars.
-    const bw = Math.max(8, Math.round(W / 24));
-    const bh = Math.max(8, Math.round(H / 24));
-    if (small.width !== bw || small.height !== bh) {
-      small.width = bw;
-      small.height = bh;
-    }
-    const sc = small.getContext('2d')!;
-    const k = Math.max(bw / sw, bh / sh);
-    sc.drawImage(src, (bw - sw * k) / 2, (bh - sh * k) / 2, sw * k, sh * k);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    if (cc && supportsCanvasFilter) ctx.filter = cc;
-    ctx.drawImage(small, 0, 0, W, H);
-    ctx.filter = 'none';
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(0, 0, W, H);
-  }
-  const k = Math.min(W / sw, H / sh);
-  const { dx, dy, dw, dh } =
-    fit === 'fit' ? { dx: (W - sw * k) / 2, dy: (H - sh * k) / 2, dw: sw * k, dh: sh * k } : coverRect(sw, sh, W, H, focus);
-  const f = getFilter(clip.filter);
-  const css = [f.id !== 'none' ? f.css : '', cc, extraCss].filter(Boolean).join(' ');
-  if (cut?.mask) {
-    drawCutout(ctx, src, dx, dy, dw, dh, sw, sh, W, H, css, extraCss, f, cut.mask, cut.bg.smooth);
-    return;
-  }
-  if (css && supportsCanvasFilter) ctx.filter = css;
-  ctx.drawImage(src, dx, dy, dw, dh);
-  if (extraCss && !supportsCanvasFilter) softBlur(ctx, src, dx, dy, dw, dh, sw, sh);
-  ctx.filter = 'none';
-  if (f.id !== 'none' && !supportsCanvasFilter) applyFallback(ctx, f, src, dx, dy, dw, dh);
-  if (cc && !supportsCanvasFilter) applyColorPixels(ctx, clip.color, 0, 0, ctx.canvas.width, ctx.canvas.height);
-}
-
-/** Draws only the person: the picture on its own layer, keeps the masked part, then lays it on `ctx`. */
-function drawCutout(
-  ctx: CanvasRenderingContext2D, src: CanvasImageSource, dx: number, dy: number, dw: number, dh: number, sw: number, sh: number,
-  W: number, H: number, css: string, extraCss: string, f: ReturnType<typeof getFilter>, mask: Mask, smooth: number,
-) {
-  if (cutLayer.width !== W || cutLayer.height !== H) {
-    cutLayer.width = W;
-    cutLayer.height = H;
-  }
-  const c = cutLayer.getContext('2d')!;
-  c.setTransform(1, 0, 0, 1, 0, 0);
-  c.clearRect(0, 0, W, H);
-  c.setTransform(ctx.getTransform()); // same effect transform (shake, zoom) as the clip
-  c.imageSmoothingEnabled = true;
-  c.imageSmoothingQuality = 'high';
-  if (css && supportsCanvasFilter) c.filter = css;
-  c.drawImage(src, dx, dy, dw, dh);
-  if (extraCss && !supportsCanvasFilter) softBlur(c, src, dx, dy, dw, dh, sw, sh);
-  c.filter = 'none';
-  if (f.id !== 'none' && !supportsCanvasFilter) applyFallback(c, f, src, dx, dy, dw, dh);
-  // Keep the person. Smoothing blurs the mask, relative to the picture size so preview and export match.
-  c.globalCompositeOperation = 'destination-in';
-  const px = smooth * Math.max(dw, dh) * 0.012;
-  if (px > 0.3 && supportsCanvasFilter) c.filter = `blur(${px.toFixed(2)}px)`;
-  c.drawImage(maskImageOf(mask), dx, dy, dw, dh);
-  c.filter = 'none';
-  c.globalCompositeOperation = 'source-over';
-  c.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(cutLayer, 0, 0);
-  ctx.restore();
-}
-
-/** Blur without canvas filter support (older Safari): stretch a tiny copy. */
-function softBlur(ctx: CanvasRenderingContext2D, src: CanvasImageSource, dx: number, dy: number, dw: number, dh: number, sw: number, sh: number) {
-  const tw = Math.max(4, Math.round(dw / 14));
-  const th = Math.max(4, Math.round((tw * sh) / sw));
-  small.width = tw;
-  small.height = th;
-  small.getContext('2d')!.drawImage(src, 0, 0, tw, th);
-  ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(small, dx, dy, dw, dh);
-}
-
-export const engine = new Engine();
 export const canExport = () => Engine.pickMime() !== null;

@@ -8,7 +8,9 @@ import { ASPECTS, canvasSize, totalDuration } from '../model';
 import {
   PLATFORMS, PLATFORM_IDS, checkVersion, postCaption, worstLevel, type AudioLevels, type Issue, type ItemBox,
 } from '../platforms';
-import { canExport, canFastExport, exportVideo, measureAudio, type ExportProgress } from '../exporter';
+import type { ExportProgress } from '../exporter';
+import { canExport, canFastExport, UnsupportedAspectError } from '../exportSupport';
+import { canShareFile, saveFile, saveFiles, shareFile } from '../nativeShare';
 import { autoReframe, clearReframe, reframable, usesReframe, type ReframeProgress } from '../reframeAnalyze';
 import { setAspect } from '../ops';
 import { engine } from '../engine';
@@ -268,6 +270,7 @@ function CheckSection({ targets }: { targets: PublishTarget[] }) {
     setState({ kind: 'running' });
     let audio: AudioLevels | null = null;
     try {
+      const { measureAudio } = await import('../exporter');
       audio = await measureAudio(p, ac.signal);
     } catch (e) {
       if ((e as Error).message === 'cancelled') return setState({ kind: 'idle' });
@@ -341,7 +344,6 @@ function useExportQuality() {
 interface Version {
   aspect: AspectId;
   platforms: PlatformId[];
-  url: string;
   file: File;
 }
 
@@ -352,16 +354,7 @@ function VersionsSection({ targets }: { targets: PublishTarget[] }) {
   const [done, setDone] = useState<Version[]>([]);
   const [error, setError] = useState('');
   const abort = useRef<AbortController | null>(null);
-  // Files stay downloadable until the next export or until the panel closes.
-  const urls = useRef<string[]>([]);
-  const freeUrls = () => urls.current.splice(0).forEach((u) => URL.revokeObjectURL(u));
-  useEffect(
-    () => () => {
-      abort.current?.abort();
-      freeUrls();
-    },
-    [],
-  );
+  useEffect(() => () => abort.current?.abort(), []);
 
   if (!canExport()) return <Hint>Tu navegador no puede guardar videos. Usa Chrome, Edge o Safari actualizados.</Hint>;
   const all = versionsOf(targets);
@@ -375,10 +368,10 @@ function VersionsSection({ targets }: { targets: PublishTarget[] }) {
     abort.current = ac;
     setError('');
     setDone([]);
-    freeUrls();
     const safe = project.name.replace(/[\\/:*?"<>|]+/g, '').trim() || 'video';
     const made: Version[] = [];
     try {
+      const { exportVideo } = await import('../exporter');
       for (let i = 0; i < versions.length; i++) {
         const v = versions[i];
         setRunning({ index: i, total: versions.length, progress: null });
@@ -386,32 +379,26 @@ function VersionsSection({ targets }: { targets: PublishTarget[] }) {
           aspect: v.aspect,
         });
         const file = new File([blob], `${safe} - ${v.aspect.replace(':', 'x')}.${ext}`, { type: blob.type });
-        const url = URL.createObjectURL(file);
-        urls.current.push(url);
-        made.push({ ...v, file, url });
+        made.push({ ...v, file });
         setDone([...made]);
       }
     } catch (e) {
       const m = (e as Error).message;
-      if (m === 'unsupported-aspect') {
-        // The fast path couldn't read a file, and filming the preview only works in the project's format.
+      if (e instanceof UnsupportedAspectError) {
+        // The fast path didn't work here, and filming the preview only works in the project's format.
         const rest = versions.slice(made.length).map((v) => v.aspect).join(', ');
-        setError(`Con estos archivos solo se puede guardar el formato que ves ahora (${project.aspect}). Para ${rest}, cambia el formato en “Formato” y vuelve a guardar.`);
-      } else if (m !== 'cancelled') setError(e instanceof BgError ? e.message : 'Algo salió mal al guardar. Intenta otra vez con calidad 720p.');
+        const why = e.reason === 'decode' ? 'Con estos archivos' : 'En este dispositivo';
+        setError(`${why} solo se puede guardar el formato que ves ahora (${project.aspect}). Para ${rest}, cambia el formato en “Formato” y vuelve a guardar.`);
+      } else if (m !== 'cancelled') {
+        const { ExportError } = await import('../exporter');
+        setError(e instanceof BgError || e instanceof ExportError ? m : 'Algo salió mal al guardar. Intenta otra vez con calidad 720p.');
+      }
     } finally {
       setRunning(null);
     }
   };
 
-  const downloadAll = () => {
-    for (const v of done) {
-      const a = document.createElement('a');
-      a.href = v.url;
-      a.download = v.file.name;
-      a.click();
-    }
-  };
-  const canShare = (f: File) => typeof navigator.canShare === 'function' && navigator.canShare({ files: [f] });
+  const downloadAll = () => void saveFiles(done.map((v) => v.file));
 
   return (
     <>
@@ -462,11 +449,11 @@ function VersionsSection({ targets }: { targets: PublishTarget[] }) {
           <ul className="versions">
             {done.map((v) => (
               <li key={v.aspect}>
-                <a className="btn-primary" href={v.url} download={v.file.name}>
+                <button className="btn-primary" onClick={() => void saveFile(v.file)}>
                   <Download size={18} /> {v.aspect} · {names(v.platforms)}
-                </a>
-                {canShare(v.file) && (
-                  <button className="btn-primary alt" onClick={() => navigator.share({ files: [v.file], title: project.name }).catch(() => {})}>
+                </button>
+                {canShareFile(v.file) && (
+                  <button className="btn-primary alt" onClick={() => void shareFile(v.file, project.name)}>
                     <Share2 size={18} /> Compartir
                   </button>
                 )}

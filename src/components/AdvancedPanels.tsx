@@ -46,7 +46,8 @@ const BLENDS: { id: BlendMode; name: string }[] = [
 
 export function OverlayPanel() {
   const ov = useSelected<OverlayItem>('overlay');
-  useStore((s) => s.time); // the pose depends on the playhead when there are keyframes
+  // The pose depends on the playhead when there are keyframes; skip the 60fps re-renders while playing.
+  useStore((s) => (s.playing ? -1 : s.time));
   if (!ov) return <OverlayPicker />;
   const kind = useStore.getState().project!.assets[ov.assetId]?.kind;
   const pose = poseNow('overlay', ov.id);
@@ -236,7 +237,8 @@ export function useAnimated() {
     if (!sel || !ANIMATED.includes(sel.kind)) return undefined;
     return (itemsOf(s.project!, sel.kind) as Animated[]).find((x) => x.id === sel.id);
   });
-  const time = useStore((s) => s.time);
+  // While playing, ~10 updates per second are enough for the keyframe button state.
+  const time = useStore((s) => (s.playing ? Math.round(s.time * 10) / 10 : s.time));
   if (!item || !kind) return null;
   const p = useStore.getState().project!;
   return { kind, item, local: localTime(p, kind, item, time), inside: time >= item.start - 1e-6 && time - item.start <= localTime(p, kind, item, Infinity) + 1e-3 };

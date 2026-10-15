@@ -231,7 +231,7 @@ const POSITIONS = [
 export function TextPanel() {
   const text = useSelected<TextItem>('text');
   const kit = useBrand();
-  useStore((s) => s.time); // size and position follow keyframes at the playhead
+  useStore((s) => (s.playing ? -1 : s.time)); // size and position follow keyframes at the playhead (not re-rendered while playing)
   if (!text) return <NeedsSelection what="un texto" />;
   const pose = poseNow('text', text.id) ?? text;
   return (

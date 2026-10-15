@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "test": "node --test \"tests/*.test.ts\"",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "icons": "node scripts/icons.mjs",
     "cap:sync": "npm run build && cap sync",
     "cap:android": "npm run build && cap sync android && cap open android",
@@ -19,7 +20,9 @@
   "dependencies": {
     "@capacitor/android": "^8.4.3",
     "@capacitor/core": "^8.4.3",
+    "@capacitor/filesystem": "^8.1.5",
     "@capacitor/ios": "^8.4.3",
+    "@capacitor/share": "^8.0.3",
     "@diffusionstudio/piper-wasm": "^1.0.0",
     "@fontsource/abril-fatface": "^5.3.0",
     "@fontsource/alex-brush": "^5.3.0",
@@ -124,7 +127,7 @@
     "@mediapipe/tasks-vision": "1.0.1",
     "lucide-react": "^0.468.0",
     "mediabunny": "1.61.3",
-    "onnxruntime-web": "^1.30.0",
+    "onnxruntime-web": "1.31.0-dev.20260914-8d85527a0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.2"
@@ -139,6 +142,12 @@
     "sharp": "^0.34.5",
     "typescript": "^5.6.3",
     "vite": "^6.0.3"
+  },
+  "overrides": {
+    "onnxruntime-web": "$onnxruntime-web"
+  },
+  "engines": {
+    "node": ">=22.18"
   },
   "description": "Editor de video fácil para móvil y PC",
   "author": "Clipo",
@@ -171,7 +180,14 @@
           ]
         }
       ],
-      "icon": "public/icon-512.png"
+      "icon": "public/icon-512.png",
+      "signtoolOptions": {
+        "signingHashAlgorithms": [
+          "sha256"
+        ],
+        "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+      },
+      "verifyUpdateCodeSignature": true
     },
     "nsis": {
       "oneClick": false,
@@ -189,6 +205,14 @@
       "es",
       "es-419",
       "en-US"
-    ]
+    ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    }
   }
 }

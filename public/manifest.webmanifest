@@ -11,6 +11,15 @@
   "theme_color": "#0e0e12",
   "lang": "es",
   "categories": ["photo", "video", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Nuevo video",
+      "short_name": "Nuevo",
+      "description": "Empieza un video nuevo",
+      "url": "./?nuevo=1",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },

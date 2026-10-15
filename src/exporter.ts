@@ -7,8 +7,12 @@ import { audioDur, canvasSize, clamp, clipDur, layout, overlayDur, overlaysOf, t
 import { useStore } from './store';
 import type { AspectId, Project, VoiceFxId } from './types';
 import { FRAME, audioRole, integratedLoudness, normalizeLoudness, peak, type ActivityByAsset } from './audioDsp';
-import { LOUDNESS_TARGET, analyzeBuffer, buildVoiceFx, mixOf, projectDuckCurve } from './audioFx';
+import { LOUDNESS_TARGET, analyzeAsset, buildVoiceFx, mixOf, projectDuckCurve, voiceAssets } from './audioFx';
 import { AUDIO_BITRATE, audioLevels, exportBitrate, type AudioLevels } from './platforms';
+import { canFastExport, hasRecorder, UnsupportedAspectError } from './exportSupport';
+import { extractAudio, releaseAudioCache, toAudioBuffer } from './audioExtract';
+
+export { canExport, canFastExport, UnsupportedAspectError } from './exportSupport';
 
 export interface ExportProgress {
   /** 0..100 */
@@ -29,14 +33,27 @@ const SAMPLE_RATE = 48000;
 /** Share of the progress bar spent mixing the audio before the first frame is encoded. */
 const AUDIO_SHARE = 5;
 
-const hasRecorder = () => typeof MediaRecorder !== 'undefined';
-/** WebCodecs + offline audio: everything the fast path needs (missing on older iOS Safari). */
-export const canFastExport = () =>
-  typeof VideoEncoder !== 'undefined' && typeof AudioEncoder !== 'undefined' && typeof OfflineAudioContext !== 'undefined';
-export const canExport = () => canFastExport() || hasRecorder();
+/**
+ * Thrown when the fast path can't run on this device; the recorder takes over. `reason` tells a
+ * file it can't read ('decode') from an encoder that doesn't work here ('encoder').
+ */
+class Unsupported extends Error {
+  constructor(
+    message: string,
+    readonly reason: 'decode' | 'encoder',
+  ) {
+    super(message);
+  }
+}
 
-/** Thrown when the fast path can't run on this device; the recorder takes over. */
-class Unsupported extends Error {}
+/** The fast export failed for a reason the real-time recorder wouldn't fix. `message` is for the user. */
+export class ExportError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+  }
+}
+
+const isQuota = (e: unknown) => (e as DOMException)?.name === 'QuotaExceededError';
 
 const cancelled = () => new Error('cancelled');
 
@@ -63,18 +80,31 @@ export async function exportVideo(
   if (canFastExport()) {
     engine.pause();
     s.setExporting(true);
+    let reason: Unsupported['reason'] = 'encoder';
     try {
       return await fastExport(p, s.urls, short, onProgress, signal);
     } catch (e) {
       if (signal.aborted) throw cancelled();
+      // Only "this device/file can't do the fast path" falls back; any other error is a real failure.
+      if (!(e instanceof Unsupported)) {
+        console.error('Fast export failed', e);
+        throw new ExportError(
+          isQuota(e)
+            ? 'No hay espacio suficiente en el dispositivo para guardar el video. Libera espacio e intenta otra vez.'
+            : 'Algo salió mal al guardar. Intenta otra vez con calidad 720p.',
+          { cause: e },
+        );
+      }
       console.warn('Fast export unavailable, recording in real time instead.', e);
+      reason = e.reason;
     } finally {
       useStore.getState().setExporting(false);
     }
+    // The real-time recorder films the preview, which only shows the project's own format.
+    if (p !== open && hasRecorder()) throw new UnsupportedAspectError(reason);
   }
   if (!hasRecorder()) throw new Error('unsupported');
-  // The real-time recorder films the preview, which only shows the project's own format.
-  if (p !== open) throw new Error('unsupported-aspect');
+  if (p !== open) throw new UnsupportedAspectError('encoder');
   return recordExport(p, short, onProgress, signal);
 }
 
@@ -85,13 +115,10 @@ async function recordExport(p: Project, short: number, onProgress: (p: ExportPro
   const unsub = useStore.subscribe((st) => {
     if (st.exporting && dur) onProgress({ pct: clamp((st.time / dur) * 100, 0, 100), eta: Math.max(0, dur - st.time), fast: false });
   });
-  const abort = () => engine.cancelExport();
-  signal.addEventListener('abort', abort);
   try {
-    return await engine.exportVideo(short);
+    return await engine.exportVideo(short, signal);
   } finally {
     unsub();
-    signal.removeEventListener('abort', abort);
   }
 }
 
@@ -114,7 +141,7 @@ async function fastExport(
   onProgress({ pct: 0, eta: null, fast: true });
 
   const videoCodec = await pickVideoCodec(mb, W, H);
-  if (!videoCodec) throw new Unsupported('no working video encoder');
+  if (!videoCodec) throw new Unsupported('no working video encoder', 'encoder');
   const audioCodec = await mb.getFirstEncodableAudioCodec(['aac', 'opus'], { numberOfChannels: 2, sampleRate: SAMPLE_RATE });
 
   const blobs = new Map<string, Promise<Blob>>();
@@ -138,7 +165,11 @@ async function fastExport(
   canvas.height = H;
   const ctx = canvas.getContext('2d')!;
 
-  const output = new mb.Output({ format: new mb.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new mb.BufferTarget() });
+  // Straight to a file in the browser's private storage when possible: the video is never all in memory.
+  const disk = await opfsTarget(mb);
+  const output = disk
+    ? new mb.Output({ format: new mb.Mp4OutputFormat({ fastStart: false }), target: disk.target })
+    : new mb.Output({ format: new mb.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new mb.BufferTarget() });
   // Explicit bitrates: `quality` maps to a quantizer mode that some hardware H.264 encoders never answer.
   const video = new mb.CanvasSource(canvas, { codec: videoCodec, bitrate: exportBitrate(short) });
   output.addVideoTrack(video, { frameRate: FPS });
@@ -153,8 +184,15 @@ async function fastExport(
     let r = readers.get(clip.id);
     if (!r) {
       const input = new mb.Input({ source: new mb.BlobSource(await blobOf(clip.assetId)), formats: mb.ALL_FORMATS });
-      const track = await input.getPrimaryVideoTrack();
-      if (!track || !(await track.canDecode())) throw new Unsupported('cannot decode a video');
+      let track;
+      try {
+        track = await input.getPrimaryVideoTrack();
+        if (!track || !(await track.canDecode())) throw new Unsupported('cannot decode a video', 'decode');
+      } catch (e) {
+        input.dispose();
+        // A container mediabunny can't read may still play in the preview, which the recorder films.
+        throw e instanceof Unsupported ? e : new Unsupported(`cannot read a video: ${(e as Error)?.message ?? e}`, 'decode');
+      }
       r = new ClipReader(new mb.VideoSampleSink(track), input);
       readers.set(clip.id, r);
     }
@@ -217,7 +255,7 @@ async function fastExport(
         for (const [clip, srcTime] of wanted.splice(0)) await (await getReader(clip)).seek(srcTime);
         drawn = renderFrame(ctx, p, t, W, H, lookup, placed, renderOpts);
       }
-      if (!drawn) throw new Error('frame not available');
+      if (!drawn) throw new Unsupported('frame not available', 'decode');
 
       await sendAudio(t + 1);
       await watchdog(video.add(t, 1 / FPS));
@@ -251,15 +289,74 @@ async function fastExport(
     await watchdog(output.finalize(), 60_000);
   } catch (e) {
     await output.cancel().catch(() => {});
+    await disk?.discard();
     throw e;
   } finally {
     engine.holdPreview = false;
     for (const r of readers.values()) r.close();
   }
 
-  const buf = (output.target as InstanceType<typeof mb.BufferTarget>).buffer;
+  if (disk) {
+    const file = await disk.file();
+    if (!file.size) throw new Error('empty output');
+    // The OPFS file has no type of its own; this wraps it without copying the data.
+    return { blob: file.slice(0, file.size, 'video/mp4'), ext: 'mp4' };
+  }
+  const target = output.target as InstanceType<typeof mb.BufferTarget>;
+  const buf = target.buffer;
   if (!buf) throw new Error('empty output');
-  return { blob: new Blob([buf], { type: 'video/mp4' }), ext: 'mp4' };
+  const blob = new Blob([buf], { type: 'video/mp4' });
+  // Let the ArrayBuffer go right away so only the Blob's copy stays alive.
+  (target as unknown as { buffer: ArrayBuffer | null }).buffer = null;
+  return { blob, ext: 'mp4' };
+}
+
+// ---------- saving to the private storage (OPFS) ----------
+
+const EXPORT_DIR = 'clipo-exports';
+/** Files of this session still in use (shown, shared, waiting to publish); older ones get deleted. */
+const KEEP = 8;
+const madeThisSession: string[] = [];
+let cleanedOld = false;
+
+/**
+ * A StreamTarget writing to a new file in the origin-private file system, or null when this browser
+ * can't (then the export is kept in memory as before).
+ */
+async function opfsTarget(mb: typeof import('mediabunny')) {
+  if (typeof FileSystemFileHandle === 'undefined' || !('createWritable' in FileSystemFileHandle.prototype) || !navigator.storage?.getDirectory) return null;
+  try {
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(EXPORT_DIR, { create: true });
+    await cleanExports(dir);
+    const name = `video-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}.mp4`;
+    const handle = await dir.getFileHandle(name, { create: true });
+    const writable = await handle.createWritable();
+    madeThisSession.push(name);
+    return {
+      target: new mb.StreamTarget(writable as unknown as WritableStream<import('mediabunny').StreamTargetChunk>, { chunked: true, chunkSize: 4 * 1024 * 1024 }),
+      file: () => handle.getFile(),
+      discard: async () => {
+        await writable.abort().catch(() => {});
+        await dir.removeEntry(name).catch(() => {});
+        madeThisSession.splice(madeThisSession.indexOf(name), 1);
+      },
+    };
+  } catch (e) {
+    console.warn('No private storage for the export, keeping it in memory', e);
+    return null;
+  }
+}
+
+/** Deletes exports left by earlier sessions, and this session's oldest beyond KEEP. */
+async function cleanExports(dir: FileSystemDirectoryHandle) {
+  const doomed: string[] = madeThisSession.length >= KEEP ? madeThisSession.splice(0, madeThisSession.length - KEEP + 1) : [];
+  if (!cleanedOld) {
+    cleanedOld = true;
+    const iter = (dir as unknown as { keys(): AsyncIterable<string> }).keys();
+    for await (const name of iter) if (!madeThisSession.includes(name)) doomed.push(name);
+  }
+  for (const name of doomed) await dir.removeEntry(name).catch(() => {});
 }
 
 /**
@@ -289,7 +386,7 @@ function watchdog<T>(p: Promise<T>, ms = 15_000): Promise<T> {
   let timer = 0;
   return Promise.race([
     p.finally(() => clearTimeout(timer)),
-    new Promise<never>((_, reject) => (timer = window.setTimeout(() => reject(new Unsupported('encoder stalled')), ms))),
+    new Promise<never>((_, reject) => (timer = window.setTimeout(() => reject(new Unsupported('encoder stalled', 'encoder')), ms))),
   ]);
 }
 
@@ -434,25 +531,68 @@ async function mixAudio(
 ): Promise<Mix> {
   const length = Math.max(1, Math.ceil(dur * SAMPLE_RATE));
   const octx = new OfflineAudioContext(2, length, SAMPLE_RATE);
-  const decoded = new Map<string, Promise<AudioBuffer | null>>();
-  const activity: ActivityByAsset = {};
-  const decode = (assetId: string) => {
-    let d = decoded.get(assetId);
-    if (!d) {
-      // Files without sound (or that can't be decoded) simply stay silent.
-      d = blobOf(assetId)
-        .then((b) => b.arrayBuffer())
-        .then((ab) => octx.decodeAudioData(ab))
-        .then((buf) => {
-          activity[assetId] = analyzeBuffer(buf).activity;
-          return buf;
-        })
-        .catch(() => null);
-      decoded.set(assetId, d);
-    }
-    return d;
-  };
   const mixSettings = mixOf(p);
+
+  // Only the parts of each file that are heard get decoded: the clips' in/out, merged per file.
+  const ranges = new Map<string, [number, number][]>();
+  const need = (assetId: string, from: number, to: number) => {
+    if (!(to > from)) return;
+    const list = ranges.get(assetId) ?? [];
+    list.push([from, to]);
+    ranges.set(assetId, list);
+  };
+  const speaks = (c: Project['clips'][number]) => p.assets[c.assetId]?.kind === 'video' && c.volume > 0 && c.freeze == null;
+  for (const c of p.clips) if (speaks(c)) need(c.assetId, c.in, c.out);
+  for (const o of overlaysOf(p)) if (p.assets[o.assetId]?.kind === 'video' && o.volume > 0) need(o.assetId, o.in, o.out);
+  for (const a of p.audios) if (a.volume > 0) need(a.assetId, a.in, a.out);
+
+  interface Segment {
+    from: number;
+    to: number;
+    buf?: Promise<AudioBuffer | null>;
+  }
+  const segments = new Map<string, Segment[]>();
+  /** Gaps shorter than this between two ranges of a file are decoded too, so it's read in one go. */
+  const MERGE_GAP = 2;
+  for (const [assetId, list] of ranges) {
+    list.sort((x, y) => x[0] - y[0]);
+    const merged: [number, number][] = [];
+    for (const [f, t] of list) {
+      const last = merged[merged.length - 1];
+      if (last && f <= last[1] + MERGE_GAP) last[1] = Math.max(last[1], t);
+      else merged.push([f, t]);
+    }
+    segments.set(
+      assetId,
+      merged.map(([f, t]): Segment => ({ from: f, to: t + 0.05 })),
+    );
+  }
+  /** Decoded sound around source time `at` of a file, and the source time its first sample is at. */
+  const decode = async (assetId: string, at: number): Promise<{ buf: AudioBuffer; from: number } | null> => {
+    const seg = segments.get(assetId)?.find((g) => at >= g.from - 1e-6 && at < g.to);
+    if (!seg) return null;
+    // Files without sound (or that can't be decoded) simply stay silent.
+    seg.buf ??= blobOf(assetId)
+      .then((b) => extractAudio(b, seg.from, seg.to, { maxChannels: 2, check, fallbackRate: SAMPLE_RATE }))
+      .then((pcm) => (pcm ? toAudioBuffer(octx, pcm) : null))
+      .catch((e) => {
+        if ((e as Error)?.message === 'cancelled') throw e;
+        return null;
+      });
+    const buf = await seg.buf;
+    return buf ? { buf, from: seg.from } : null;
+  };
+
+  // Talking detection for the ducking, from the same whole-file analysis the preview uses.
+  const activity: ActivityByAsset = {};
+  if (mixSettings.duck > 0) {
+    const urls = useStore.getState().urls;
+    for (const id of voiceAssets(p)) {
+      if (!urls[id]) continue;
+      activity[id] = (await analyzeAsset(id, urls[id]))?.activity;
+      check();
+    }
+  }
   // Background music goes through its own bus so it can dip under voices.
   const musicBus = octx.createGain();
   musicBus.connect(octx.destination);
@@ -468,17 +608,18 @@ async function mixAudio(
 
   for (const l of layout(p)) {
     const c = l.clip;
-    if (p.assets[c.assetId]?.kind !== 'video' || c.volume <= 0) continue;
-    const buf = await decode(c.assetId);
+    // Freeze frames are silent, like in the preview.
+    if (!speaks(c)) continue;
+    const d = await decode(c.assetId, c.in);
     check();
-    if (!buf) continue;
+    if (!d) continue;
     const src = octx.createBufferSource();
-    src.buffer = buf;
+    src.buffer = d.buf;
     src.playbackRate.value = c.speed;
     const g = octx.createGain();
     g.gain.value = c.volume;
     route(src, g, c.voiceFx, l.start, l.start + clipDur(c));
-    src.start(l.start, c.in);
+    src.start(l.start, c.in - d.from);
     src.stop(l.start + clipDur(c));
   }
 
@@ -487,28 +628,28 @@ async function mixAudio(
     if (p.assets[o.assetId]?.kind !== 'video' || o.volume <= 0) continue;
     const d = overlayDur(o);
     if (d <= 0) continue;
-    const buf = await decode(o.assetId);
+    const dec = await decode(o.assetId, o.in);
     check();
-    if (!buf) continue;
+    if (!dec) continue;
     const src = octx.createBufferSource();
-    src.buffer = buf;
+    src.buffer = dec.buf;
     const g = octx.createGain();
     g.gain.value = o.volume;
     src.connect(g).connect(octx.destination);
-    src.start(o.start, o.in);
+    src.start(o.start, o.in - dec.from);
     src.stop(o.start + d);
   }
 
   for (const a of p.audios) {
     if (a.volume <= 0) continue;
 
-    const buf = await decode(a.assetId);
-    check();
-    if (!buf) continue;
     const d = audioDur(a);
     if (d <= 0) continue;
+    const dec = await decode(a.assetId, a.in);
+    check();
+    if (!dec) continue;
     const src = octx.createBufferSource();
-    src.buffer = buf;
+    src.buffer = dec.buf;
     const g = octx.createGain();
     // Same linear fade-in/out as the preview.
     const steps = Math.max(2, Math.min(4096, Math.ceil(d * 50)));
@@ -523,7 +664,7 @@ async function mixAudio(
     g.gain.setValueCurveAtTime(curve, a.start, d);
     const music = audioRole(a, p.assets[a.assetId]?.name) === 'music';
     route(src, g, a.voiceFx, a.start, a.start + d, music ? musicBus : octx.destination);
-    src.start(a.start, a.in);
+    src.start(a.start, a.in - dec.from);
     src.stop(a.start + d);
   }
 
@@ -531,6 +672,8 @@ async function mixAudio(
   const duck = projectDuckCurve(p, activity, dur);
   if (duck && duck.length > 1) musicBus.gain.setValueCurveAtTime(duck, 0, duck.length * FRAME);
 
+  segments.clear();
+  releaseAudioCache();
   const buffer = await octx.startRendering();
   check();
   if (opts.normalize ?? mixSettings.normalize) {

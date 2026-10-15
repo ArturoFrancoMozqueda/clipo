@@ -89,17 +89,28 @@ export function RecordPanel() {
     }
     if (id !== run.current) return releaseMic();
     stream.current = null;
-    rec.current = await startRecording(ms, (saved) => {
-      rec.current = null;
-      const s = useStore.getState();
-      if (saved) {
-        s.notify('¡Voz grabada! Está en la pista de audio. Puedes deshacerlo.');
-        if (mounted.current) s.setPanel(null);
-      } else if (mounted.current) {
-        setState({ kind: 'idle' });
-        setError('La grabación quedó vacía o no se pudo leer. Habla después de la cuenta regresiva e intenta otra vez.');
-      }
-    });
+    let r: Recording;
+    try {
+      r = await startRecording(ms, (saved) => {
+        rec.current = null;
+        const s = useStore.getState();
+        if (saved) {
+          s.notify('¡Voz grabada! Está en la pista de audio. Puedes deshacerlo.');
+          if (mounted.current) s.setPanel(null);
+        } else if (mounted.current) {
+          setState({ kind: 'idle' });
+          setError('La grabación quedó vacía o no se pudo leer. Habla después de la cuenta regresiva e intenta otra vez.');
+        }
+      });
+    } catch {
+      ms.getTracks().forEach((t) => t.stop());
+      if (id !== run.current || !mounted.current) return;
+      setError('No se pudo empezar a grabar. Cierra otras apps que usen el micrófono e intenta otra vez.');
+      return setState({ kind: 'idle' });
+    }
+    // Cancelled or panel closed while the recorder was starting.
+    if (id !== run.current || !mounted.current) return r.discard();
+    rec.current = r;
     setNow(performance.now());
     setState({ kind: 'recording', since: performance.now() });
   };

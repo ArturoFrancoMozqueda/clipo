@@ -3,6 +3,7 @@ import type { TextItem } from './types';
 import type { TextPose } from './visuals';
 import { ensureFont, fontCss, getFont } from './fonts';
 import { activeWord, wordTimings } from './subtitles';
+import { requestRedraw } from './redraw';
 
 export interface TextStyle {
   id: string;
@@ -70,24 +71,84 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-/** Draw a text item and return its (resting) bounding box in canvas pixels. */
-export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: number, H: number, pose?: TextPose, local?: number): Box {
+// Text measuring is the slow part of drawing a caption, and a text looks the same every frame:
+// widths are cached per font and string. A font that finishes loading changes them, so the cache
+// is emptied then.
+const widthCache = new Map<string, number>();
+const WIDTHS_MAX = 2000;
+
+function measure(ctx: CanvasRenderingContext2D, s: string) {
+  const key = `${ctx.font}\u0000${s}`;
+  let w = widthCache.get(key);
+  if (w === undefined) {
+    w = ctx.measureText(s).width;
+    if (widthCache.size >= WIDTHS_MAX) widthCache.clear();
+    widthCache.set(key, w);
+  }
+  return w;
+}
+
+const fontReady = () => {
+  widthCache.clear();
+  requestRedraw();
+};
+if (typeof document !== 'undefined' && document.fonts?.addEventListener) document.fonts.addEventListener('loadingdone', fontReady);
+/** Fonts whose first download is already being watched. */
+const watchedFonts = new Set<string>();
+
+/** Lines and casing of an item, reused while its text and style stay the same. */
+const shaped = new WeakMap<TextItem, { text: string; upper: boolean; raw: string; lines: string[] }>();
+function linesOf(item: TextItem, upper: boolean) {
+  let s = shaped.get(item);
+  if (!s || s.text !== item.text || s.upper !== upper) {
+    const raw = upper ? item.text.toUpperCase() : item.text;
+    s = { text: item.text, upper, raw, lines: raw.split('\n') };
+    shaped.set(item, s);
+  }
+  return s;
+}
+
+const timings = new WeakMap<TextItem, { raw: string; words: TextItem['words']; dur: number; list: ReturnType<typeof wordTimings> }>();
+function timingsOf(item: TextItem, raw: string) {
+  let s = timings.get(item);
+  if (!s || s.raw !== raw || s.words !== item.words || s.dur !== item.duration) {
+    s = { raw, words: item.words, dur: item.duration, list: wordTimings(raw, item.words, item.duration) };
+    timings.set(item, s);
+  }
+  return s.list;
+}
+
+/**
+ * Draw a text item and return its (resting) bounding box in canvas pixels. `place` overrides the
+ * item's position and size (its animated pose) without copying the item.
+ */
+export function drawText(
+  ctx: CanvasRenderingContext2D, item: TextItem, W: number, H: number, pose?: TextPose, local?: number,
+  place?: { x: number; y: number; size: number },
+): Box {
   const st = getTextStyle(item.styleId);
-  const fs = Math.max(8, item.size * Math.min(W, H));
+  const fs = Math.max(8, (place?.size ?? item.size) * Math.min(W, H));
   ctx.save();
   const face = getFont(item.font);
-  if (face) void ensureFont(face.id); // first use registers and downloads it
+  if (face) {
+    // First use registers and downloads it; draw again with the real font once it's there.
+    const loading = ensureFont(face.id);
+    if (!watchedFonts.has(face.id)) {
+      watchedFonts.add(face.id);
+      loading.then(fontReady, () => {});
+    }
+  }
   ctx.font = face ? fontCss(face, fs, st.italic) : `${st.italic ? 'italic ' : ''}${st.weight} ${fs}px ${st.font}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
-  const raw = st.upper ? item.text.toUpperCase() : item.text;
-  const lines = raw.split('\n');
+  const { raw, lines } = linesOf(item, !!st.upper);
   const lh = fs * 1.22;
-  const tw = Math.max(fs * 0.5, ...lines.map((l) => ctx.measureText(l || ' ').width));
+  let tw = fs * 0.5;
+  for (const l of lines) tw = Math.max(tw, measure(ctx, l || ' '));
   const th = lh * lines.length;
-  const cx = item.x * W;
-  const cy = item.y * H;
+  const cx = (place?.x ?? item.x) * W;
+  const cy = (place?.y ?? item.y) * H;
   const padX = fs * 0.45;
   const padY = fs * 0.2;
   const box = { id: item.id, x: cx - tw / 2 - padX, y: cy - th / 2 - padY, w: tw + padX * 2, h: th + padY * 2 };
@@ -127,15 +188,15 @@ export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: numbe
   }
   // Karaoke: the word being said gets a color, a box or grows a little.
   const kara = item.karaoke && local !== undefined && budget === Infinity ? item.karaoke : undefined;
-  const active = kara ? activeWord(wordTimings(raw, item.words, item.duration), local!) : -1;
+  const active = kara ? activeWord(timingsOf(item, raw), local!) : -1;
   let k = 0;
   lines.forEach((full, i) => {
     if (budget <= 0) return;
     const y = cy - th / 2 + lh * (i + 0.5);
     if (kara) {
       const toks = full.split(/\s+/).filter(Boolean);
-      const space = ctx.measureText(' ').width;
-      const widths = toks.map((t) => ctx.measureText(t).width);
+      const space = measure(ctx, ' ');
+      const widths = toks.map((t) => measure(ctx, t));
       let x = cx - (widths.reduce((a, b) => a + b, 0) + space * Math.max(0, toks.length - 1)) / 2;
       toks.forEach((tok, j) => {
         const on = k++ === active;
@@ -163,7 +224,7 @@ export function drawText(ctx: CanvasRenderingContext2D, item: TextItem, W: numbe
       line = full.slice(0, budget);
       budget -= full.length + 1;
       ctx.textAlign = 'left';
-      x = cx - ctx.measureText(full).width / 2;
+      x = cx - measure(ctx, full) / 2;
     }
     paint(line, x, y, fill);
   });

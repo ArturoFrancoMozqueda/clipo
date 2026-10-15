@@ -260,14 +260,17 @@ export function analyzeBuffer(buf: AudioBuffer): Analysis {
 const ANALYSIS_RATE = 22050;
 const analyses = new Map<string, Promise<Analysis | null>>();
 
-/** Decodes and analyzes the sound of a media file once (null when it has no sound). */
+/**
+ * Decodes and analyzes the sound of a media file once (null when it has no sound). The levels are
+ * computed while decoding, chunk by chunk, so the whole sound is never held in memory.
+ */
 export function analyzeAsset(assetId: string, url: string): Promise<Analysis | null> {
   let a = analyses.get(assetId);
   if (!a) {
     a = fetch(url)
-      .then((r) => r.arrayBuffer())
-      .then((ab) => new OfflineAudioContext(1, 1, ANALYSIS_RATE).decodeAudioData(ab))
-      .then(analyzeBuffer)
+      .then((r) => r.blob())
+      .then((b) => import('./audioExtract').then((m) => m.extractLevels(b, FRAME, ANALYSIS_RATE)))
+      .then((r) => (r ? { levels: r.levels, activity: voiceActivity(r.levels) } : null))
       .catch(() => null);
     analyses.set(assetId, a);
   }

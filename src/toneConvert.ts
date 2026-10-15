@@ -3,16 +3,33 @@
 // seconds per sentence), so "Mi voz" can be a natural Clipo voice re-timbred to the user's voice.
 // Models: huggingface.co/seasonstudio/openvoice_tone_clone_onnx. Audio prep follows OpenVoice's
 // spectrogram_torch: 22.05 kHz, n_fft 1024, hop 256, Hann window, reflect padding, magnitude.
-import * as ort from 'onnxruntime-web/wasm';
-import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
-import ortMjs from 'onnxruntime-web/ort-wasm-simd-threaded.mjs?url';
+// Same ONNX Runtime entry and WASM file as transformers.js (captions, narration), so the app ships
+// a single runtime: the "webgpu" build also runs the plain WASM backend used here.
+import * as ort from 'onnxruntime-web/webgpu';
+import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
+import ortMjs from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 
 export const TONE_RATE = 22050;
 const N_FFT = 1024;
 const HOP = 256;
 const BINS = N_FFT / 2 + 1;
-const BASE = 'https://huggingface.co/seasonstudio/openvoice_tone_clone_onnx/resolve/main';
+// Pinned to one commit of the model repo, and every file is checked against its SHA-256 (from the
+// Hugging Face API, `?blobs=true` → lfs.sha256) before it is used or cached.
+const REPO = 'https://huggingface.co/seasonstudio/openvoice_tone_clone_onnx';
+const REVISION = 'abb763f5399bed4a70b79f65915259f285b1956b';
+const BASE = `${REPO}/resolve/${REVISION}`;
+/** Cache keys stay the old "main" URLs so models downloaded by earlier versions are reused. */
+const CACHE_BASE = `${REPO}/resolve/main`;
 const CACHE = 'clipo-tone-v1';
+const SHA256: Record<string, string> = {
+  'tone_color_extract_model.onnx': 'a90ce9048c8ad43ef3ebeb15ea5a1837ffa28669d61d78f749ccc2a648710747',
+  'tone_clone_model.onnx': 'ea01c404712bc208694f79613488212e8cb7ad171c58361c22b645ca8b380197',
+};
+
+async function sha256Hex(data: ArrayBuffer): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+  return Array.from(d, (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 ort.env.wasm.wasmPaths = { wasm: ortWasm, mjs: ortMjs };
 ort.env.wasm.numThreads = globalThis.crossOriginIsolated ? Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 2) - 2)) : 1;
@@ -101,10 +118,17 @@ function transpose(s: { data: Float32Array; frames: number }) {
 
 // ---------- models ----------
 
+class IntegrityError extends Error {
+  constructor(name: string) {
+    super(`integrity: ${name} does not match its SHA-256`);
+  }
+}
+
 async function model(name: string, onProgress?: (loaded: number, total: number) => void): Promise<ArrayBuffer> {
   const url = `${BASE}/${name}`;
+  const key = `${CACHE_BASE}/${name}`;
   const cache = await caches.open(CACHE).catch(() => null);
-  const hit = await cache?.match(url);
+  const hit = await cache?.match(key);
   if (hit) return hit.arrayBuffer();
   for (let attempt = 0; ; attempt++) {
     try {
@@ -122,10 +146,13 @@ async function model(name: string, onProgress?: (loaded: number, total: number) 
         onProgress?.(loaded, total);
       }
       const blob = new Blob(parts);
-      await cache?.put(url, new Response(blob)).catch(() => {});
-      return blob.arrayBuffer();
+      const buf = await blob.arrayBuffer();
+      // A corrupted or tampered download is never cached nor handed to ONNX Runtime.
+      if (SHA256[name] && (await sha256Hex(buf)) !== SHA256[name]) throw new IntegrityError(name);
+      await cache?.put(key, new Response(blob)).catch(() => {});
+      return buf;
     } catch (e) {
-      if (attempt >= 5) throw e;
+      if (attempt >= 5 || e instanceof IntegrityError) throw e;
       await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
     }
   }

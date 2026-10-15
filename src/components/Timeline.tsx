@@ -13,10 +13,12 @@ import { TRANSITION_ICONS } from './fxIcons';
 
 const JUNCTION_ICONS: Record<TransitionId, typeof Blend> = { ...TRANSITION_ICONS, none: ArrowLeftRight };
 
+/** Touch screens get taller thin rows so text/sticker items are easier to hit. */
+const COARSE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 const ROW_CLIP = 60;
-const ROW_TEXT = 30;
-const ROW_AUDIO = 34;
-const ROW_STICKER = 30;
+const ROW_TEXT = COARSE ? 44 : 30;
+const ROW_AUDIO = COARSE ? 44 : 34;
+const ROW_STICKER = COARSE ? 44 : 30;
 const ROW_OVERLAY = 40;
 
 type Mode = 'l' | 'r' | 'body';
@@ -182,7 +184,8 @@ export function Timeline() {
     engine.seek(el.scrollLeft / useStore.getState().pps);
   };
 
-  // Mouse wheel scrolls sideways; Ctrl+wheel and two-finger pinch zoom.
+  // Ctrl+wheel and two-finger pinch zoom. Shift+wheel scrolls sideways; a plain wheel scrolls
+  // the tracks vertically when they overflow (so lower tracks stay reachable), else sideways.
   useEffect(() => {
     const el = ref.current!;
     const onWheel = (e: WheelEvent) => {
@@ -191,8 +194,11 @@ export function Timeline() {
         e.preventDefault();
         s.setPps(s.pps * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
       } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        e.preventDefault();
-        el.scrollLeft += e.deltaY;
+        const vertical = el.scrollHeight > el.clientHeight + 1;
+        if (e.shiftKey || !vertical) {
+          e.preventDefault();
+          el.scrollLeft += e.deltaY;
+        }
       }
     };
     let pinch: { d: number; pps: number } | null = null;
@@ -227,6 +233,22 @@ export function Timeline() {
     useStore.getState().select({ kind, id });
   };
   const isSel = (kind: SelectionKind, id: string) => selection?.kind === kind && selection.id === id;
+  /** Keyboard access for timeline items: focusable, Enter/Space selects. */
+  const itemA11y = (kind: SelectionKind, id: string, label: string) => ({
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': label,
+    'aria-pressed': isSel(kind, id),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.target !== e.currentTarget) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        engine.pause();
+        useStore.getState().select({ kind, id });
+      }
+    },
+  });
 
   const dur = totalDuration(project);
   const placed = layout(project);
@@ -268,6 +290,7 @@ export function Timeline() {
                       backgroundImage: a?.thumb ? `url(${a.thumb})` : undefined,
                     }}
                     onClick={select('overlay', o.id)}
+                    {...itemA11y('overlay', o.id, `Superposición: ${a?.name ?? 'sin nombre'}`)}
                     onPointerDown={sel ? (e) => startDrag(e, 'overlay', o.id, 'body') : undefined}
                     onDoubleClick={() => useStore.getState().setPanel('overlay')}
                     title={a?.name}
@@ -296,6 +319,7 @@ export function Timeline() {
                     backgroundImage: a?.thumb ? `url(${a.thumb})` : undefined,
                   }}
                   onClick={select('clip', clip.id)}
+                  {...itemA11y('clip', clip.id, `Clip: ${a?.name ?? 'sin nombre'}, ${fmtTime(end - start, true)}`)}
                   title={a?.name}
                 >
                   <span className="tl-badges">
@@ -361,6 +385,7 @@ export function Timeline() {
                   className={`tl-item text ${sel ? 'selected' : ''}`}
                   style={{ left: pad + t.start * pps, width: Math.max(2, t.duration * pps), top: textLanes.map[t.id] * ROW_TEXT, height: ROW_TEXT - 4 }}
                   onClick={select('text', t.id)}
+                  {...itemA11y('text', t.id, `Texto: ${t.text}`)}
                   onPointerDown={sel ? (e) => startDrag(e, 'text', t.id, 'body') : undefined}
                   onDoubleClick={() => useStore.getState().setPanel('text')}
                 >
@@ -387,6 +412,7 @@ export function Timeline() {
                   className={`tl-item sticker ${sel ? 'selected' : ''}`}
                   style={{ left: pad + st.start * pps, width: Math.max(2, st.duration * pps), top: stickerLanes.map[st.id] * ROW_STICKER, height: ROW_STICKER - 4 }}
                   onClick={select('sticker', st.id)}
+                  {...itemA11y('sticker', st.id, 'Sticker')}
                   onPointerDown={sel ? (e) => startDrag(e, 'sticker', st.id, 'body') : undefined}
                   onDoubleClick={() => useStore.getState().setPanel('stickers')}
                 >
@@ -413,6 +439,7 @@ export function Timeline() {
                   className={`tl-item audio ${sel ? 'selected' : ''}`}
                   style={{ left: pad + a.start * pps, width: Math.max(2, audioDur(a) * pps), top: audioLanes.map[a.id] * ROW_AUDIO, height: ROW_AUDIO - 4 }}
                   onClick={select('audio', a.id)}
+                  {...itemA11y('audio', a.id, `Audio: ${project.assets[a.assetId]?.name ?? 'sin nombre'}`)}
                   onPointerDown={sel ? (e) => startDrag(e, 'audio', a.id, 'body') : undefined}
                 >
                   <Music size={12} /> <span>{project.assets[a.assetId]?.name ?? 'Audio'}</span>

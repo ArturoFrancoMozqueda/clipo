@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Only these folders can be handed to other apps through the FileProvider (with a one-off
+     URI grant). Nothing of the shared/external storage root is exposed. -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <!-- Exports to share or save: write them with @capacitor/filesystem to Directory.Cache, path "share/<file>". -->
+    <cache-path name="clipo_share" path="share/" />
+    <!-- Capacitor's WebView file chooser stores camera captures here (BridgeWebChromeClient.createImageFile). -->
+    <external-files-path name="captured_photos" path="Pictures/" />
 </paths>

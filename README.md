@@ -9,7 +9,7 @@ El análisis de producto y las decisiones de diseño están en
 
 ## Usarlo en tu PC
 
-Requiere Node.js 18 o superior.
+Requiere Node.js 22.18 o superior (los tests ejecutan TypeScript directamente).
 
 ```bash
 npm install
@@ -76,10 +76,14 @@ npm run app:smoke   # prueba automática: abre la app oculta y comprueba que car
 - `Clipo-Portable-<versión>.exe`: se ejecuta sin instalar (por ejemplo, desde una USB).
 
 Los proyectos de la app de escritorio se guardan en `%APPDATA%\clipo` y son
-independientes de los de la versión web. El instalador no está firmado
-digitalmente, así que Windows SmartScreen mostrará un aviso la primera vez:
-"Más información" → "Ejecutar de todas formas". Para quitar el aviso hace falta
-un certificado de firma de código.
+independientes de los de la versión web. Sin certificado, el instalador sale
+sin firmar y Windows SmartScreen mostrará un aviso la primera vez ("Más
+información" → "Ejecutar de todas formas"). Para firmarlo basta con definir las
+variables de entorno del certificado antes de `npm run app:dist`; ver
+[PUBLICAR.md](PUBLICAR.md), sección "Escritorio (Windows)".
+
+Las licencias de las fuentes, modelos de IA y voces están en
+[docs/video-editor/LICENSES.md](docs/video-editor/LICENSES.md).
 
 Para una prueba completa (crear video, editar y exportar) dentro de la app:
 `CLIPO_SMOKE_SCRIPT=scripts/smoke-scenario.js npm run app:smoke`.

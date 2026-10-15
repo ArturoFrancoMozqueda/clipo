@@ -7,6 +7,7 @@ import { clamp, clipDur, type Placed } from './model';
 import { supportsCanvasFilter } from './filters';
 import { coverScale, grainValues, hash, irisRadius, peak, pixelBlock, pushOffsets, smoothNoise } from './fxmath';
 import { emojiImage } from './stickers';
+import { redrawWhenLoaded } from './redraw';
 
 // ---------- transitions ----------
 
@@ -630,16 +631,22 @@ export interface StickerBox {
 }
 
 /** Draw a sticker; returns its (unrotated) box around the center for hit testing. */
-export function drawSticker(ctx: CanvasRenderingContext2D, st: StickerItem, img: HTMLImageElement | undefined, W: number, H: number): StickerBox | null {
+export function drawSticker(
+  ctx: CanvasRenderingContext2D, st: StickerItem, img: HTMLImageElement | undefined, W: number, H: number,
+  pose?: { x: number; y: number; size: number; rotation: number },
+): StickerBox | null {
+  const { x, y, size, rotation } = pose ?? st;
   const short = Math.min(W, H);
-  const w = st.size * short;
+  const w = size * short;
   let h = w;
   const art = st.assetId ? undefined : emojiImage(st.emoji);
-  const cx = st.x * W;
-  const cy = st.y * H;
+  const cx = x * W;
+  const cy = y * H;
+  if (art) redrawWhenLoaded(art);
+  if (img) redrawWhenLoaded(img);
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(st.rotation);
+  ctx.rotate(rotation);
   if (st.assetId) {
     if (!img || !img.complete || !img.naturalWidth) {
       ctx.restore();
@@ -656,7 +663,7 @@ export function drawSticker(ctx: CanvasRenderingContext2D, st: StickerItem, img:
     ctx.fillText(st.emoji ?? '⭐', 0, w * 0.04);
   }
   ctx.restore();
-  return { id: st.id, cx, cy, w, h, rot: st.rotation };
+  return { id: st.id, cx, cy, w, h, rot: rotation };
 }
 
 /** Is canvas point (x, y) inside a rotated sticker box (with some slack for fingers)? */

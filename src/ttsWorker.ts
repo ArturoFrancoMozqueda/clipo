@@ -29,6 +29,14 @@ export type TtsOut =
 
 const post = (m: TtsOut, transfer: Transferable[] = []) => (self as unknown as Worker).postMessage(m, transfer);
 
+/**
+ * Model files come from a fixed commit, not from "main". Same value as SUPERTONIC_REVISION in
+ * voice.ts (not imported: voice.ts would pull the editor's store and database into this worker).
+ */
+const REVISIONS: Record<string, string> = {
+  'onnx-community/Supertonic-TTS-2-ONNX': '68d4d9420d0e0e51d14656e1ec5c9b091490b49e',
+};
+
 type Loaded = { tts: TextToAudioPipeline; device: 'webgpu' | 'wasm' };
 const loaded = new Map<string, Promise<Loaded>>();
 /** Set once the GPU has failed; later loads go straight to WASM. */
@@ -54,6 +62,7 @@ function load(model: string, id: number, forceWasm = false) {
     const tts = (await (pipeline as (...a: unknown[]) => Promise<unknown>)('text-to-speech', model, {
       device,
       progress_callback,
+      ...(REVISIONS[model] ? { revision: REVISIONS[model] } : {}),
       ...(model.includes('mms') ? { dtype: 'q8' } : {}),
     })) as TextToAudioPipeline;
     return { tts, device };
