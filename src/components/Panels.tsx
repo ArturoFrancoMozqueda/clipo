@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Captions, CheckCircle2, Download, Share2, TriangleAlert, VolumeX } from 'lucide-react';
+import { CheckCircle2, Download, Share2, TriangleAlert, VolumeX } from 'lucide-react';
 import type { AudioItem, Clip, OverlayItem, PanelId, SelectionKind, StickerItem, TextItem } from '../types';
 import { itemsOf, useStore } from '../store';
 import { canExport, exportVideo, type ExportProgress } from '../exporter';
 import { FILTERS } from '../filters';
-import { TEXT_STYLES, getTextStyle, styleToCss } from '../textStyles';
-import { FONTS, getFont, warmFont } from '../fonts';
-import { TEXT_PRESETS } from '../textPresets';
 import { clipDur, fmtTime, totalDuration } from '../model';
-import { editPose, poseNow, setAspect } from '../ops';
-import { CAPTION_LANGUAGES, captionDownloadMB, cancelCaptions, generateCaptions, type CaptionProgress, type CaptionQuality } from '../captions';
+import { setAspect } from '../ops';
 import { FormatPicker } from './FormatPicker';
-import { EffectsPanel, StickersPanel, TextAnimSection, TransitionPanel } from './VisualPanels';
+import { EffectsPanel, StickersPanel, TransitionPanel } from './VisualPanels';
+import { CaptionsPanel, TextPanel } from './TextPanels';
 import { MediaLibrary } from './MediaLibrary';
 import { SfxPanel } from './SoundPanels';
 import { showOnboarding } from './Onboarding';
@@ -236,190 +233,6 @@ function FiltersPanel() {
       >
         Aplicar a todos los clips
       </button>
-    </>
-  );
-}
-
-const POSITIONS = [
-  { label: 'Arriba', y: 0.15 },
-  { label: 'Centro', y: 0.5 },
-  { label: 'Abajo', y: 0.8 },
-];
-
-function TextPanel() {
-  const text = useSelected<TextItem>('text');
-  useStore((s) => s.time); // size and position follow keyframes at the playhead
-  if (!text) return <NeedsSelection what="un texto" />;
-  const pose = poseNow('text', text.id) ?? text;
-  return (
-    <>
-      <textarea
-        className="text-input"
-        value={text.text}
-        rows={2}
-        autoFocus
-        placeholder="Escribe aquí"
-        onFocus={(e) => { checkpoint(); e.target.select(); }}
-        onChange={(e) => editSelected((t) => void (t.text = e.target.value))}
-      />
-      <p className="label">Estilos rápidos</p>
-      <div className="preset-row">
-        {TEXT_PRESETS.map((pr) => {
-          const st = getTextStyle(pr.styleId);
-          const f = getFont(pr.font)!;
-          return (
-            <button
-              key={pr.id}
-              className="preset"
-              title={pr.use}
-              onClick={() => {
-                checkpoint();
-                warmFont(pr.font);
-                editSelected((t) => {
-                  t.font = pr.font;
-                  t.styleId = pr.styleId;
-                  t.size = pr.size;
-                  t.anim = { ...pr.anim };
-                  if (pr.y !== undefined) {
-                    t.x = 0.5;
-                    t.y = pr.y;
-                  }
-                });
-              }}
-            >
-              <span style={{ ...styleToCss(st), fontFamily: f.family, fontWeight: f.weight }}>{pr.name}</span>
-              <small>{pr.use}</small>
-            </button>
-          );
-        })}
-      </div>
-      <p className="label">Fuente</p>
-      <div className="font-grid">
-        <button className={`font-opt ${!text.font ? 'active' : ''}`} onClick={() => { checkpoint(); editSelected((t) => void (t.font = undefined)); }}>
-          <span>Normal</span>
-        </button>
-        {FONTS.map((f) => (
-          <button
-            key={f.id}
-            className={`font-opt ${text.font === f.id ? 'active' : ''}`}
-            title={f.hint}
-            onClick={() => { checkpoint(); warmFont(f.id); editSelected((t) => void (t.font = f.id)); }}
-          >
-            <span style={{ fontFamily: f.family, fontWeight: f.weight }}>{f.name}</span>
-          </button>
-        ))}
-      </div>
-      <p className="label">Color y fondo</p>
-      <div className="style-grid">
-        {TEXT_STYLES.map((st) => (
-          <button
-            key={st.id}
-            className={`style ${text.styleId === st.id ? 'active' : ''}`}
-            onClick={() => { checkpoint(); editSelected((t) => void (t.styleId = st.id)); }}
-          >
-            <span style={styleToCss(st)}>{st.name}</span>
-          </button>
-        ))}
-      </div>
-      <Slider label="Tamaño" value={pose.size} min={0.03} max={0.2} step={0.005} format={(v) => `${Math.round(v * 1000)}`} onChange={(v) => editPose('text', text.id, { size: v })} />
-      <p className="label">Posición</p>
-      <div className="chips">
-        {POSITIONS.map((pos) => (
-          <button key={pos.label} className="chip" onClick={() => { checkpoint(); editPose('text', text.id, { x: 0.5, y: pos.y }); }}>
-            {pos.label}
-          </button>
-        ))}
-      </div>
-      <Slider label="Se muestra durante" value={text.duration} min={0.5} max={30} step={0.5} format={(v) => `${v.toFixed(1)} s`} onChange={(v) => editSelected((t) => void (t.duration = v))} />
-      <TextAnimSection text={text} />
-      <Hint>También puedes arrastrar el texto sobre el video para moverlo.</Hint>
-    </>
-  );
-}
-
-const CAPTION_ERRORS: Record<string, string> = {
-  'no-video': 'Primero agrega un video con sonido. Los subtítulos se crean a partir de lo que se dice en los videos.',
-  'no-speech': 'No se escuchó a nadie hablar en los videos. Revisa que tengan sonido y que el volumen no esté en 0.',
-};
-
-const mb = (n: number) => `${Math.round(n / 1e6)} MB`;
-
-function CaptionsPanel() {
-  const hasCaptions = useStore((s) => s.project!.texts.some((t) => t.caption));
-  const running = useStore((s) => s.captioning);
-  const [language, setLanguage] = useState('spanish');
-  const [quality, setQuality] = useState<CaptionQuality>('rapido');
-  const [progress, setProgress] = useState<CaptionProgress | null>(null);
-  const [error, setError] = useState('');
-
-  const start = async () => {
-    const s = useStore.getState();
-    s.setCaptioning(true);
-    setError('');
-    setProgress(null);
-    try {
-      const n = await generateCaptions({ language, quality, onProgress: setProgress });
-      const st = useStore.getState();
-      st.setPanel(null);
-      st.select(null);
-      st.notify(`Listo: ${n} subtítulos. Toca uno para corregir el texto.`);
-    } catch (e) {
-      const m = (e as Error).message;
-      if (m !== 'cancelled') setError(CAPTION_ERRORS[m] ?? 'No se pudieron crear los subtítulos. Revisa tu conexión (solo la primera vez) e intenta otra vez.');
-      if (!CAPTION_ERRORS[m] && m !== 'cancelled') console.error(e);
-    } finally {
-      useStore.getState().setCaptioning(false);
-    }
-  };
-
-  if (running) {
-    const pct = progress?.pct ?? 0;
-    const label =
-      !progress || progress.phase === 'audio'
-        ? 'Preparando el audio…'
-        : progress.phase === 'download' && progress.pct >= 99.5
-          ? 'Preparando el reconocimiento de voz…'
-        : progress.phase === 'download'
-          ? `Descargando el reconocimiento de voz (solo la primera vez)… ${progress.total ? `${mb(progress.loaded)} de ${mb(progress.total)}` : ''}`
-          : 'Escuchando el video y escribiendo…';
-    return (
-      <div className="export-running">
-        <div className="progress"><span style={{ width: `${pct}%` }} /></div>
-        <p>
-          {label} <b>{Math.round(pct)} %</b>
-        </p>
-        <Hint>Puedes esperar aquí. Se hace en tu dispositivo: nada se sube a internet.</Hint>
-        <button className="btn-ghost" onClick={cancelCaptions}>Cancelar</button>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      {error && <p className="warn"><TriangleAlert size={18} /> {error}</p>}
-      <Hint>Clipo escucha lo que se dice en tus videos y lo escribe como subtítulos, en el momento justo.</Hint>
-      <p className="label">¿En qué idioma hablan?</p>
-      <div className="chips">
-        {CAPTION_LANGUAGES.map((l) => (
-          <button key={l.id} className={`chip ${language === l.id ? 'active' : ''}`} onClick={() => setLanguage(l.id)}>
-            {l.label}
-          </button>
-        ))}
-      </div>
-      <p className="label">Modo</p>
-      <div className="chips">
-        <button className={`chip big ${quality === 'rapido' ? 'active' : ''}`} onClick={() => setQuality('rapido')}>
-          Rápido <small>Recomendado · descarga de unos {captionDownloadMB('rapido')} MB</small>
-        </button>
-        <button className={`chip big ${quality === 'preciso' ? 'active' : ''}`} onClick={() => setQuality('preciso')}>
-          Más preciso <small>Más lento · descarga de unos {captionDownloadMB('preciso')} MB</small>
-        </button>
-      </div>
-      <button className="btn-primary big full" onClick={start}>
-        <Captions size={22} /> {hasCaptions ? 'Volver a crear subtítulos' : 'Crear subtítulos'}
-      </button>
-      {hasCaptions && <Hint>Los subtítulos automáticos que ya tienes se reemplazarán. Puedes deshacerlo.</Hint>}
-      <Hint>Todo se hace en tu dispositivo. La primera vez se descarga el reconocimiento de voz y queda guardado para la próxima.</Hint>
     </>
   );
 }

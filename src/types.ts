@@ -150,6 +150,26 @@ export interface TextItem {
   /** 0..1 (advanced mode). */
   opacity?: number;
   keyframes?: Keyframe[];
+  /** When each word is said (captions). Missing in older projects and typed texts. */
+  words?: CaptionWord[];
+  /** Highlight the word being said. */
+  karaoke?: Karaoke;
+  /** Text color chosen by the user (or the brand kit) instead of the style's. */
+  fill?: string;
+}
+
+/** A spoken word of a caption. Seconds from the text's start. */
+export interface CaptionWord {
+  text: string;
+  start: number;
+  end: number;
+}
+
+export type KaraokeMode = 'color' | 'box' | 'scale';
+export interface Karaoke {
+  mode: KaraokeMode;
+  /** Color of the highlighted word (or of its box). */
+  color: string;
 }
 
 /** An emoji or image drawn over the video, like a text. */

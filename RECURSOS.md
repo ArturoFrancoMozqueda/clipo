@@ -14,7 +14,7 @@ conseguir más.
 
 | Recurso | Cantidad | Origen | Licencia |
 | --- | --- | --- | --- |
-| Tipografías | 14 | [Fontsource](https://fontsource.org) (Google Fonts, alojadas en la app, funcionan sin internet) | SIL Open Font License 1.1 / Apache 2.0 |
+| Tipografías | 99 | [Fontsource](https://fontsource.org) (Google Fonts, alojadas en la app, se descargan al usarlas y quedan guardadas) | SIL Open Font License 1.1 / Apache 2.0 |
 | Estilos rápidos de texto | 12 | Combinaciones propias de fuente + color + animación | Propias |
 | Stickers | 152 | [Microsoft Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (estilo plano) | MIT. Aviso en `public/stickers/fluent/LICENSE.txt` |
 | Filtros | 22 | Valores propios | Propios |
@@ -24,12 +24,14 @@ conseguir más.
 
 ### Tipografías incluidas
 
-Montserrat, Poppins, Bebas Neue, Anton, Oswald, Bangers, Luckiest Guy
-(Apache 2.0), Righteous, Permanent Marker (Apache 2.0), Caveat, Pacifico,
-Lobster, Dancing Script y Playfair Display. Todas OFL 1.1, salvo las marcadas.
+99 familias en 12 categorías (Modernas, Condensadas, Serif, Manuscritas, Caligrafía, Retro,
+Cómic, Redondeadas, Elegantes, Tecnología, Máquina de escribir, Decorativas y terror). Todas
+OFL 1.1 salvo seis Apache 2.0. Lista completa, licencia por familia y verificación de ñ/acentos
+en [docs/video-editor/LICENSES.md](docs/video-editor/LICENSES.md).
 
-Para agregar otra: `npm install @fontsource/<nombre>`, importa su CSS en
-`src/fonts.ts` y agrégala a la lista `FONTS`.
+Para agregar otra: `npm install @fontsource/<nombre>`, agrega sus archivos woff2 (latin y
+latin-ext del peso elegido) en `src/fontFiles.ts`, la familia en la lista `FONTS` de
+`src/fonts.ts` y su fila en `LICENSES.md`.
 
 ### Stickers
 
