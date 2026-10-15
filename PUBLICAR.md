@@ -271,6 +271,22 @@ Hoy no hay dónde publicar las versiones, así que no se activa. Pasos cuando lo
 4. Publica con `electron-builder --win --publish always` (con `GH_TOKEN` en el entorno para GitHub).
    Las actualizaciones **tienen que ir firmadas** con el mismo certificado (`verifyUpdateCodeSignature`).
 
+## 3c. Builds automáticos en GitHub (sin instalar nada)
+
+`.github/workflows/build.yml` compila todo en las máquinas de GitHub:
+
+- **En cada push a `main`:** corre los tests y genera el `.exe` de Windows (instalador y portable) y el `.apk` de Android de prueba. Para descargarlos: pestaña **Actions** → la ejecución → sección **Artifacts**.
+- **Con un tag `v*`:** además crea un Release con los archivos adjuntos. Por ejemplo:
+
+  ```bash
+  git tag v0.4.0 && git push origin v0.4.0
+  ```
+
+- **A mano:** Actions → Build → **Run workflow**.
+- **`package-lock.json`:** si quedó desactualizado, el workflow lo actualiza y hace commit en `main`.
+- **Firma de Windows:** si existen los secretos `CSC_LINK` (el `.pfx` en base64) y `CSC_KEY_PASSWORD`, el instalador sale firmado; si no, sale sin firmar.
+- **iOS** no está incluido: necesita un Mac con Xcode y la cuenta de Apple Developer.
+
 ## 4. Checklist de políticas de las tiendas
 
 ### Común (Google Play y App Store)
@@ -347,3 +363,4 @@ Hoy no hay dónde publicar las versiones, así que no se activa. Pasos cuando lo
 | `vercel.json`, `netlify.toml` | Hosting y cabeceras (CSP, COOP/COEP, Permissions-Policy) |
 | `ios/App/App/PrivacyInfo.xcprivacy` | Manifiesto de privacidad de iOS |
 | `android/app/src/main/res/xml/data_extraction_rules.xml` | Sin copia de seguridad de los datos de la app |
+| `.github/workflows/build.yml` | Builds automáticos de Windows y Android en GitHub |
