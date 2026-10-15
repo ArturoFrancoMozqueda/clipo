@@ -1,14 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
-import { AudioLines, Mic, Pause, Play, Square, TriangleAlert } from 'lucide-react';
+import { AudioLines, Mic, Pause, Play, Plus, Square, Trash2, TriangleAlert } from 'lucide-react';
 import { useStore } from '../store';
 import { engine } from '../engine';
 import { fmtTime } from '../model';
 import type { TextItem } from '../types';
 import {
-  SPEEDS, VOICES, addNarration, canRecord, encodeWav, openMic, startRecording, synthesize, voiceDownloadMB,
+  SPEEDS, VOICES, addNarration, canRecord, encodeWav, openMic, profileVoice, startRecording, synthesize, voiceDownloadMB,
   type Recording, type TtsProgress, type Voice,
 } from '../voice';
 import './voice.css';
+import { deleteProfile, listProfiles, warmUpClone, type VoiceProfile } from '../myVoice';
+import { MyVoiceSetup } from './MyVoiceSetup';
+
+const LIVELINESS = [
+  { label: 'Tranquila', value: 0.3 },
+  { label: 'Normal', value: 0.5 },
+  { label: 'Animada', value: 0.8 },
+];
+
+function useProfiles() {
+  const [list, setList] = useState<VoiceProfile[]>(listProfiles);
+  useEffect(() => {
+    const h = () => setList(listProfiles());
+    window.addEventListener('clipo:myvoices', h);
+    return () => window.removeEventListener('clipo:myvoices', h);
+  }, []);
+  return list;
+}
 
 const mb = (n: number) => `${Math.round(n / 1e6)} MB`;
 
@@ -163,8 +181,19 @@ export function TtsPanel() {
     return s.selection?.kind === 'text' ? s.project!.texts.find((t) => t.id === s.selection!.id) : undefined;
   });
   const [text, setText] = useState(source?.text ?? '');
-  const [voice, setVoice] = useState<Voice>(VOICES[0]);
+  const profiles = useProfiles();
+  const myVoices = profiles.map(profileVoice);
+  const [voice, setVoice] = useState<Voice>(() => myVoices[0] ?? VOICES[0]);
   const [speed, setSpeed] = useState(1);
+  const [liveliness, setLiveliness] = useState(0.5);
+  const [setup, setSetup] = useState(false);
+  const isClone = voice.engine === 'clone';
+  // Cloned voices take their liveliness from the panel; the others ignore it.
+  const effective = (v: Voice): Voice => (v.engine === 'clone' ? { ...v, exaggeration: liveliness } : v);
+  // Your voice needs a few minutes to get ready: start while the user is still typing.
+  useEffect(() => {
+    if (isClone) warmUpClone();
+  }, [isClone]);
   const [busy, setBusy] = useState<'create' | string | null>(null);
   const [progress, setProgress] = useState<TtsProgress | null>(null);
   const [error, setError] = useState('');
@@ -198,13 +227,13 @@ export function TtsPanel() {
     setPlaying(null);
     setVoice(v);
     setError('');
-    const key = `${v.id}@${speed}`;
+    const key = `${v.id}@${speed}@${liveliness}`;
     let url = samples.current.get(key);
     if (!url) {
       setBusy(v.id);
       setProgress(null);
       try {
-        const out = await synthesize(SAMPLE, v, speed, setProgress);
+        const out = await synthesize(SAMPLE, effective(v), speed, setProgress);
         url = URL.createObjectURL(encodeWav(out.samples, out.sampleRate));
         samples.current.set(key, url);
       } catch (e) {
@@ -230,7 +259,7 @@ export function TtsPanel() {
     setProgress(null);
     const start = source?.start ?? useStore.getState().time;
     try {
-      const secs = await addNarration(text, voice, speed, start, setProgress);
+      const secs = await addNarration(text, effective(voice), speed, start, setProgress);
       const s = useStore.getState();
       s.setPanel(null);
       s.notify(`Narración lista (${fmtTime(secs)}). Está en la pista de audio. Puedes deshacerlo.`);
@@ -274,7 +303,38 @@ export function TtsPanel() {
           ))}
         </div>
       )}
-      <p className="label">Voz</p>
+      <p className="label">Mi voz</p>
+      <div className="voice-grid">
+        {myVoices.map((v) => (
+          <div key={v.id} className={`voice-card mine ${voice.id === v.id ? 'active' : ''}`}>
+            <button className="voice-pick" disabled={!!busy} onClick={() => setVoice(v)} aria-pressed={voice.id === v.id}>
+              <b>{v.name}</b>
+              <small>{v.desc}</small>
+            </button>
+            <button className="voice-play" disabled={!!busy && busy !== v.id} onClick={() => preview(v)} aria-label={`Escuchar ${v.name}`} title="Escuchar">
+              {busy === v.id ? <span className="spinner" /> : playing === v.id ? <Pause size={20} /> : <Play size={20} />}
+            </button>
+            <button
+              className="voice-play"
+              disabled={!!busy}
+              title="Borrar esta voz"
+              aria-label={`Borrar la voz ${v.name}`}
+              onClick={async () => {
+                if (!confirm(`¿Borrar la voz "${v.name}"? Se elimina la grabación de este dispositivo.`)) return;
+                await deleteProfile(v.profileId!);
+                if (voice.id === v.id) setVoice(VOICES[0]);
+              }}
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+        ))}
+        <button className="voice-card voice-new" disabled={!!busy} onClick={() => setSetup(true)}>
+          <span><Plus size={18} /> <b>{myVoices.length ? 'Grabar otra voz' : 'Crear mi voz'}</b></span>
+          <small>Grábate 15 segundos y Clipo hablará como tú</small>
+        </button>
+      </div>
+      <p className="label">Voces de Clipo</p>
       <div className="voice-grid">
         {VOICES.map((v) => (
           <div key={v.id} className={`voice-card ${voice.id === v.id ? 'active' : ''}`}>
@@ -294,7 +354,20 @@ export function TtsPanel() {
           </div>
         ))}
       </div>
-      <p className="label">Velocidad</p>
+      {isClone && (
+        <>
+          <p className="label">Expresión</p>
+          <div className="chips">
+            {LIVELINESS.map((l) => (
+              <button key={l.value} className={`chip ${liveliness === l.value ? 'active' : ''}`} disabled={!!busy} onClick={() => setLiveliness(l.value)}>
+                {l.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {!isClone && <p className="label">Velocidad</p>}
+      {!isClone && (
       <div className="chips">
         {SPEEDS.map((sp) => (
           <button
@@ -307,6 +380,7 @@ export function TtsPanel() {
           </button>
         ))}
       </div>
+      )}
       {busy ? (
         <div className="export-running">
           <div className="progress"><span style={{ width: `${progress?.pct ?? 0}%` }} /></div>
@@ -322,7 +396,18 @@ export function TtsPanel() {
       <p className="muted small">
         {source ? 'La voz empezará donde empieza el texto seleccionado. ' : 'La voz empezará donde está la línea blanca. '}
         Se crea en tu dispositivo; la primera vez se descarga la voz (unos {voiceDownloadMB(voice)} MB) y queda guardada.
+        {isClone && ' Con tu voz, la primera narración de cada sesión tarda unos minutos en prepararse y cada frase alrededor de un minuto. Puedes seguir editando mientras tanto.'}
       </p>
+      {setup && (
+        <MyVoiceSetup
+          onClose={() => setSetup(false)}
+          onSaved={(p) => {
+            setSetup(false);
+            setVoice(profileVoice(p));
+            useStore.getState().notify(`Tu voz "${p.name}" está lista. Escribe un texto y toca Crear narración.`);
+          }}
+        />
+      )}
     </>
   );
 }

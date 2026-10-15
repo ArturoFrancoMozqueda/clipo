@@ -59,6 +59,20 @@ calidad y los paquetes CC0 no los traen. Para eso, importa un archivo propio
 | Lucía y Martín | es_ES-sharvard-medium | CC BY 3.0: requiere atribución |
 | Sofía y Mateo | Supertonic TTS 2 | Licencia del modelo en Hugging Face |
 
+### Mi voz (clonación de tu propia voz)
+
+Usa [Chatterbox Multilingual](https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX)
+de Resemble AI (**licencia MIT**), que funciona en el dispositivo con Transformers.js. La primera vez
+descarga unos 1.5 GB. Con tarjeta gráfica (WebGPU) una frase tarda segundos; sin ella, puede tardar
+más de un minuto.
+
+Reglas de uso que Clipo aplica:
+
+- Solo se puede crear una voz **grabándola en ese momento** con el micrófono (no subiendo audios de
+  otras personas) y leyendo en voz alta una frase de autorización con tu nombre.
+- Hay que marcar que es tu propia voz y que no la usarás para hacerte pasar por otra persona.
+- La grabación se guarda solo en tu dispositivo y se puede borrar desde el panel "Texto a voz".
+
 El motor que convierte texto en fonemas (`@diffusionstudio/piper-wasm`) incluye
 datos de **espeak-ng, licencia GPL-3.0**. Para uso personal no hay problema; si
 distribuyes Clipo, incluye el aviso de espeak-ng y un enlace a su código fuente

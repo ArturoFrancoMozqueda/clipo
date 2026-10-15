@@ -16,7 +16,8 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 // Tests use their own throwaway storage, never the user's projects.
-if (SMOKE) app.setPath('userData', fs.mkdtempSync(path.join(app.getPath('temp'), 'clipo-smoke-')));
+// CLIPO_SMOKE_DATA keeps a test profile between runs (so large AI models stay cached).
+if (SMOKE) app.setPath('userData', process.env.CLIPO_SMOKE_DATA || fs.mkdtempSync(path.join(app.getPath('temp'), 'clipo-smoke-')));
 
 // One window only: opening Clipo again focuses the running one.
 if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
@@ -59,6 +60,7 @@ function createWindow() {
   if (SMOKE) {
     win.webContents.on('console-message', (e) => {
       if (e.level === 'error') console.log('[renderer error]', e.message);
+      else if (e.message.includes('[clipo-clone]')) console.log(new Date().toISOString().slice(11, 19), e.message);
     });
     win.webContents.on('did-fail-load', (_e, code, desc) => {
       console.log('LOAD FAILED', code, desc);

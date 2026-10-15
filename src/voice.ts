@@ -7,6 +7,7 @@ import { uid, useStore } from './store';
 import { engine } from './engine';
 import { totalDuration } from './model';
 import type { TtsIn, TtsOut } from './ttsWorker';
+import { CLONE_DOWNLOAD_MB, speakAs, type VoiceProfile } from './myVoice';
 
 // ---------- saving audio to the project ----------
 
@@ -151,7 +152,12 @@ export interface Voice {
   desc: string;
   /** Approximate first-time download, in MB. */
   mb: number;
-  engine?: 'piper';
+  /** 'clone' = the user's own recorded voice (myVoice.ts). */
+  engine?: 'piper' | 'clone';
+  /** Saved voice profile, for cloned voices. */
+  profileId?: string;
+  /** 0.25..1: how lively a cloned voice sounds. */
+  exaggeration?: number;
   model: string;
   speaker?: string;
   voice?: string;
@@ -175,6 +181,9 @@ export const VOICES: Voice[] = [
   { id: 'F1', name: 'Sofía', desc: 'Estudio · expresiva, pesada', mb: 260, model: SUPERTONIC, voice: voiceUrl('F1'), lang: 'es' },
   { id: 'M1', name: 'Mateo', desc: 'Estudio · expresiva, pesada', mb: 260, model: SUPERTONIC, voice: voiceUrl('M1'), lang: 'es' },
 ];
+
+/** A saved "Mi voz" recording as a voice the narration panel can use. */
+export const profileVoice = (p: VoiceProfile): Voice => ({ id: `my-${p.id}`, name: p.name, desc: 'Tu voz · clonada', mb: CLONE_DOWNLOAD_MB, engine: 'clone', model: 'chatterbox', profileId: p.id });
 
 /** Approximate first-time download in MB. */
 export const voiceDownloadMB = (v: Voice) => v.mb;
@@ -241,10 +250,12 @@ export function splitSentences(text: string, max = 220): string[] {
 export function synthesize(text: string, voice: Voice, speed: number, onProgress?: (p: TtsProgress) => void) {
   const parts = splitSentences(text);
   if (!parts.length) return Promise.reject(new Error('empty'));
+  // The cloning model speaks ~15 s per call at most, so its sentences are kept shorter.
+  if (voice.engine === 'clone' && voice.profileId) return speakAs(voice.profileId, splitSentences(text, 160), voice.exaggeration ?? 0.5, onProgress);
   const id = nextId++;
   return new Promise<{ samples: Float32Array; sampleRate: number }>((resolve, reject) => {
     pending.set(id, { onProgress, resolve, reject });
-    const msg: TtsIn = { type: 'speak', id, engine: voice.engine, model: voice.model, speaker: voice.speaker, voice: voice.voice, lang: voice.lang, speed, parts };
+    const msg: TtsIn = { type: 'speak', id, engine: voice.engine === 'piper' ? 'piper' : undefined, model: voice.model, speaker: voice.speaker, voice: voice.voice, lang: voice.lang, speed, parts };
     getWorker().postMessage(msg);
   });
 }
