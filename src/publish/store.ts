@@ -6,9 +6,10 @@ import { NETWORKS } from './networks';
 import { createJobs, isFinal, PublishQueue, type NewBatch } from './queue';
 import { deleteBlobs, deleteJobs, getBlob, listJobs, putBlob, saveJob } from './storage';
 import type { ConnectedAccount, NetworkId, Publisher, PublishJob } from './types';
+import { metaPublisher } from './meta';
 import { youtubePublisher } from './youtube';
 
-const PUBLISHERS: Publisher[] = [youtubePublisher];
+export const PUBLISHERS: Publisher[] = [youtubePublisher, metaPublisher];
 
 export function publisherFor(network: NetworkId): Publisher | undefined {
   if (NETWORKS[network].state !== 'ready') return undefined;

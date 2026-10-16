@@ -17,8 +17,9 @@ export interface PostOptions {
   privacy: Privacy;
   madeForKids: boolean;
   /**
-   * Epoch ms. The network itself publishes at this time (YouTube `publishAt`), so it works with Clipo closed.
-   * The video is uploaded right away as private until then.
+   * Epoch ms. The network itself publishes at this time (YouTube `publishAt`, Facebook
+   * `scheduled_publish_time`), so it works with Clipo closed. The video is uploaded right away,
+   * private / unpublished until then.
    */
   nativePublishAt?: number;
 }
@@ -37,9 +38,11 @@ export interface VideoInfo {
 /** An account the user connected on this device. Tokens never leave the desktop app's main process. */
 export interface ConnectedAccount {
   id: string;
-  provider: 'google';
+  provider: 'google' | 'meta';
   networks: NetworkId[];
   name: string;
+  /** What it is, e.g. "Página de Facebook" (Meta accounts). */
+  detail?: string;
   avatar?: string;
   connectedAt: number;
 }
@@ -106,7 +109,7 @@ export interface RemoteStatus {
 export type Availability = { ok: true } | { ok: false; reason: string };
 
 /**
- * One way to publish to one or more networks. Implementations: the YouTube desktop adapter today;
+ * One way to publish to one or more networks. Implementations: the YouTube and Meta desktop adapters today;
  * a paid intermediary or an own server could implement the same interface later.
  */
 export interface Publisher {

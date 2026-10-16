@@ -1,5 +1,6 @@
 // OAuth 2.0 for installed apps: PKCE (RFC 7636, S256) and a one-shot loopback redirect
 // on 127.0.0.1 (RFC 8252). No client secret is needed by this part.
+// Meta (electron/publish/meta.cjs) reuses the loopback and the state, with a "localhost" redirect.
 const crypto = require('node:crypto');
 const http = require('node:http');
 
@@ -55,39 +56,68 @@ const PAGE = (ok) => `<!doctype html><meta charset="utf-8"><title>Clipo</title>
 /**
  * Listen once on http://127.0.0.1:<free port>. Resolves with { redirectUri, result, cancel } where
  * `result` resolves with { code } or { error } and rejects on timeout or cancel.
+ * `host: 'localhost'` is for providers that only accept "localhost" redirects (Meta): it listens on
+ * 127.0.0.1 and ::1 at the same port and the redirect is http://localhost:<port>/. `port` is tried
+ * first (so it can be registered with the provider) and a free one is used if it is taken.
  */
-function startLoopback({ state, timeoutMs = 5 * 60_000 }) {
-  return new Promise((resolveStart, rejectStart) => {
-    let finish;
-    const result = new Promise((res, rej) => {
-      finish = (err, value) => {
-        clearTimeout(timer);
-        server.close();
-        if (err) rej(err);
-        else res(value);
-      };
-    });
-    result.catch(() => {});
-    const server = http.createServer((req, res) => {
-      const u = new URL(req.url || '/', 'http://127.0.0.1');
-      const got = u.pathname === '/' ? parseCallback(u, state) : null;
-      if (!got) {
-        res.writeHead(404).end();
-        return;
-      }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', Connection: 'close' }).end(PAGE(!!got.code));
-      finish(null, got);
-    });
-    const timer = setTimeout(() => finish(new Error('timeout')), timeoutMs);
-    server.on('error', (e) => {
+async function startLoopback({ state, timeoutMs = 5 * 60_000, host = '127.0.0.1', port = 0 }) {
+  const servers = [];
+  let timer;
+  let finish;
+  const result = new Promise((res, rej) => {
+    finish = (err, value) => {
       clearTimeout(timer);
-      rejectStart(e);
-    });
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolveStart({ redirectUri: `http://127.0.0.1:${port}`, result, cancel: () => finish(new Error('cancelled')) });
-    });
+      for (const s of servers) s.close();
+      if (err) rej(err);
+      else res(value);
+    };
   });
+  result.catch(() => {});
+  const handler = (req, res) => {
+    const u = new URL(req.url || '/', 'http://127.0.0.1');
+    const got = u.pathname === '/' ? parseCallback(u, state) : null;
+    if (!got) {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', Connection: 'close' }).end(PAGE(!!got.code));
+    finish(null, got);
+  };
+  const listen = (address, p) =>
+    new Promise((res, rej) => {
+      const server = http.createServer(handler);
+      server.once('error', rej);
+      server.listen(p, address, () => {
+        servers.push(server);
+        res(server.address().port);
+      });
+    });
+  const closeAll = () => servers.splice(0).forEach((s) => s.close());
+
+  let bound = 0;
+  for (const p of port ? [port, 0, 0, 0] : [0, 0, 0]) {
+    try {
+      bound = await listen('127.0.0.1', p);
+    } catch (e) {
+      if (p) continue;
+      throw e;
+    }
+    if (host !== 'localhost') break;
+    try {
+      await listen('::1', bound);
+      break;
+    } catch (e) {
+      // No IPv6 on this machine: 127.0.0.1 alone is enough. Taken by someone else: try another port,
+      // so the browser can't hand the redirect to another program.
+      if (e.code !== 'EADDRINUSE') break;
+      closeAll();
+      bound = 0;
+    }
+  }
+  if (!bound) throw new Error('no free port');
+  timer = setTimeout(() => finish(new Error('timeout')), timeoutMs);
+  const redirectUri = host === 'localhost' ? `http://localhost:${bound}/` : `http://127.0.0.1:${bound}`;
+  return { redirectUri, result, cancel: () => finish(new Error('cancelled')) };
 }
 
 module.exports = { createVerifier, challengeS256, createState, buildAuthUrl, parseCallback, startLoopback };

@@ -127,13 +127,19 @@ jobs:
             echo "Sin certificado: el instalador sale sin firmar."
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
           fi
-      # Built-in Google client, so "Conectar con Google" needs no setup (repository secrets).
+      # Built-in Google client, so "Conectar con Google" needs no setup, and the Meta App ID
+      # (repository secrets). The Meta App Secret is never built in: the owner pastes it in Cuentas.
       - name: Cliente de Google integrado
         shell: bash
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          META_APP_ID: ${{ secrets.META_APP_ID }}
         run: |
+          if [ -n "$META_APP_ID" ]; then
+            node -e "require('fs').writeFileSync('electron/publish/meta-client.json', JSON.stringify({ appId: process.env.META_APP_ID }))"
+            echo "App ID de Meta integrado."
+          fi
           if [ -n "$GOOGLE_CLIENT_ID" ]; then
             node -e "require('fs').writeFileSync('electron/publish/google-client.json', JSON.stringify({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET || undefined }))"
             echo "Cliente de Google integrado."
@@ -174,13 +180,19 @@ jobs:
         with:
           name: web-dist
           path: dist
-      # Built-in Google client, so "Conectar con Google" needs no setup (repository secrets).
+      # Built-in Google client, so "Conectar con Google" needs no setup, and the Meta App ID
+      # (repository secrets). The Meta App Secret is never built in: the owner pastes it in Cuentas.
       - name: Cliente de Google integrado
         shell: bash
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          META_APP_ID: ${{ secrets.META_APP_ID }}
         run: |
+          if [ -n "$META_APP_ID" ]; then
+            node -e "require('fs').writeFileSync('electron/publish/meta-client.json', JSON.stringify({ appId: process.env.META_APP_ID }))"
+            echo "App ID de Meta integrado."
+          fi
           if [ -n "$GOOGLE_CLIENT_ID" ]; then
             node -e "require('fs').writeFileSync('electron/publish/google-client.json', JSON.stringify({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET || undefined }))"
             echo "Cliente de Google integrado."

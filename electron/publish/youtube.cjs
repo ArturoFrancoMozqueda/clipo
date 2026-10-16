@@ -3,12 +3,12 @@
 // - Tokens and the optional client secret: encrypted with Electron safeStorage, never sent to the page.
 // - Upload: YouTube Data API v3 resumable upload, in chunks, resumed after drops.
 // The Google Cloud client is the user's own (they paste its ID in Clipo); nothing secret ships in the app.
-const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createVerifier, challengeS256, createState, buildAuthUrl, startLoopback } = require('./oauth.cjs');
 const { CHUNK_SIZE, chunkRange, nextOffset, isRetryableStatus, backoffMs, explainApiError } = require('./resumable.cjs');
 const { fail } = require('./errors.cjs');
+const { bad, toBuffer, bufferSource, fileSource, tempFiles } = require('./files.cjs');
 
 const GOOGLE = {
   auth: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -30,8 +30,6 @@ const GIB = 1024 ** 3;
 const MAX_VIDEO_BYTES = 256 * GIB;
 /** A video sent in one IPC message (the old API) is held twice in memory: keep it bounded. */
 const MAX_SINGLE_SHOT_BYTES = 2 * GIB;
-/** Largest piece accepted by yt:uploadAppend. */
-const MAX_APPEND_BYTES = 64 * 1024 * 1024;
 /** YouTube rejects custom thumbnails over 2 MB. */
 const MAX_THUMB_BYTES = 2 * 1024 * 1024;
 const VIDEO_MIMES = new Set(['video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska']);
@@ -40,15 +38,6 @@ const PRIVACY = new Set(['public', 'unlisted', 'private']);
 const ID_RE = /^[\w-]{1,128}$/;
 
 const isId = (v) => typeof v === 'string' && ID_RE.test(v);
-const bad = (what) => fail(`Clipo envió datos no válidos para subir (${what}). Reintenta; si sigue pasando, vuelve a exportar el video.`, false);
-
-/** ArrayBuffer / typed array / Buffer from IPC as a Buffer view (no copy), or null. */
-function toBuffer(v) {
-  if (Buffer.isBuffer(v)) return v;
-  if (v instanceof ArrayBuffer) return Buffer.from(v);
-  if (ArrayBuffer.isView(v)) return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
-  return null;
-}
 
 /** The video resource for videos.insert, rebuilt field by field from an allow-list. */
 function buildMetadata(m) {
@@ -74,29 +63,6 @@ function buildMetadata(m) {
     status.publishAt = new Date(t).toISOString();
   }
   return { snippet, status };
-}
-
-/** Where the bytes of an upload come from: memory (old single-shot API) or a temp file (chunked API). */
-function bufferSource(buf) {
-  return { size: buf.length, read: async (start, end) => buf.subarray(start, end + 1), close: async () => {} };
-}
-async function fileSource(file) {
-  const fh = await fs.promises.open(file, 'r');
-  const { size } = await fh.stat();
-  return {
-    size,
-    read: async (start, end) => {
-      const out = Buffer.allocUnsafe(end - start + 1);
-      let at = 0;
-      while (at < out.length) {
-        const { bytesRead } = await fh.read(out, at, out.length - at, start + at);
-        if (!bytesRead) throw fail('El archivo temporal del video se cortó. Vuelve a pulsar “Publicar”.', false);
-        at += bytesRead;
-      }
-      return out;
-    },
-    close: () => fh.close(),
-  };
 }
 
 const sleep = (ms, signal) =>
@@ -402,48 +368,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
   // ---------- chunked transfer from the page (no whole video in one IPC message) ----------
   // yt:uploadBegin → yt:uploadAppend (in order, ≤ 64 MiB each) → yt:upload({ fileId, … }).
   // The video is written to a private temp file and read back chunk by chunk while uploading.
-  const tmpDir = path.join(app.getPath('temp'), 'clipo-upload');
-  /** fileId -> { file, total, written, mime } */
-  const files = new Map();
-  // Files left by a previous run (crash, forced quit) are useless: their ids are gone.
-  try {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  } catch {}
-
-  async function beginFile(total, mime) {
-    if (!Number.isSafeInteger(total) || total <= 0 || total > MAX_VIDEO_BYTES) throw bad('tamaño');
-    if (mime !== undefined && !VIDEO_MIMES.has(mime)) throw bad('tipo de video');
-    await fs.promises.mkdir(tmpDir, { recursive: true, mode: 0o700 });
-    const fileId = crypto.randomUUID();
-    const file = path.join(tmpDir, `${fileId}.part`);
-    await fs.promises.writeFile(file, Buffer.alloc(0), { mode: 0o600 });
-    files.set(fileId, { file, total, written: 0, mime: mime || 'video/mp4', busy: false });
-    return { fileId, chunkLimit: MAX_APPEND_BYTES };
-  }
-
-  async function appendFile(fileId, bytes) {
-    const f = typeof fileId === 'string' ? files.get(fileId) : undefined;
-    if (!f) throw bad('archivo');
-    const buf = toBuffer(bytes);
-    if (!buf || !buf.length || buf.length > MAX_APPEND_BYTES) throw bad('trozo');
-    if (f.written + buf.length > f.total) throw bad('tamaño');
-    if (f.busy) throw bad('orden');
-    f.busy = true;
-    try {
-      await fs.promises.appendFile(f.file, buf);
-      f.written += buf.length;
-    } finally {
-      f.busy = false;
-    }
-    return { written: f.written, total: f.total };
-  }
-
-  async function discardFile(fileId) {
-    const f = typeof fileId === 'string' ? files.get(fileId) : undefined;
-    if (!f) return;
-    files.delete(fileId);
-    await fs.promises.rm(f.file, { force: true }).catch(() => {});
-  }
+  const files = tempFiles({ app, name: 'clipo-upload', maxBytes: MAX_VIDEO_BYTES, mimes: VIDEO_MIMES });
 
   async function upload(sender, req) {
     if (!req || typeof req !== 'object') throw bad('pedido');
@@ -457,12 +382,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
       if (!tb || !tb.length || tb.length > MAX_THUMB_BYTES || !THUMB_MIMES.has(req.thumbnail.mime)) throw fail('La portada tiene que ser JPG o PNG de hasta 2 MB.', false);
       thumbnail = { bytes: tb, mime: req.thumbnail.mime };
     }
-    let file;
-    if (req.fileId !== undefined) {
-      file = typeof req.fileId === 'string' ? files.get(req.fileId) : undefined;
-      if (!file) throw bad('archivo');
-      if (file.written !== file.total) throw bad('archivo incompleto');
-    }
+    const file = req.fileId !== undefined ? files.complete(req.fileId) : undefined;
     if (running.has(jobId)) throw fail('Ese video ya se está subiendo.', false);
     const ac = new AbortController();
     running.set(jobId, ac);
@@ -489,7 +409,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
       report(src.size, src.size);
       if (!video?.id) throw fail('YouTube terminó la subida pero no devolvió el video. Revisa YouTube Studio antes de reintentar.', false);
       // Done: the temp copy is no longer needed. (After a failure it is kept so "Reintentar" resumes.)
-      if (file) await discardFile(req.fileId);
+      if (file) await files.discard(req.fileId);
       const note = thumbnail ? await setThumbnail(accountId, video.id, thumbnail) : undefined;
       return { videoId: video.id, note };
     } catch (e) {
@@ -560,21 +480,16 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
   handle('yt:accounts', () => (canEncrypt() ? load().accounts.map(publicAccount) : []));
   handle('yt:disconnect', (_e, id) => disconnect(id));
   handle('yt:upload', (e, req) => upload(e.sender, req));
-  handle('yt:uploadBegin', (_e, total, mime) => beginFile(total, mime));
-  handle('yt:uploadAppend', (_e, fileId, bytes) => appendFile(fileId, bytes));
-  handle('yt:uploadDiscard', (_e, fileId) => discardFile(fileId));
+  handle('yt:uploadBegin', (_e, total, mime) => files.begin(total, mime));
+  handle('yt:uploadAppend', (_e, fileId, bytes) => files.append(fileId, bytes));
+  handle('yt:uploadDiscard', (_e, fileId) => files.discard(fileId));
   handle('yt:cancelUpload', (_e, jobId) => (isId(jobId) ? running.get(jobId)?.abort() : undefined));
   handle('yt:status', (_e, accountId, videoId) => status(accountId, videoId));
 
   return {
     activeUploads: () => running.size,
     /** Remove the temp copies of videos (call on quit). */
-    cleanup: () => {
-      files.clear();
-      try {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-      } catch {}
-    },
+    cleanup: files.cleanup,
   };
 }
 

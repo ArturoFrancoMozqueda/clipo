@@ -1,6 +1,6 @@
 # Publicar en redes desde Clipo
 
-Estado al 15 de octubre de 2026 (Clipo 0.4.x, Fase B). Las reglas de cada red
+Estado al 15 de octubre de 2026 (Clipo 0.5.x). Las reglas de cada red
 cambian seguido: revisa los enlaces oficiales antes de depender de una cifra.
 
 ## 1. Qué hace Clipo hoy
@@ -8,9 +8,9 @@ cambian seguido: revisa los enlaces oficiales antes de depender de una cifra.
 | Red | Estado en Clipo | Dónde funciona |
 | --- | --- | --- |
 | YouTube y YouTube Shorts | **Funciona** (adaptador real) | Solo app de escritorio |
+| Facebook (páginas) | **Funciona** con tu app de Meta (sección 2b) | Solo app de escritorio |
+| Instagram Reels (cuentas profesionales) | **Funciona** con tu app de Meta (sección 2b); programar solo con Clipo abierto | Solo app de escritorio |
 | TikTok | Requiere configuración | — |
-| Instagram Reels | Requiere configuración | — |
-| Facebook | Requiere configuración | — |
 | X | Requiere configuración | — |
 | LinkedIn | Requiere configuración | — |
 
@@ -29,11 +29,13 @@ src/publish/queue.ts      cola: estados puros + ejecutor (una subida a la vez)
 src/publish/text.ts       hashtags, texto por red, reglas de YouTube/Shorts
 src/publish/networks.ts   qué red está lista y qué le falta a cada una
 src/publish/youtube.ts    Publisher de YouTube (habla con la app de escritorio)
+src/publish/meta.ts       Publisher de Facebook (páginas) e Instagram Reels
 src/publish/store.ts      estado de la UI, programador local, guardado
 src/publish/storage.ts    IndexedDB "clipo-publish" (cola y videos pendientes)
 src/components/PublishPanel.tsx   panel "Publicar en redes"
 electron/preload.cjs      puente seguro página ↔ proceso main
 electron/publish/*.cjs    OAuth (PKCE + loopback), subida reanudable, tokens cifrados
+                          (youtube.cjs, meta.cjs, files.cjs: el video pasa en partes por un archivo temporal)
 ```
 
 `Publisher` es la pieza enchufable: un intermediario de pago o un servidor
@@ -48,9 +50,13 @@ reintentable y lo que no llegó a salir queda como "No se publicó".
 
 ### Programar
 
-- **YouTube lo publica a la hora** (recomendado): Clipo sube el video ahora como
-  privado con `status.publishAt`; YouTube lo hace público a esa hora aunque
+- **La red lo publica a la hora** (recomendado): Clipo sube el video ahora como
+  privado con `status.publishAt` (YouTube) o sin publicar con
+  `scheduled_publish_time` (Facebook); la red lo publica a esa hora aunque
   Clipo esté cerrado.
+- **Instagram no tiene programación por API**: aunque elijas lo anterior, el
+  Reel queda en la cola local de Clipo para esa hora (el panel lo avisa: "Clipo
+  debe estar abierto a esa hora").
 - **Clipo lo sube a la hora**: solo si Clipo está abierto, con la computadora
   encendida y con internet. Si no, queda como "No se publicó". Programar con la
   app cerrada en redes sin programación nativa exige un servidor.
@@ -151,9 +157,160 @@ para YouTube y Shorts.
   dominio verificado, video mostrando el uso). Para uso personal no hace falta.
 - YouTube puede pedir una **auditoría de cumplimiento** de la API para ampliar cupo.
 
-## 3. TikTok, Instagram, Facebook, X y LinkedIn: "Publicar con la app"
+## 2b. Registrar Clipo en Meta (Facebook e Instagram)
 
-Para estas redes Clipo no publica solo (abajo se explica por qué), pero lo deja a un toque. En
+Clipo publica en **páginas de Facebook** y en **Reels de cuentas profesionales de Instagram** con
+la Graph API oficial de Meta (**v26.0**, publicada el 29 de julio de 2026; Clipo usa una sola
+constante, `GRAPH_VERSION` en `electron/publish/meta.cjs`). Para eso hace falta **una app de Meta
+propia**, que se crea una sola vez y se queda en **modo de desarrollo**: como tú eres su
+administrador, puedes usar todos los permisos sin la revisión de Meta ni verificar un negocio
+(Meta da "acceso estándar" automático a quien tiene un rol en la app).
+
+### Lo que tiene que tener tu cuenta (antes de empezar)
+
+1. **Una página de Facebook** en la que puedas crear contenido (tener "acceso a Facebook" con
+   control total o con la tarea *Contenido*). Los **perfiles personales no se pueden usar** por API.
+2. **Instagram profesional** (para Reels): en la app de Instagram, **Perfil → ☰ → Configuración →
+   Tipo de cuenta y herramientas → Cambiar a cuenta profesional** → *Creador* o *Empresa*. Las
+   cuentas personales no se pueden usar por API.
+3. **Vincular Instagram con la página**: en Facebook, entra a la página → **Configuración →
+   Cuentas vinculadas → Instagram → Conectar cuenta** (o desde Instagram: **Editar perfil → Página →
+   Conectar**, o en Meta Business Suite → Configuración → Cuentas de Instagram). Sin esa vinculación,
+   Clipo no encuentra la cuenta de Instagram.
+
+### Crear la app (una sola vez)
+
+1. Entra a <https://developers.facebook.com/> con tu Facebook y pulsa **Empezar / Get started**
+   para registrarte como desarrollador (pide confirmar tu correo o tu teléfono).
+2. **Mis apps → Crear app** (<https://developers.facebook.com/apps/creation/>). Nombre: "Clipo";
+   correo de contacto: el tuyo. **Siguiente**.
+3. **Casos de uso**: marca **"Administrar todo en tu página"** (*Manage everything on your Page*)
+   y **"Administrar mensajes y contenido en Instagram"** (*Manage messaging & content on
+   Instagram*), en su variante **con inicio de sesión con Facebook** (*API setup with Facebook
+   login*). Si la pantalla no deja combinarlos, elige **Otro** → tipo de app **Negocios**
+   (*Business*) y agrega los productos a mano en el paso 5. Meta suma solo el producto
+   **Inicio de sesión con Facebook para empresas** (*Facebook Login for Business*).
+4. **Negocio**: puedes elegir **"No quiero conectar un portfolio comercial todavía"** (los datos son
+   tuyos). Si tus páginas están en un portfolio comercial, conéctalo. **Siguiente** hasta
+   **Ir al panel**.
+5. **Permisos**: en el panel, en cada caso de uso → **Personalizar** (o **Revisión de la app →
+   Permisos y funciones**), agrega:
+   - `pages_show_list` — ver tus páginas
+   - `pages_read_engagement` — leer datos básicos de la página
+   - `pages_manage_posts` — publicar videos en la página
+   - `business_management` — solo si las páginas están en un portfolio comercial
+   - `instagram_basic` — ver la cuenta de Instagram vinculada
+   - `instagram_content_publish` — publicar Reels
+
+   No hace falta pedir "acceso avanzado" ni enviar nada a revisión.
+6. **Inicio de sesión con Facebook para empresas → Configuración** (*Settings*): deja activados
+   **Inicio de sesión con OAuth del cliente** y **Inicio de sesión con OAuth web**, y **Forzar
+   HTTPS** y el **modo estricto** como vienen. Mientras la app esté en desarrollo, Meta acepta
+   las direcciones `http://localhost` sin registrarlas. Si al conectar ves *"URL bloqueada"*,
+   agrega exactamente `http://localhost:47615/` en **URI de redireccionamiento de OAuth válidos**
+   y guarda (Clipo usa ese puerto siempre que esté libre).
+7. *(Opcional, solo si Meta lo pide)* **Inicio de sesión con Facebook para empresas →
+   Configuraciones → Crear configuración**: tipo de token **Token de acceso de usuario**, los
+   permisos del paso 5 y tus páginas y cuenta de Instagram. Copia el **ID de configuración**.
+   Hace falta si al conectar Meta muestra *"Invalid Scopes"* o dice que el inicio de sesión no
+   está disponible para la app.
+8. **Configuración de la app → Básica**: copia el **Identificador de la app** (*App ID*, solo
+   números) y la **Clave secreta de la app** (*App Secret*, botón **Mostrar**; pide tu contraseña).
+9. **Modo de la app**: déjalo en **Desarrollo** (*Development*). No lo pases a "Activo": entonces sí
+   haría falta la revisión de Meta y una política de privacidad.
+
+### En Clipo
+
+**Publicar → Cuentas → Facebook e Instagram → Configuración de Meta**: pega el **App ID**, la
+**clave secreta** y, si lo creaste, el **ID de configuración**. **Guardar** y **Conectar con
+Facebook**.
+
+- La **clave secreta no va dentro de los instaladores** de Clipo: con ella cualquiera podría actuar
+  como tu app. Se pega una vez en tu computadora y queda cifrada con `safeStorage`.
+- El **App ID sí es público** (va en cada inicio de sesión). Si lo guardas como secreto del
+  repositorio, los instaladores lo traen y en Cuentas solo pegas la clave secreta:
+
+  ```bash
+  gh secret set META_APP_ID
+  ```
+
+  El workflow lo escribe en `electron/publish/meta-client.json` (no se sube al repositorio). Para
+  probar en local: `CLIPO_META_APP_ID=... npm run app:dev`.
+
+### Qué pasa al conectar
+
+1. Se abre tu navegador en Facebook: *"Clipo solicita acceso…"*. Puede avisar que la app no está
+   revisada o está en desarrollo: es normal, la app es tuya.
+2. Pulsa **Editar acceso / Elegir lo que permites** y marca **tus páginas y su cuenta de
+   Instagram**. Deja marcados todos los permisos.
+3. Ves "Listo, ya puedes cerrar esta pestaña" y vuelves a Clipo, que muestra cada página
+   ("Página de Facebook") y cada Instagram ("@cuenta · vinculada a la página…").
+4. Para agregar otra página después, **Conectar de nuevo** reemplaza lo de esa cuenta de Facebook.
+
+### Límites (verificados en la documentación, oct. 2026)
+
+- **Instagram no tiene programación por API**: si programas un Reel, lo programa Clipo y **Clipo
+  debe estar abierto a esa hora** (con internet). Si no, queda como "No se publicó". Facebook sí
+  programa solo (entre 10 minutos y 6 meses), con Clipo cerrado.
+- **Instagram: 100 publicaciones por API cada 24 h** por cuenta. Clipo consulta
+  `content_publishing_limit` antes de subir y avisa si llegaste al tope.
+- **Reels por API**: MP4 o MOV (H.264/HEVC + AAC), **3 s a 15 min**, **hasta 300 MB**, hasta
+  1920 px de ancho, 23–60 fps; texto de hasta 2200 caracteres, 30 hashtags y 20 menciones.
+  La portada propia exige una URL pública, así que Instagram usa un cuadro del video.
+- **Facebook**: hasta 10 GB y 4 h (lo que Clipo ya controla en `src/platforms.ts`). Facebook no
+  tiene "no listado" ni "privado": con esas opciones el video se sube **sin publicar** y queda en
+  la biblioteca de videos de la página.
+- Los tokens de página **no vencen**, pero Meta los invalida si cambias la contraseña de Facebook,
+  dejas de administrar la página o quitas la app en *Configuración → Apps y sitios web*. Entonces
+  Clipo dice "La conexión con Facebook venció o se revocó": pulsa **Conectar con Facebook** otra vez.
+
+### Cómo conecta y publica Clipo (técnico)
+
+- **Inicio de sesión** ("manual flow",
+  <https://developers.facebook.com/docs/facebook-login/guides/advanced/manual-flow>): el navegador
+  del sistema abre `https://www.facebook.com/v26.0/dialog/oauth` con `client_id`, `state` aleatorio,
+  `response_type=code` y `redirect_uri=http://localhost:<puerto>/` (puerto 47615 si está libre;
+  Clipo escucha en 127.0.0.1 y ::1 solo durante el inicio de sesión, máx. 5 minutos). Sin
+  configuración pide `scope=` (los permisos de arriba) con `extras={"setup":{"channel":"IG_API_ONBOARDING"}}`,
+  el diálogo de Meta para elegir Instagram; con ID de configuración usa `config_id`
+  (<https://developers.facebook.com/docs/facebook-login/facebook-login-for-business>).
+- **Tokens** (<https://developers.facebook.com/docs/facebook-login/guides/access-tokens/get-long-lived>):
+  `GET /oauth/access_token` cambia el código por un token de usuario (necesita la clave secreta; Meta
+  ofrece PKCE sin secreto solo en su flujo OIDC "en pruebas", que no sirve para el token largo), luego
+  `grant_type=fb_exchange_token` da el token de **60 días**, y `GET /me/accounts` da los **tokens de
+  página, que no vencen**, junto con `instagram_business_account`. Clipo verifica en
+  `/me/permissions` qué permisos diste. Todo se guarda cifrado en `<userData>/publish/meta.json`;
+  la página nunca ve tokens ni la clave secreta.
+- **appsecret_proof** en cada llamada (HMAC-SHA256 con la clave secreta, en su forma con
+  `appsecret_time` como muestra la documentación; si Graph no la acepta, Clipo usa la forma clásica)
+  (<https://developers.facebook.com/docs/facebook-login/security>).
+- **Facebook** (<https://developers.facebook.com/docs/graph-api/reference/page/videos/>):
+  `POST graph-video.facebook.com/v26.0/{page-id}/videos` en partes con el token de página:
+  `upload_phase=start` (`file_size`) → `transfer` (cada parte que Facebook pide con
+  `start_offset`/`end_offset`, reintentos con espera creciente) → `finish` con `title`,
+  `description` y, para programar, `published=false` + `scheduled_publish_time`. Portada opcional con
+  `POST /{video-id}/thumbnails`; enlace con `permalink_url`. Se eligió este método (y no Reels de
+  página) porque sirve para cualquier formato (4:5, 1:1, 16:9, 9:16), cualquier duración y la
+  programación nativa, solo con el token de página que no vence; la API nueva
+  (`/{app-id}/uploads`) exige el token de usuario de 60 días.
+- **Instagram** (<https://developers.facebook.com/docs/instagram-platform/content-publishing>):
+  `POST /{ig-user-id}/media` con `media_type=REELS`, `upload_type=resumable`, `caption` y
+  `share_to_feed=true` → `id` + `uri`; el video va a `rupload.facebook.com/ig-api-upload/v26.0/{id}`
+  con `Authorization: OAuth <token>`, `offset: 0` y `file_size` (no hace falta una URL pública);
+  Clipo consulta `status_code` hasta `FINISHED` (`ERROR`/`EXPIRED` se explican) y publica con
+  `POST /{ig-user-id}/media_publish`. El enlace sale de `permalink`. "Reintentar" después de que
+  Instagram ya recibió el video solo vuelve a publicar.
+- **Errores**: `electron/publish/meta-errors.cjs` traduce los códigos de Graph (190 sesión vencida,
+  10/200 permisos, 4/17/32/613 y 80001+ límites, 368 bloqueo por spam, subcódigos 2207xxx de
+  Instagram) a mensajes en español y dice si sirve reintentar.
+- **Desconectar** borra la cuenta del equipo; al desconectar la última de ese Facebook, Clipo
+  revoca el permiso con `DELETE /{user-id}/permissions`.
+- Probado contra un Meta simulado en `tests/meta-desktop.test.ts` (sin cuenta real).
+
+## 3. TikTok, X y LinkedIn (y en la web o el teléfono, todas): "Publicar con la app"
+
+Para TikTok, X y LinkedIn Clipo no publica solo (abajo se explica por qué), y en la web y el
+teléfono tampoco Facebook ni Instagram, pero lo deja a un toque. En
 **Redes → Guardar una versión para cada formato**, cada versión lista tiene **"Publicar en …"**:
 
 - **En el teléfono:** copia el texto de esa red y abre la hoja de compartir con el video. Eliges
@@ -167,8 +324,10 @@ mismo que subirlo a mano, sin tener que buscar el archivo ni reescribir el texto
 
 ## 3b. Por qué no se publica solo en esas redes (API)
 
-Ninguna de estas tiene adaptador. Cada una necesita trabajo de registro y
-revisión que no depende del código.
+TikTok, X y LinkedIn no tienen adaptador. Cada una necesita trabajo de registro y
+revisión que no depende del código. (Facebook e Instagram sí lo tienen: sección 2b.
+Funciona sin revisión porque la app de Meta es tuya y queda en modo de desarrollo; para que otras
+personas la usen haría falta acceso avanzado, revisión de la app y verificar el negocio.)
 
 ### TikTok — Content Posting API
 - App en TikTok for Developers con el permiso `video.publish` (Direct Post).
@@ -177,22 +336,6 @@ revisión que no depende del código.
 - Hay que consultar `creator_info` y mostrar exactamente las opciones de
   privacidad que TikTok devuelve; límites diarios por usuario y por app.
 - Docs: <https://developers.tiktok.com/doc/content-posting-api-get-started>
-
-### Instagram Reels — Instagram Platform (Meta)
-- Solo **cuentas profesionales** (Empresa o Creador).
-- App de Meta con `instagram_business_content_publish` (inicio de sesión con
-  Instagram) o `instagram_content_publish` + página de Facebook vinculada.
-- Para cuentas que no son de los desarrolladores de la app: **Advanced Access**,
-  que exige **revisión de la app** y **verificación del negocio** (semanas).
-- El video tiene que estar en una **URL pública** cuando Meta lo descarga: sin
-  servidor o intermediario no se puede desde una app local.
-- Límite aproximado: 100 publicaciones por API cada 24 h por cuenta.
-- Docs: <https://developers.facebook.com/docs/instagram-platform/content-publishing>
-
-### Facebook — Video API / páginas
-- Solo **páginas** (no perfiles personales), con permisos de páginas
-  (`pages_manage_posts` y relacionados) y la revisión de Meta para uso general.
-- Docs: <https://developers.facebook.com/docs/video-api/guides/publishing>
 
 ### X
 - Desde febrero de 2026 no hay plan gratis para publicar: **pago por uso con
@@ -214,3 +357,8 @@ revisión que no depende del código.
   `Project.publish.posts` para precargar texto y portada guardados con el proyecto.
 - Probar una subida real con un ID de cliente propio (no se pudo sin credenciales;
   el flujo está probado contra un Google simulado en `tests/youtube-desktop.test.ts`).
+- Probar Facebook e Instagram con la app de Meta real (sección 2b; probado contra un Meta
+  simulado en `tests/meta-desktop.test.ts`). Puntos a confirmar en vivo: que Meta acepte
+  `http://localhost:<puerto>/` sin registrarlo en modo de desarrollo, la forma de
+  `appsecret_proof` con `appsecret_time` y si el token de página sirve para Instagram (si no,
+  Clipo prueba con el token de usuario).

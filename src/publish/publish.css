@@ -1,5 +1,6 @@
 /* ---------- Publicar ---------- */
 .publish { display: flex; flex-direction: column; gap: 4px; }
+.publish .warn svg { flex: none; }
 .publish .link, .pub-history .link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
 .pub-callout { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 8px 0; }
 .pub-video { display: flex; gap: 12px; align-items: flex-start; }

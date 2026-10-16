@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const youtube = require('./publish/youtube.cjs');
+const meta = require('./publish/meta.cjs');
 const { checkForUpdates } = require('./updates.cjs');
 
 const SCHEME = 'app';
@@ -46,10 +47,11 @@ function openExternal(url) {
 }
 
 // Hosts the page itself talks to: the AI models (Hugging Face and its download CDNs) and the ONNX
-// Runtime CDN that transformers.js falls back to. Uploads to YouTube go through the main process.
+// Runtime CDN that transformers.js falls back to. Uploads to YouTube, Facebook and Instagram go
+// through the main process, so the page needs none of their API hosts.
 const MODEL_HOSTS = 'https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co';
-// Channel avatars and video thumbnails shown in Publicar.
-const IMAGE_HOSTS = 'https://yt3.ggpht.com https://*.ggpht.com https://i.ytimg.com https://*.googleusercontent.com';
+// Channel, Page and Instagram avatars and video thumbnails shown in Publicar.
+const IMAGE_HOSTS = 'https://yt3.ggpht.com https://*.ggpht.com https://i.ytimg.com https://*.googleusercontent.com https://*.fbcdn.net https://*.cdninstagram.com';
 const CSP = [
   "default-src 'self'",
   `script-src 'self' 'wasm-unsafe-eval' blob:`,
@@ -232,7 +234,11 @@ app.whenReady().then(() => {
     return allowed.has(permission);
   });
 
-  publishing = youtube.register({ app, ipcMain, shell, safeStorage, BrowserWindow });
+  const adapters = [youtube, meta].map((m) => m.register({ app, ipcMain, shell, safeStorage, BrowserWindow }));
+  publishing = {
+    activeUploads: () => adapters.reduce((n, a) => n + a.activeUploads(), 0),
+    cleanup: () => adapters.forEach((a) => a.cleanup()),
+  };
 
   Menu.setApplicationMenu(null);
   const win = createWindow();

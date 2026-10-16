@@ -1,7 +1,11 @@
-// Run with: npm test. Publishing center: queue states, the runner and YouTube post text.
+// Run with: npm test. Publishing center: queue states, the runner and YouTube / Meta post text.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
+// text.ts reads the limits from src/platforms.ts (a Vite-style import): resolve it like the app.
+import './helpers/hooks.ts';
+import type { NewBatch } from '../src/publish/queue.ts';
+import type { Publisher, PublishJob, UploadInput, VideoInfo } from '../src/publish/types.ts';
+const {
   cancel,
   canRetry,
   createJobs,
@@ -15,10 +19,8 @@ import {
   recoverOnLoad,
   retry,
   startUpload,
-  type NewBatch,
-} from '../src/publish/queue.ts';
-import { buildYouTubeMetadata, checkYouTube, mergePost, parseHashtags, truncateBytes, youtubeTitle, youtubeUrl } from '../src/publish/text.ts';
-import type { Publisher, PublishJob, UploadInput, VideoInfo } from '../src/publish/types.ts';
+} = await import('../src/publish/queue.ts');
+const { buildYouTubeMetadata, checkMeta, checkYouTube, mergePost, metaCaption, parseHashtags, truncateBytes, youtubeTitle, youtubeUrl } = await import('../src/publish/text.ts');
 
 const vertical: VideoInfo = { name: 'viaje.mp4', type: 'video/mp4', bytes: 1000, width: 1080, height: 1920, duration: 30 };
 const T0 = 1_000_000;
@@ -329,4 +331,47 @@ test('loading a saved queue survives storage failures', async () => {
   });
   await q.load([{ ...createJobs(batch())[0]!, status: { kind: 'uploading', pct: 10 } }]);
   assert.equal(q.list()[0]?.status.kind, 'error');
+});
+
+// ---------- Facebook and Instagram ----------
+
+test('Instagram waits locally when the others schedule natively', () => {
+  const at = T0 + 3600_000;
+  const jobs = createJobs(
+    batch({
+      targets: [
+        { network: 'youtube', account: { id: 'UC1', name: 'Mi canal' } },
+        { network: 'facebook', account: { id: '111', name: 'Mi Página' } },
+        { network: 'instagram_reels', account: { id: '178', name: '@marca' } },
+      ],
+      options: { privacy: 'public', madeForKids: false, nativePublishAt: at },
+      localOnly: ['instagram_reels'],
+    }),
+  );
+  assert.deepEqual(jobs.map((j) => j.status.kind), ['pending', 'pending', 'scheduled']);
+  assert.deepEqual(jobs.map((j) => j.options.nativePublishAt), [at, at, undefined]);
+  assert.deepEqual(jobs.map((j) => j.scheduledAt), [undefined, undefined, at]);
+});
+
+test('Meta caption: description plus normalized hashtags', () => {
+  assert.equal(metaCaption({ description: ' Hola ', hashtags: 'viaje, #playa' }), 'Hola\n\n#viaje #playa');
+  assert.equal(metaCaption({ description: '', hashtags: '#a' }), '#a');
+  assert.equal(metaCaption({ description: 'Solo texto', hashtags: '' }), 'Solo texto');
+});
+
+test('Instagram Reels and Facebook limits', () => {
+  const post = { description: 'x', hashtags: '' };
+  assert.deepEqual(checkMeta('instagram_reels', vertical, post), []);
+  assert.match(checkMeta('instagram_reels', { ...vertical, duration: 2 }, post).join(), /3 segundos/);
+  assert.match(checkMeta('instagram_reels', { ...vertical, duration: 16 * 60 }, post).join(), /15 minutos/);
+  assert.match(checkMeta('instagram_reels', { ...vertical, bytes: 400 * 1024 * 1024 }, post).join(), /300 MB/);
+  assert.match(checkMeta('instagram_reels', { ...vertical, width: 3840, height: 2160 }, post).join(), /1920/);
+  assert.match(checkMeta('instagram_reels', { ...vertical, type: 'video/webm' }, post).join(), /MP4 o MOV/);
+  const tags = Array.from({ length: 31 }, (_, i) => `#t${i}`).join(' ');
+  assert.match(checkMeta('instagram_reels', vertical, { description: '', hashtags: tags }).join(), /30 hashtags/);
+  assert.match(checkMeta('instagram_reels', vertical, { description: 'a'.repeat(2201), hashtags: '' }).join(), /2200/);
+  // Facebook takes long, horizontal and long-text posts.
+  assert.deepEqual(checkMeta('facebook', { ...vertical, width: 1920, height: 1080, duration: 3600 }, { description: 'a'.repeat(5000), hashtags: tags }), []);
+  assert.match(checkMeta('facebook', { ...vertical, duration: 5 * 3600 }, post).join(), /4 h/);
+  assert.match(checkMeta('facebook', vertical, { ...post, title: 'a'.repeat(256) }).join(), /255/);
 });

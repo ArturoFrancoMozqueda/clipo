@@ -29,27 +29,37 @@ export interface NewBatch {
   options: PostOptions;
   /** Local scheduling (epoch ms). Missing or in the past = now. */
   scheduledAt?: number;
+  /**
+   * Networks that can't schedule natively (Instagram). When `options.nativePublishAt` is set, their
+   * jobs wait locally for that time instead (Clipo must be open then).
+   */
+  localOnly?: NetworkId[];
   now: number;
 }
 
 export function createJobs(b: NewBatch): PublishJob[] {
-  const later = b.scheduledAt != null && b.scheduledAt > b.now;
-  return b.targets.map((t, i) => ({
-    id: `${b.batchId}-${i}`,
-    batchId: b.batchId,
-    network: t.network,
-    accountId: t.account.id,
-    accountName: t.account.name,
-    videoId: b.videoId,
-    video: b.video,
-    thumbnailId: b.thumbnailId,
-    post: b.posts[t.network] ?? { description: '', hashtags: '' },
-    options: b.options,
-    scheduledAt: later ? b.scheduledAt : undefined,
-    createdAt: b.now,
-    attempts: 0,
-    status: later ? { kind: 'scheduled' } : { kind: 'pending' },
-  }));
+  const { nativePublishAt, ...rest } = b.options;
+  return b.targets.map((t, i): PublishJob => {
+    const local = nativePublishAt != null && !!b.localOnly?.includes(t.network);
+    const at = local ? nativePublishAt : b.scheduledAt;
+    const later = at != null && at > b.now;
+    return {
+      id: `${b.batchId}-${i}`,
+      batchId: b.batchId,
+      network: t.network,
+      accountId: t.account.id,
+      accountName: t.account.name,
+      videoId: b.videoId,
+      video: b.video,
+      thumbnailId: b.thumbnailId,
+      post: b.posts[t.network] ?? { description: '', hashtags: '' },
+      options: local ? rest : b.options,
+      scheduledAt: later ? at : undefined,
+      createdAt: b.now,
+      attempts: 0,
+      status: later ? { kind: 'scheduled' } : { kind: 'pending' },
+    };
+  });
 }
 
 const set = (job: PublishJob, status: JobStatus): PublishJob => ({ ...job, status });

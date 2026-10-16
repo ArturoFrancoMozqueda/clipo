@@ -31,4 +31,25 @@ contextBridge.exposeInMainWorld('clipoDesktop', {
       return () => ipcRenderer.removeListener('yt:progress', fn);
     },
   },
+  // Facebook Pages and Instagram Reels (electron/publish/meta.cjs). Same chunked transfer as YouTube:
+  // uploadBegin → uploadAppend… → upload({ jobId, accountId, network, fileId, mime, text, publishAt?, published?, thumbnail? }).
+  meta: {
+    getConfig: () => ipcRenderer.invoke('meta:getConfig'),
+    setConfig: (c) => ipcRenderer.invoke('meta:setConfig', c),
+    connect: () => ipcRenderer.invoke('meta:connect'),
+    cancelConnect: () => ipcRenderer.invoke('meta:cancelConnect'),
+    accounts: () => ipcRenderer.invoke('meta:accounts'),
+    disconnect: (id) => ipcRenderer.invoke('meta:disconnect', id),
+    upload: (req) => ipcRenderer.invoke('meta:upload', req),
+    uploadBegin: (total, mime) => ipcRenderer.invoke('meta:uploadBegin', total, mime),
+    uploadAppend: (fileId, bytes) => ipcRenderer.invoke('meta:uploadAppend', fileId, bytes),
+    uploadDiscard: (fileId) => ipcRenderer.invoke('meta:uploadDiscard', fileId),
+    cancelUpload: (jobId) => ipcRenderer.invoke('meta:cancelUpload', jobId),
+    status: (accountId, remoteId) => ipcRenderer.invoke('meta:status', accountId, remoteId),
+    onProgress: (cb) => {
+      const fn = (_e, p) => cb(p);
+      ipcRenderer.on('meta:progress', fn);
+      return () => ipcRenderer.removeListener('meta:progress', fn);
+    },
+  },
 });

@@ -3,13 +3,14 @@ import { CalendarClock, CheckCircle2, ExternalLink, ImagePlus, Link2, RotateCcw,
 import { fmtTime } from '../model';
 import { useStore } from '../store';
 import { canShareFile, saveFile, shareFile } from '../nativeShare';
-import { bridgeError, desktop, type YouTubeConfig } from '../publish/desktop';
+import { bridgeError, desktop, type MetaConfig, type YouTubeConfig } from '../publish/desktop';
 import { PUBLISH_FLAGS } from '../publish/flags';
 import { NETWORK_ORDER, NETWORKS } from '../publish/networks';
 import { canCancel, canRetry, PublishError } from '../publish/queue';
-import { cancelJob, forgetBatch, publisherFor, queuePublish, refreshAccounts, retryJob, usePublish } from '../publish/store';
-import { mergePost } from '../publish/text';
+import { cancelJob, forgetBatch, publisherFor, PUBLISHERS, queuePublish, refreshAccounts, retryJob, usePublish } from '../publish/store';
+import { FB_SCHEDULE_MAX_MS, mergePost } from '../publish/text';
 import type { ConnectedAccount, NetworkId, Privacy, PostText, PublishJob, RemoteStatus, VideoInfo } from '../publish/types';
+import { metaPublisher } from '../publish/meta';
 import { youtubePublisher } from '../publish/youtube';
 import '../publish/publish.css';
 
@@ -48,7 +49,7 @@ function WebPublish() {
   return (
     <div className="publish">
       <p className="pub-callout">
-        Publicar directo en YouTube y otras redes funciona en la <b>app de Clipo para computadora</b>, porque ahí tus cuentas se conectan de forma segura en tu propio equipo.
+        Publicar directo en YouTube, Facebook e Instagram funciona en la <b>app de Clipo para computadora</b>, porque ahí tus cuentas se conectan de forma segura en tu propio equipo.
       </p>
       <Note>Desde aquí puedes usar “Compartir” para mandar el video a la app de cada red, o descargarlo y subirlo tú. En <b>Redes</b>, “Publicar en…” además copia el texto de cada red.</Note>
       {file && (
@@ -103,8 +104,15 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
   const [file, setFile] = useState<File | null>(handoff);
   useEffect(() => setFile(handoff), [handoff]);
   const { info, url } = useVideoInfo(file);
+  // Only worth a warning when nothing can be used: then say why (the first reason is the most general).
   const [availability, setAvailability] = useState<string | null>(null);
-  useEffect(() => void youtubePublisher.availability().then((a) => setAvailability(a.ok ? null : a.reason)), [accounts]);
+  useEffect(
+    () =>
+      void Promise.all(PUBLISHERS.map((p) => p.availability().catch(() => ({ ok: false as const, reason: '' })))).then((all) =>
+        setAvailability(all.some((a) => a.ok) ? null : (all.find((a) => !a.ok && a.reason) as { reason: string } | undefined)?.reason ?? null),
+      ),
+    [accounts],
+  );
 
   const [targets, setTargets] = useState<Set<string>>(new Set());
   const [common, setCommon] = useState<PostText>({ title: '', description: '', hashtags: '' });
@@ -131,14 +139,25 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
   const networks = [...new Set(chosen.map((t) => t.network))];
   const postFor = (n: NetworkId) => mergePost(common, own[n]);
   const scheduledAt = when === 'later' && date ? new Date(date).getTime() : undefined;
-  const native = when === 'later' && schedMode === 'native';
+  // YouTube and Facebook schedule on their side; Instagram only through Clipo's local scheduler.
+  const nativeNets = networks.filter((n) => NETWORKS[n].nativeSchedule);
+  const localNets = networks.filter((n) => !NETWORKS[n].nativeSchedule);
+  const canNative = !networks.length || nativeNets.length > 0;
+  const native = when === 'later' && schedMode === 'native' && canNative;
+  const brands = (list: NetworkId[]) => [...new Set(list.map((n) => NETWORKS[n].name.replace(/ (Shorts|Reels)$/, '')))];
+  const names = (list: NetworkId[]) => brands(list).join(' y ');
+  /** "lo publica" / "lo publican", agreeing with the networks named. */
+  const verb = (list: NetworkId[], one: string, many: string) => (brands(list).length > 1 ? many : one);
+  const forKids = !networks.length || networks.some((n) => n === 'youtube' || n === 'youtube_shorts');
 
   const issues: string[] = [];
   if (!file) issues.push('Elige el video que quieres publicar.');
   else if (!info) issues.push('Leyendo el video…');
   if (!chosen.length) issues.push('Marca al menos un destino.');
   if (when === 'later' && (!scheduledAt || scheduledAt < Date.now() + 60_000)) issues.push('Elige una fecha y hora en el futuro.');
-  if (native && scheduledAt && scheduledAt < Date.now() + 15 * 60_000) issues.push('Para que YouTube lo programe, elige una hora al menos 15 minutos más adelante.');
+  if (native && nativeNets.length && scheduledAt && scheduledAt < Date.now() + 15 * 60_000) issues.push(`Para que ${names(nativeNets)} lo ${verb(nativeNets, 'programe', 'programen')}, elige una hora al menos 15 minutos más adelante.`);
+  if (native && networks.includes('facebook') && scheduledAt && scheduledAt > Date.now() + FB_SCHEDULE_MAX_MS) issues.push('Facebook programa como máximo 6 meses más adelante.');
+  if (!native && privacy !== 'public' && networks.includes('instagram_reels')) issues.push('Instagram no tiene publicaciones privadas ni no listadas: elige “Público” o quita Instagram.');
   if (info) for (const n of networks) for (const i of publisherFor(n)?.check(n, info, postFor(n)) ?? []) issues.push(`${NETWORKS[n].name}: ${i}`);
   const uniqueIssues = [...new Set(issues)];
 
@@ -161,8 +180,10 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
         thumbnail: cover ?? undefined,
         targets: chosen.map((t) => ({ network: t.network, account: t.account })),
         posts: Object.fromEntries(networks.map((n) => [n, postFor(n)])),
-        options: { privacy: native ? 'public' : privacy, madeForKids: kids, nativePublishAt: native ? scheduledAt : undefined },
+        options: { privacy: native ? 'public' : privacy, madeForKids: kids && forKids, nativePublishAt: native ? scheduledAt : undefined },
         scheduledAt: when === 'later' && !native ? scheduledAt : undefined,
+        // Instagram can't schedule natively: its jobs wait in Clipo for that time.
+        localOnly: localNets,
       });
       useStore.getState().notify(when === 'later' && !native ? 'Publicación programada' : 'Publicación en marcha');
       setConfirming(false);
@@ -205,19 +226,21 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
       {availability && (
         <p className="warn"><TriangleAlert size={18} /> {availability}</p>
       )}
-      {!accounts.length && !availability && (
-        <Note>Todavía no conectaste ningún canal. <button className="link" onClick={onAccounts}>Conectar en Cuentas</button></Note>
+      {!accounts.length && (
+        <Note>Todavía no conectaste ninguna cuenta. <button className="link" onClick={onAccounts}>Conectar en Cuentas</button></Note>
       )}
       <div className="pub-targets">
         {accounts.map((a) =>
           a.networks.map((n) => {
-            const shape = info && n === 'youtube_shorts' ? (publisherFor(n)?.check(n, info, { ...common, title: 'x' }) ?? []) : [];
+            // Problems of the video itself (shape, length, size), whatever the text.
+            const shape = info && (n === 'youtube_shorts' || n === 'instagram_reels') ? (publisherFor(n)?.check(n, info, { title: 'x', description: '', hashtags: '' }) ?? []) : [];
             const k = targetKey(a.id, n);
             return (
               <label key={k} className={`pub-target ${shape.length ? 'off' : ''}`}>
                 <input type="checkbox" checked={targets.has(k)} disabled={!!shape.length && !targets.has(k)} onChange={() => toggle(k)} />
                 <span>
                   <b>{NETWORKS[n].name}</b> · {a.name}
+                  {a.provider === 'meta' && a.detail && <small>{a.detail}</small>}
                   {shape.length > 0 && <small>{shape.join(' ')}</small>}
                 </span>
               </label>
@@ -227,7 +250,11 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
       </div>
       {PUBLISH_FLAGS.upcomingNetworks && (
         <Note>
-          TikTok, Instagram, Facebook, X y LinkedIn todavía requieren configuración. <button className="link" onClick={onAccounts}>Ver qué falta</button>
+          {NETWORK_ORDER.filter((n) => NETWORKS[n].state === 'needs-setup')
+            .map((n) => NETWORKS[n].name)
+            .join(', ')
+            .replace(/, ([^,]+)$/, ' y $1')}{' '}
+          se publican con su app. <button className="link" onClick={onAccounts}>Ver cómo</button>
         </Note>
       )}
 
@@ -265,7 +292,10 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
         )}
         {cover && <button className="btn-ghost" onClick={() => setCover(null)}>Quitar</button>}
       </div>
-      <Note>Si no eliges ninguna, YouTube usa un cuadro del video. Para portadas propias YouTube pide tener el canal verificado.</Note>
+      <Note>
+        Si no eliges ninguna, cada red usa un cuadro del video. Para portadas propias YouTube pide tener el canal verificado. Instagram siempre usa un cuadro del video
+        (no deja enviar una portada desde la computadora).
+      </Note>
 
       <p className="label">5. Cuándo</p>
       <div className="chips">
@@ -277,20 +307,35 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
       {when === 'later' && (
         <div className="pub-schedule">
           <input type="datetime-local" className="text-input" value={date} onChange={(e) => setDate(e.target.value)} />
-          <label className="pub-radio">
-            <input type="radio" checked={schedMode === 'native'} onChange={() => setSchedMode('native')} />
-            <span>
-              <b>Que YouTube lo publique a esa hora</b> (recomendado)
-              <small>Clipo lo sube ahora como privado y YouTube lo hace público a esa hora, aunque cierres Clipo o apagues la computadora.</small>
-            </span>
-          </label>
-          <label className="pub-radio">
-            <input type="radio" checked={schedMode === 'local'} onChange={() => setSchedMode('local')} />
-            <span>
-              <b>Que Clipo lo suba a esa hora</b>
-              <small>Solo funciona si a esa hora Clipo está abierto y la computadora encendida y con internet. Si no, quedará como “No se publicó” y tú decides si subirlo.</small>
-            </span>
-          </label>
+          {canNative && (
+            <>
+              <label className="pub-radio">
+                <input type="radio" checked={schedMode === 'native'} onChange={() => setSchedMode('native')} />
+                <span>
+                  <b>Que {nativeNets.length ? names(nativeNets) : 'la red'} lo {verb(nativeNets, 'publique', 'publiquen')} a esa hora</b> (recomendado)
+                  <small>
+                    Clipo lo sube ahora {nativeNets.some((n) => n !== 'facebook') ? 'como privado ' : ''}y la red lo publica a esa hora, aunque cierres Clipo o apagues la computadora.
+                  </small>
+                </span>
+              </label>
+              <label className="pub-radio">
+                <input type="radio" checked={schedMode === 'local'} onChange={() => setSchedMode('local')} />
+                <span>
+                  <b>Que Clipo lo suba a esa hora</b>
+                  <small>Solo funciona si a esa hora Clipo está abierto y la computadora encendida y con internet. Si no, quedará como “No se publicó” y tú decides si subirlo.</small>
+                </span>
+              </label>
+            </>
+          )}
+          {localNets.length > 0 && (native || !canNative) && (
+            <p className="warn">
+              <TriangleAlert size={18} />
+              <span>
+                {names(localNets)} no deja programar desde otras apps: Clipo lo subirá a esa hora. <b>Clipo debe estar abierto a esa hora</b>, con la computadora encendida y
+                con internet. Si no, quedará como “No se publicó” y tú decides si subirlo.
+              </span>
+            </p>
+          )}
         </div>
       )}
 
@@ -304,15 +349,20 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
               </button>
             ))}
           </div>
+          {privacy !== 'public' && networks.includes('facebook') && (
+            <Note>Facebook no tiene “no listado” ni “privado”: el video se sube sin publicarse y queda en la biblioteca de videos de tu página.</Note>
+          )}
         </>
       )}
-      <label className="pub-radio">
-        <input type="checkbox" checked={kids} onChange={(e) => setKids(e.target.checked)} />
-        <span>
-          Es un video hecho para niños
-          <small>YouTube pide declararlo. Si lo marcas, se desactivan los comentarios y otras funciones.</small>
-        </span>
-      </label>
+      {forKids && (
+        <label className="pub-radio">
+          <input type="checkbox" checked={kids} onChange={(e) => setKids(e.target.checked)} />
+          <span>
+            Es un video hecho para niños
+            <small>YouTube pide declararlo. Si lo marcas, se desactivan los comentarios y otras funciones.</small>
+          </span>
+        </label>
+      )}
 
       {error && <p className="warn"><TriangleAlert size={18} /> {error}</p>}
       {uniqueIssues.length > 0 && (
@@ -334,7 +384,8 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
           </ul>
           <p className="small">
             {when === 'now' && `Ahora, como ${PRIVACY.find((p) => p.id === privacy)!.label.toLowerCase()}.`}
-            {native && scheduledAt && `Se sube ahora como privado y YouTube lo publica el ${new Date(scheduledAt).toLocaleString('es')}.`}
+            {native && scheduledAt && `Se sube ahora y ${names(nativeNets)} lo ${verb(nativeNets, 'publica', 'publican')} el ${new Date(scheduledAt).toLocaleString('es')}.`}
+            {native && scheduledAt && localNets.length > 0 && ` En ${names(localNets)}, Clipo lo subirá a esa hora si está abierto.`}
             {when === 'later' && !native && scheduledAt && `Clipo lo subirá el ${new Date(scheduledAt).toLocaleString('es')} si está abierto.`}
           </p>
           <div className="row">
@@ -477,7 +528,8 @@ function JobRow({ job }: { job: PublishJob }) {
 // ---------- accounts ----------
 
 function Accounts() {
-  const accounts = usePublish((s) => s.accounts);
+  const all = usePublish((s) => s.accounts);
+  const accounts = useMemo(() => all.filter((a) => a.provider === 'google'), [all]);
   const [cfg, setCfg] = useState<YouTubeConfig | null>(null);
   const [clientId, setClientId] = useState('');
   const [secret, setSecret] = useState('');
@@ -604,6 +656,8 @@ function Accounts() {
         </details>
       </section>
 
+      <MetaCard />
+
       {PUBLISH_FLAGS.upcomingNetworks &&
         NETWORK_ORDER.filter((n) => NETWORKS[n].state === 'needs-setup').map((n) => (
           <section key={n} className="pub-card pending">
@@ -625,5 +679,163 @@ function Accounts() {
           </section>
         ))}
     </>
+  );
+}
+
+/** "Facebook e Instagram": the owner's own Meta app, sign-in in the browser, Pages and Instagram accounts. */
+function MetaCard() {
+  const all = usePublish((s) => s.accounts);
+  const accounts = useMemo(() => all.filter((a) => a.provider === 'meta'), [all]);
+  const bridge = desktop()?.meta;
+  const [cfg, setCfg] = useState<MetaConfig | null>(null);
+  const [appId, setAppId] = useState('');
+  const [secret, setSecret] = useState('');
+  const [configId, setConfigId] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [connecting, setConnecting] = useState(false);
+
+  const reload = () =>
+    bridge?.getConfig().then((c) => {
+      setCfg(c);
+      setAppId(c.appId);
+      setConfigId(c.configId);
+    });
+  useEffect(() => void reload(), []);
+
+  if (!bridge) {
+    return (
+      <section className="pub-card">
+        <header><b>Facebook e Instagram</b></header>
+        <Note>Actualiza la app de Clipo para publicar en Facebook e Instagram.</Note>
+      </section>
+    );
+  }
+
+  const configured = !!cfg && (!!cfg.appId || cfg.usingBuiltIn) && cfg.hasSecret;
+
+  const saveCfg = async () => {
+    setMsg(null);
+    const nextId = appId.trim() || cfg?.builtInAppId || '';
+    const prevId = cfg?.appId || cfg?.builtInAppId || '';
+    if (accounts.length && nextId !== prevId && !confirm('Con otra app de Meta tendrás que volver a conectar tus páginas y cuentas de Instagram. ¿Continuar?')) return;
+    try {
+      await bridge.setConfig({ appId, appSecret: secret || undefined, configId });
+      setSecret('');
+      await reload();
+      await refreshAccounts();
+      setMsg({ ok: true, text: 'Guardado.' });
+    } catch (e) {
+      setMsg({ ok: false, text: bridgeError(e).message });
+    }
+  };
+
+  const connect = async () => {
+    setMsg(null);
+    setConnecting(true);
+    try {
+      const r = await bridge.connect();
+      await refreshAccounts();
+      setMsg({ ok: true, text: [`Conectado: ${r.accounts.map((a) => a.name).join(', ')}.`, ...r.notes].join(' ') });
+    } catch (e) {
+      setMsg({ ok: false, text: bridgeError(e).message });
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const disconnect = async (a: ConnectedAccount) => {
+    if (!confirm(`¿Desconectar “${a.name}”? Clipo borrará su acceso guardado en este equipo.`)) return;
+    await metaPublisher.disconnect(a.id);
+    await refreshAccounts();
+  };
+
+  return (
+    <section className="pub-card">
+      <header><b>Facebook e Instagram</b></header>
+      {cfg && !cfg.encryption && (
+        <p className="warn"><TriangleAlert size={18} /> Este equipo no permite guardar la sesión cifrada, así que Clipo no conecta cuentas.</p>
+      )}
+      {accounts.map((a) => (
+        <div key={a.id} className="pub-account">
+          {a.avatar && <img src={a.avatar} alt="" referrerPolicy="no-referrer" />}
+          <span>
+            <b>{a.name}</b>
+            <small className="muted"> · {a.detail ?? (a.networks.includes('facebook') ? 'Página de Facebook' : 'Instagram')}</small>
+          </span>
+          <button className="btn-ghost" onClick={() => disconnect(a)}>Desconectar</button>
+        </div>
+      ))}
+      {connecting ? (
+        <div className="pub-callout">
+          Se abrió tu navegador para entrar con Facebook. Elige tus páginas y su cuenta de Instagram, acepta los permisos y vuelve aquí.
+          <div className="row"><button className="btn-ghost" onClick={() => metaPublisher.cancelConnect()}>Cancelar</button></div>
+        </div>
+      ) : (
+        <button className="btn-primary" disabled={!configured || !cfg?.encryption} onClick={connect}>
+          {accounts.length ? 'Conectar de nuevo (agregar páginas)' : 'Conectar con Facebook'}
+        </button>
+      )}
+      {msg && <p className={msg.ok ? 'pub-ok' : 'warn'}>{msg.text}</p>}
+      <Note>
+        Se publica en <b>páginas</b> de Facebook (no en perfiles personales) y en cuentas de Instagram <b>profesionales</b> (Empresa o Creador) vinculadas a una de tus
+        páginas. Instagram no deja programar por API: si programas un Reel, Clipo debe estar abierto a esa hora.
+      </Note>
+
+      <details className="pub-own" open={!configured}>
+        <summary>Configuración de Meta (se hace una sola vez)</summary>
+        <ol className="pub-steps small">
+          <li>
+            Entra a <a href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer">developers.facebook.com</a> → <b>Crear app</b>. Ponle de nombre “Clipo”.
+          </li>
+          <li>
+            En <b>Casos de uso</b> elige <b>“Administrar todo en tu página”</b> (<i>Manage everything on your Page</i>) y <b>“Administrar mensajes y contenido en
+            Instagram”</b> (<i>Manage messaging &amp; content on Instagram</i>), con inicio de sesión con Facebook. Agrega los permisos pages_show_list,
+            pages_read_engagement, pages_manage_posts, instagram_basic e instagram_content_publish (y business_management si tus páginas están en un portfolio comercial).
+          </li>
+          <li>Deja la app en <b>modo de desarrollo</b>: como tú eres su administrador, puedes usar todos los permisos sin la revisión de Meta.</li>
+          <li>
+            En <b>Configuración de la app → Básica</b> copia el <b>identificador de la app</b> y la <b>clave secreta</b> (botón “Mostrar”) y pégalos aquí.
+          </li>
+          <li>
+            Si tu app usa “Inicio de sesión con Facebook para empresas”, crea una <b>configuración</b> con token de acceso de usuario y esos permisos, y pega su ID (opcional).
+          </li>
+        </ol>
+        <div className="pub-fields">
+          <input
+            className="text-input"
+            inputMode="numeric"
+            placeholder={cfg?.builtInAppId ? `Identificador de la app (App ID): integrado, ${cfg.builtInAppId}` : 'Identificador de la app (App ID), solo números'}
+            value={appId}
+            onChange={(e) => setAppId(e.target.value)}
+            spellCheck={false}
+          />
+          <input
+            className="text-input"
+            type="password"
+            placeholder={cfg?.hasSecret ? 'Clave secreta (App Secret): guardada (escribe para cambiarla)' : 'Clave secreta de la app (App Secret)'}
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            spellCheck={false}
+          />
+          <input
+            className="text-input"
+            inputMode="numeric"
+            placeholder="ID de configuración (opcional, inicio de sesión para empresas)"
+            value={configId}
+            onChange={(e) => setConfigId(e.target.value)}
+            spellCheck={false}
+          />
+        </div>
+        <div className="row">
+          <button className="btn-ghost" onClick={saveCfg}>Guardar</button>
+        </div>
+        <Note>
+          La clave secreta queda cifrada solo en esta computadora. No viene dentro de Clipo porque con ella cualquiera podría actuar como tu app. Si al conectar Facebook dice
+          que la URL está bloqueada, agrega <code>{cfg?.redirectUri ?? 'http://localhost:47615/'}</code> en <b>Inicio de sesión con Facebook → Configuración → URI de
+          redireccionamiento de OAuth válidos</b>.{' '}
+          <a href="https://developers.facebook.com/docs/instagram-platform/content-publishing" target="_blank" rel="noreferrer">Documentación de Meta</a>
+        </Note>
+      </details>
+    </section>
   );
 }
