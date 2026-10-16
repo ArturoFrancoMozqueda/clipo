@@ -197,6 +197,26 @@ app.whenReady().then(() => {
   // "Mi voz" (audio, never the camera), fullscreen and writing to the clipboard.
   const allowed = new Set(['fullscreen', 'clipboard-sanitized-write']);
   const ours = (wc, origin) => !!wc && !!mainWindow && wc === mainWindow.webContents && isAppUrl(origin || '');
+  // "Descargar" / "Publicar con la app": videos go straight to Downloads/Clipo (no save dialog)
+  // and the folder opens with the file selected, ready to drag into TikTok, Instagram…
+  let lastReveal = 0;
+  session.defaultSession.on('will-download', (_e, item) => {
+    const dir = path.join(app.getPath('downloads'), 'Clipo');
+    fs.mkdirSync(dir, { recursive: true });
+    const safe = path.basename(item.getFilename()).replace(/[\\/:*?"<>|]+/g, '').trim() || 'video.mp4';
+    const ext = path.extname(safe);
+    const base = safe.slice(0, safe.length - ext.length);
+    let target = path.join(dir, safe);
+    for (let n = 2; fs.existsSync(target); n++) target = path.join(dir, `${base} (${n})${ext}`);
+    item.setSavePath(target);
+    item.once('done', (_ev, state) => {
+      // "Descargar todas" saves several at once: show the folder once, not once per file.
+      if (state !== 'completed' || Date.now() - lastReveal < 3000) return;
+      lastReveal = Date.now();
+      shell.showItemInFolder(target);
+    });
+  });
+
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details = {}) => {
     const origin = details.securityOrigin || details.requestingUrl || wc?.getURL();
     if (!ours(wc, origin)) return cb(false);

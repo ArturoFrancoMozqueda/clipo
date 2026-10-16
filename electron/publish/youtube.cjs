@@ -22,7 +22,7 @@ const GOOGLE = {
 // and videos.list(part=status,processingDetails) for "Estado". youtube.upload alone allows neither.
 const SCOPE_UPLOAD = 'https://www.googleapis.com/auth/youtube.upload';
 const SCOPES = [SCOPE_UPLOAD, 'https://www.googleapis.com/auth/youtube.readonly'];
-const CLIENT_ID_RE = /^[\w.-]+\.apps\.googleusercontent\.com$/;
+const { builtInGoogleClient, CLIENT_ID_RE } = require('./google-client.cjs');
 
 // ---------- limits and validation of what the page sends ----------
 const GIB = 1024 ** 3;
@@ -106,7 +106,7 @@ const sleep = (ms, signal) =>
   });
 
 /** `endpoints` and `chunkSize` exist only so tests can point it at a fake Google. */
-function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints = {}, chunkSize = CHUNK_SIZE }) {
+function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints = {}, chunkSize = CHUNK_SIZE, builtIn = builtInGoogleClient() }) {
   const { auth: AUTH_URL, token: TOKEN_URL, revoke: REVOKE_URL, api: API, upload: UPLOAD_API } = { ...GOOGLE, ...endpoints };
   const dir = path.join(app.getPath('userData'), 'publish');
   const file = path.join(dir, 'youtube.json');
@@ -133,6 +133,16 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
   }
   const publicAccount = (a) => ({ id: a.id, provider: 'google', networks: ['youtube', 'youtube_shorts'], name: a.name, avatar: a.avatar, connectedAt: a.connectedAt });
   const clientSecret = (data) => (data.secret ? dec(data.secret) : undefined);
+  /** The client to sign in with: the user's own project if they set one, else the one built in. */
+  const activeClient = (data) =>
+    data.clientId ? { id: data.clientId, secret: clientSecret(data), own: true } : builtIn ? { id: builtIn.clientId, secret: builtIn.clientSecret, own: false } : null;
+  /** Each account refreshes with the client it was connected with (tokens belong to one client). */
+  function clientFor(data, acc) {
+    const id = acc.clientId || data.clientId || builtIn?.clientId;
+    if (id && id === data.clientId) return { id, secret: clientSecret(data) };
+    if (id && id === builtIn?.clientId) return { id, secret: builtIn.clientSecret };
+    return null;
+  }
 
   // ---------- tokens ----------
   async function tokenRequest(params) {
@@ -161,9 +171,10 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     const tok = dec(acc.token);
     if (!force && tok.access_token && tok.expires_at - 60_000 > Date.now()) return tok.access_token;
     if (!tok.refresh_token) throw fail('Falta el permiso permanente de Google. Desconecta el canal y conéctalo otra vez.', false);
-    const params = { client_id: data.clientId, grant_type: 'refresh_token', refresh_token: tok.refresh_token };
-    const secret = clientSecret(data);
-    if (secret) params.client_secret = secret;
+    const client = clientFor(data, acc);
+    if (!client) throw fail('Cambió la configuración de Google. Desconecta el canal y conéctalo otra vez.', false);
+    const params = { client_id: client.id, grant_type: 'refresh_token', refresh_token: tok.refresh_token };
+    if (client.secret) params.client_secret = client.secret;
     let r;
     try {
       r = await tokenRequest(params);
@@ -199,7 +210,8 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
   async function connect(sender) {
     if (!canEncrypt()) throw fail('Este equipo no permite guardar la sesión de forma cifrada, así que Clipo no conecta cuentas.', false);
     const data = load();
-    if (!data.clientId) throw fail('Primero pega tu ID de cliente de Google.', false);
+    const client = activeClient(data);
+    if (!client) throw fail('Primero pega tu ID de cliente de Google.', false);
     connecting?.cancel();
     const verifier = createVerifier();
     const state = createState();
@@ -207,7 +219,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     connecting = loop;
     try {
       const url = buildAuthUrl(AUTH_URL, {
-        clientId: data.clientId,
+        clientId: client.id,
         redirectUri: loop.redirectUri,
         scopes: SCOPES,
         challenge: challengeS256(verifier),
@@ -229,9 +241,8 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
       if (got.error) {
         throw fail(got.error === 'access_denied' ? 'No diste permiso en Google, así que no se conectó el canal.' : `Google no permitió conectar (${got.error}).`, false);
       }
-      const params = { client_id: data.clientId, code: got.code, code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: loop.redirectUri };
-      const secret = clientSecret(data);
-      if (secret) params.client_secret = secret;
+      const params = { client_id: client.id, code: got.code, code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: loop.redirectUri };
+      if (client.secret) params.client_secret = client.secret;
       const r = await tokenRequest(params).catch(() => {
         throw fail('No hay conexión con Google. Revisa tu internet.', false);
       });
@@ -253,6 +264,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
         name: item.snippet?.title || 'Mi canal',
         avatar: item.snippet?.thumbnails?.default?.url,
         connectedAt: Date.now(),
+        clientId: client.id,
         token: enc(tok),
       };
       fresh.accounts = [...fresh.accounts.filter((a) => a.id !== item.id), acc];
@@ -522,7 +534,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
 
   handle('yt:getConfig', () => {
     const d = load();
-    return { clientId: d.clientId || '', hasSecret: !!d.secret, encryption: canEncrypt() };
+    return { clientId: d.clientId || '', hasSecret: !!d.secret, encryption: canEncrypt(), builtIn: !!builtIn, usingBuiltIn: !d.clientId && !!builtIn };
   });
   handle('yt:setConfig', async (_e, cfg) => {
     const { clientId, clientSecret: secret } = cfg && typeof cfg === 'object' ? cfg : {};
@@ -533,7 +545,9 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     const d = load();
     // Tokens belong to one client: a different client ID means connecting the channels again.
     // Revoke them in Google first, so no grant is left behind for the old client.
-    if (d.clientId && id !== d.clientId) {
+    const before = activeClient(d)?.id;
+    const after = id || builtIn?.clientId;
+    if (d.accounts.length && before !== after) {
       await Promise.all(d.accounts.map(revoke));
       d.accounts = [];
     }

@@ -14,7 +14,7 @@ export const youtubePublisher: Publisher = {
     if (!d) return { ok: false, reason: 'Publicar directo funciona solo en la app de Clipo para computadora.' };
     const c = await d.youtube.getConfig();
     if (!c.encryption) return { ok: false, reason: 'Este equipo no permite guardar la sesión de forma cifrada, así que Clipo no conecta cuentas.' };
-    if (!c.clientId) return { ok: false, reason: 'Falta configurar YouTube: pega tu “ID de cliente” de Google en Cuentas.' };
+    if (!c.clientId && !c.usingBuiltIn) return { ok: false, reason: 'Falta configurar YouTube: pega tu “ID de cliente” de Google en Cuentas.' };
     return { ok: true };
   },
 

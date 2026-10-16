@@ -15,7 +15,7 @@ const CHUNK = 256 * KIB;
 
 function fakeGoogle() {
   const log: string[] = [];
-  const st = { challenge: '', received: 0, total: 0, failNext: true, metadata: null as unknown, thumb: 0, revoked: '' };
+  const st = { clientId: '', challenge: '', received: 0, total: 0, failNext: true, metadata: null as unknown, thumb: 0, revoked: '' };
   const server = http.createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
@@ -25,6 +25,7 @@ function fakeGoogle() {
     log.push(`${req.method} ${url.pathname}`);
     if (url.pathname === '/token') {
       const p = new URLSearchParams(body.toString());
+      st.clientId = p.get('client_id')!;
       if (p.get('grant_type') === 'authorization_code') {
         const ok = crypto.createHash('sha256').update(p.get('code_verifier')!).digest('base64url') === st.challenge;
         if (!ok || p.get('code') !== 'C1' || p.get('client_secret') !== 'SECRET') return json(400, { error: 'invalid_grant' });
@@ -64,8 +65,10 @@ function fakeGoogle() {
   );
 }
 
-test('sign in, upload in chunks after a drop, cover, status and disconnect', async () => {
-  const g = await fakeGoogle();
+type Harness = { call: (ch: string, ...args: unknown[]) => Promise<unknown>; handlers: Map<string, (...a: unknown[]) => unknown>; progress: number[]; dir: string };
+
+/** Registers the adapter against the fake Google, with an optional client built into the app. */
+function harness(base: string, st: { challenge: string }, builtIn: { clientId: string; clientSecret: string | undefined } | null): Harness {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipo-yt-'));
   const handlers = new Map<string, (...a: unknown[]) => unknown>();
   const progress: number[] = [];
@@ -83,7 +86,7 @@ test('sign in, upload in chunks after a drop, cover, status and disconnect', asy
         const p = new URL(u).searchParams;
         assert.equal(p.get('code_challenge_method'), 'S256');
         assert.equal(p.get('access_type'), 'offline');
-        g.st.challenge = p.get('code_challenge')!;
+        st.challenge = p.get('code_challenge')!;
         await fetch(`${p.get('redirect_uri')}/?code=C1&state=${p.get('state')}`);
       },
     },
@@ -92,9 +95,16 @@ test('sign in, upload in chunks after a drop, cover, status and disconnect', asy
       encryptString: (s: string) => Buffer.from(s).map((b) => b ^ 0x5a),
       decryptString: (b: Buffer) => Buffer.from(b.map((x) => x ^ 0x5a)).toString(),
     },
-    endpoints: { auth: `${g.base}/auth`, token: `${g.base}/token`, revoke: `${g.base}/revoke`, api: `${g.base}/api`, upload: `${g.base}/upload` },
+    endpoints: { auth: `${base}/auth`, token: `${base}/token`, revoke: `${base}/revoke`, api: `${base}/api`, upload: `${base}/upload` },
     chunkSize: CHUNK,
+    builtIn,
   });
+  return { call, handlers, progress, dir };
+}
+
+test('sign in, upload in chunks after a drop, cover, status and disconnect', async () => {
+  const g = await fakeGoogle();
+  const { call, handlers, progress, dir } = harness(g.base, g.st, null);
 
   try {
     // Calls from other pages are refused.
@@ -102,7 +112,7 @@ test('sign in, upload in chunks after a drop, cover, status and disconnect', asy
 
     await assert.rejects(call('yt:setConfig', { clientId: 'nope' }), /ID de cliente/);
     await call('yt:setConfig', { clientId: '123-abc.apps.googleusercontent.com', clientSecret: 'SECRET' });
-    assert.deepEqual(await call('yt:getConfig'), { clientId: '123-abc.apps.googleusercontent.com', hasSecret: true, encryption: true });
+    assert.deepEqual(await call('yt:getConfig'), { clientId: '123-abc.apps.googleusercontent.com', hasSecret: true, encryption: true, builtIn: false, usingBuiltIn: false });
 
     const acc = (await call('yt:connect')) as { id: string; name: string };
     assert.equal(acc.id, 'UC1');
@@ -134,6 +144,48 @@ test('sign in, upload in chunks after a drop, cover, status and disconnect', asy
     assert.deepEqual(await call('yt:accounts'), []);
   } finally {
     g.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the client built into the app connects with no setup; switching to your own reconnects', async () => {
+  const g = await fakeGoogle();
+  const builtIn = { clientId: '999-clipo.apps.googleusercontent.com', clientSecret: 'SECRET' };
+  const { call, dir } = harness(g.base, g.st, builtIn);
+  try {
+    assert.deepEqual(await call('yt:getConfig'), { clientId: '', hasSecret: false, encryption: true, builtIn: true, usingBuiltIn: true });
+    const acc = (await call('yt:connect')) as { id: string };
+    assert.equal(acc.id, 'UC1');
+    assert.equal(g.st.clientId, builtIn.clientId);
+
+    // Refreshing uses the client the account was connected with.
+    assert.deepEqual(await call('yt:status', 'UC1', 'VID1'), { state: 'ready', detail: 'Listo en YouTube · público' });
+
+    // Your own Google project: channels connected with the built-in client are revoked and removed.
+    await call('yt:setConfig', { clientId: '123-abc.apps.googleusercontent.com', clientSecret: 'SECRET' });
+    assert.equal(g.st.revoked, 'RT1');
+    assert.deepEqual(await call('yt:accounts'), []);
+    assert.equal(((await call('yt:getConfig')) as { usingBuiltIn: boolean }).usingBuiltIn, false);
+  } finally {
+    g.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('built-in Google client: read from the build file, ignored when malformed', async () => {
+  const { builtInGoogleClient } = await import('../electron/publish/google-client.cjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipo-gc-'));
+  const file = path.join(dir, 'google-client.json');
+  const saved = process.env.CLIPO_GOOGLE_CLIENT_ID;
+  delete process.env.CLIPO_GOOGLE_CLIENT_ID;
+  try {
+    assert.equal(builtInGoogleClient(file), null, 'no file: no built-in client');
+    fs.writeFileSync(file, JSON.stringify({ clientId: '1-x.apps.googleusercontent.com', clientSecret: ' S ' }));
+    assert.deepEqual(builtInGoogleClient(file), { clientId: '1-x.apps.googleusercontent.com', clientSecret: 'S' });
+    fs.writeFileSync(file, JSON.stringify({ clientId: 'not-a-client' }));
+    assert.equal(builtInGoogleClient(file), null);
+  } finally {
+    if (saved !== undefined) process.env.CLIPO_GOOGLE_CLIENT_ID = saved;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

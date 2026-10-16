@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  CheckCircle2, CircleAlert, ClipboardCopy, Crosshair, Download, Eye, EyeOff, ImageIcon, ListChecks, Share2, TriangleAlert, Undo2,
+  CheckCircle2, CircleAlert, ClipboardCopy, Crosshair, Download, Eye, EyeOff, ImageIcon, ListChecks, Send, Share2, TriangleAlert, Undo2,
 } from 'lucide-react';
 import type { AspectId, PlatformId, Project, PublishInfo, PublishTarget } from '../types';
 import { useStore } from '../store';
@@ -11,6 +11,7 @@ import {
 import type { ExportProgress } from '../exporter';
 import { canExport, canFastExport, UnsupportedAspectError } from '../exportSupport';
 import { canShareFile, saveFile, saveFiles, shareFile } from '../nativeShare';
+import { publishWithApp } from '../publish/handoff';
 import { autoReframe, clearReframe, reframable, usesReframe, type ReframeProgress } from '../reframeAnalyze';
 import { setAspect } from '../ops';
 import { engine } from '../engine';
@@ -457,9 +458,20 @@ function VersionsSection({ targets }: { targets: PublishTarget[] }) {
                     <Share2 size={18} /> Compartir
                   </button>
                 )}
+                <div className="handoff">
+                  {v.platforms.map((id) => (
+                    <button key={id} className="btn-ghost" onClick={() => void publishWithApp(id, v.file, pub(project).posts?.[id])}>
+                      <Send size={16} /> Publicar en {PLATFORMS[id].name}
+                    </button>
+                  ))}
+                </div>
               </li>
             ))}
           </ul>
+          <Hint>
+            “Publicar en…” copia el texto de esa red y te lleva a su app (en el teléfono) o a su página (en la computadora), donde ya tienes tu sesión iniciada:
+            solo pegas el texto y publicas.
+          </Hint>
           {done.length > 1 && (
             <button className="btn-ghost" onClick={downloadAll}>
               <Download size={18} /> Descargar todas

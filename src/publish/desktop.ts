@@ -7,6 +7,10 @@ export interface YouTubeConfig {
   hasSecret: boolean;
   /** False when the OS cannot encrypt saved sessions (then connecting is refused). */
   encryption: boolean;
+  /** This build comes with its own Google client, so connecting needs no setup. */
+  builtIn?: boolean;
+  /** Connecting uses the built-in client (the user hasn't set their own). */
+  usingBuiltIn?: boolean;
 }
 
 export interface YouTubeBridge {

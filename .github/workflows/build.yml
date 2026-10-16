@@ -12,6 +12,8 @@
 # Secrets (Settings → Secrets and variables → Actions):
 #   ANDROID_KEYSTORE (base64 .p12), ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS: stable APK signature,
 #     so new versions install over the old one without losing projects.
+#   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: Google OAuth client ("Desktop app") built into the
+#     desktop app, so connecting YouTube is one click.
 #   CSC_LINK, CSC_KEY_PASSWORD (optional): sign the Windows installer.
 name: Build
 
@@ -125,6 +127,19 @@ jobs:
             echo "Sin certificado: el instalador sale sin firmar."
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
           fi
+      # Built-in Google client, so "Conectar con Google" needs no setup (repository secrets).
+      - name: Cliente de Google integrado
+        shell: bash
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          if [ -n "$GOOGLE_CLIENT_ID" ]; then
+            node -e "require('fs').writeFileSync('electron/publish/google-client.json', JSON.stringify({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET || undefined }))"
+            echo "Cliente de Google integrado."
+          else
+            echo "Sin GOOGLE_CLIENT_ID: la app pedirá configurar Google la primera vez."
+          fi
       - run: npx electron-builder --win --publish never
       # Opens the packaged app (fuses, asar integrity and CSP all active) and checks the editor loads.
       - name: Smoke test del .exe empaquetado
@@ -159,6 +174,19 @@ jobs:
         with:
           name: web-dist
           path: dist
+      # Built-in Google client, so "Conectar con Google" needs no setup (repository secrets).
+      - name: Cliente de Google integrado
+        shell: bash
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          if [ -n "$GOOGLE_CLIENT_ID" ]; then
+            node -e "require('fs').writeFileSync('electron/publish/google-client.json', JSON.stringify({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET || undefined }))"
+            echo "Cliente de Google integrado."
+          else
+            echo "Sin GOOGLE_CLIENT_ID: la app pedirá configurar Google la primera vez."
+          fi
       # Ad-hoc signature (identity "-" in package.json): enough for Apple Silicon to run it. Without an
       # Apple Developer ID it isn't notarized, so the first launch needs "Abrir igualmente" (PUBLICAR.md).
       - run: npx electron-builder --mac --publish never

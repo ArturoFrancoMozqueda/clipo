@@ -57,28 +57,43 @@ reintentable y lo que no llegó a salir queda como "No se publicó".
 
 ## 2. Registrar Clipo en Google Cloud (YouTube)
 
-Cada persona (o quien distribuya Clipo) usa **su propio** proyecto de Google.
-Clipo no trae ningún secreto en el código.
+Clipo necesita un "ID de cliente" de Google que identifique a la app. **Se crea una sola vez** y
+queda integrado en los instaladores: después, en la app basta con tocar **Conectar con Google**.
 
 1. Entra a <https://console.cloud.google.com/> y crea un proyecto (por ejemplo "Clipo").
 2. **APIs y servicios → Biblioteca**: busca y activa **YouTube Data API v3**.
-3. **Google Auth Platform → Branding / Audiencia** (antes "Pantalla de consentimiento OAuth"):
-   - Tipo de usuario **Externo**.
-   - Nombre de la app, correo de soporte y correo de contacto.
-   - En **Audiencia**, mientras esté "En prueba", agrega como **usuarios de prueba**
-     los correos de las cuentas de Google que van a conectar sus canales (hasta 100).
-4. **Acceso a datos / Permisos**: agrega
+3. **Google Auth Platform → Branding**: nombre de la app ("Clipo"), correo de soporte y de contacto.
+   **Audiencia**: tipo **Externo**.
+4. **Acceso a datos**: agrega los permisos
    - `https://www.googleapis.com/auth/youtube.upload` (subir videos y portadas)
    - `https://www.googleapis.com/auth/youtube.readonly` (leer el nombre del canal y el estado del video)
-5. **Clientes → Crear cliente** → tipo **App de escritorio**. Copia el
-   **ID de cliente** (termina en `.apps.googleusercontent.com`) y el **secreto**.
-6. En Clipo para computadora: **Guardar video → Publicar en redes → Cuentas →
-   Configuración de Google**, pega ambos y pulsa **Guardar**. Luego
-   **Conectar mi canal de YouTube**: se abre el navegador, eliges la cuenta,
-   aceptas y vuelves a Clipo.
+5. **Clientes → Crear cliente** → tipo **App de escritorio**, nombre "Clipo". Copia el **ID de
+   cliente** (termina en `.apps.googleusercontent.com`) y el **secreto**.
+6. **Audiencia → Publicar app** (pasar a "En producción"). Si se queda "En prueba", Google corta
+   la conexión cada 7 días. En producción y sin verificar, al conectar Google muestra
+   *"Google no verificó esta app"*: como la app es tuya, entra en **Configuración avanzada → Ir a
+   Clipo**. Es normal en apps personales (la verificación solo hace falta a partir de 100 usuarios).
+7. Guarda el ID y el secreto como secretos del repositorio. Desde la carpeta del proyecto, cada
+   comando te pide pegar el valor:
+
+   ```bash
+   gh secret set GOOGLE_CLIENT_ID
+   gh secret set GOOGLE_CLIENT_SECRET
+   ```
+
+   El workflow los escribe en `electron/publish/google-client.json` (no se sube al repositorio)
+   al empaquetar Windows y Mac. Para probar en local con `npm run app:dev`, exporta
+   `CLIPO_GOOGLE_CLIENT_ID` y `CLIPO_GOOGLE_CLIENT_SECRET`.
+
+Si alguien prefiere su propio proyecto de Google (por ejemplo, para tener su propia cuota), en
+**Publicar → Cuentas → Usar mi propio proyecto de Google (avanzado)** pega su ID y secreto. Con
+**Volver a la conexión de Clipo** se vuelve al cliente integrado. Al cambiar de cliente, los
+canales conectados se desconectan (sus tokens pertenecen al cliente anterior).
 
 Sobre el "secreto": para apps de escritorio Google lo entrega, pero dice que no
-puede considerarse secreto (está en el equipo de la persona). La documentación
+puede considerarse secreto (va dentro de la app instalada). Por eso puede ir en los instaladores
+públicos: solo identifica a la app, y el acceso a cada canal sigue protegido por los tokens
+cifrados de cada equipo. La documentación
 lo marca como opcional en el intercambio de código; en la práctica los clientes
 de tipo "App de escritorio" lo siguen pidiendo, así que Clipo lo envía si está
 guardado. Se guarda cifrado con `safeStorage` igual que los tokens.
@@ -136,7 +151,21 @@ para YouTube y Shorts.
   dominio verificado, video mostrando el uso). Para uso personal no hace falta.
 - YouTube puede pedir una **auditoría de cumplimiento** de la API para ampliar cupo.
 
-## 3. Lo que falta en cada red (no implementado)
+## 3. TikTok, Instagram, Facebook, X y LinkedIn: "Publicar con la app"
+
+Para estas redes Clipo no publica solo (abajo se explica por qué), pero lo deja a un toque. En
+**Redes → Guardar una versión para cada formato**, cada versión lista tiene **"Publicar en …"**:
+
+- **En el teléfono:** copia el texto de esa red y abre la hoja de compartir con el video. Eliges
+  la app (TikTok, Instagram…), pegas el texto y publicas. Tu sesión ya está iniciada en la app.
+- **En la computadora:** copia el texto, abre la página de subida de la red en tu navegador y
+  guarda el video (en la app de escritorio, en `Descargas/Clipo`, con la carpeta abierta). Lo
+  arrastras a la página, pegas el texto y publicas.
+
+No usa claves de API ni pasa por la revisión de cada red, y respeta sus condiciones de uso: es lo
+mismo que subirlo a mano, sin tener que buscar el archivo ni reescribir el texto.
+
+## 3b. Por qué no se publica solo en esas redes (API)
 
 Ninguna de estas tiene adaptador. Cada una necesita trabajo de registro y
 revisión que no depende del código.

@@ -50,7 +50,7 @@ function WebPublish() {
       <p className="pub-callout">
         Publicar directo en YouTube y otras redes funciona en la <b>app de Clipo para computadora</b>, porque ahí tus cuentas se conectan de forma segura en tu propio equipo.
       </p>
-      <Note>Desde aquí puedes usar “Compartir” para mandar el video a la app de cada red, o descargarlo y subirlo tú.</Note>
+      <Note>Desde aquí puedes usar “Compartir” para mandar el video a la app de cada red, o descargarlo y subirlo tú. En <b>Redes</b>, “Publicar en…” además copia el texto de cada red.</Note>
       {file && (
         <div className="row">
           {canShare && (
@@ -505,6 +505,21 @@ function Accounts() {
     }
   };
 
+  // Forget the user's own Google project and go back to the client built into this copy of Clipo.
+  const backToClipoClient = async () => {
+    if (accounts.length && !confirm('Tendrás que volver a conectar tus canales. ¿Continuar?')) return;
+    setMsg(null);
+    try {
+      await desktop()!.youtube.setConfig({ clientId: '', clientSecret: '' });
+      setSecret('');
+      await reload();
+      await refreshAccounts();
+      setMsg({ ok: true, text: 'Listo: Clipo usa otra vez su propia conexión con Google.' });
+    } catch (e) {
+      setMsg({ ok: false, text: bridgeError(e).message });
+    }
+  };
+
   const connect = async () => {
     setMsg(null);
     setConnecting(true);
@@ -545,14 +560,17 @@ function Accounts() {
             <div className="row"><button className="btn-ghost" onClick={() => youtubePublisher.cancelConnect()}>Cancelar</button></div>
           </div>
         ) : (
-          <button className="btn-primary" disabled={!cfg?.clientId || !cfg.encryption} onClick={connect}>
-            {accounts.length ? 'Conectar otro canal' : 'Conectar mi canal de YouTube'}
+          <button className="btn-primary" disabled={!(cfg?.clientId || cfg?.usingBuiltIn) || !cfg?.encryption} onClick={connect}>
+            {accounts.length ? 'Conectar otro canal' : 'Conectar con Google'}
           </button>
         )}
         {msg && <p className={msg.ok ? 'pub-ok' : 'warn'}>{msg.text}</p>}
 
-        <details className="pub-own" open={!cfg?.clientId}>
-          <summary>Configuración de Google (se hace una sola vez)</summary>
+        {cfg?.usingBuiltIn && !accounts.length && (
+          <Note>Se abrirá tu navegador para que entres con tu cuenta de Google y elijas el canal. Tu sesión se guarda cifrada en este equipo.</Note>
+        )}
+        <details className="pub-own" open={!cfg?.clientId && !cfg?.builtIn}>
+          <summary>{cfg?.builtIn ? 'Usar mi propio proyecto de Google (avanzado)' : 'Configuración de Google (se hace una sola vez)'}</summary>
           <ol className="pub-steps small">
             <li>Entra a <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">Google Cloud Console</a> y crea un proyecto.</li>
             <li>Activa la “YouTube Data API v3”.</li>
@@ -564,10 +582,19 @@ function Accounts() {
             <input className="text-input" placeholder="ID de cliente (termina en .apps.googleusercontent.com)" value={clientId} onChange={(e) => setClientId(e.target.value)} spellCheck={false} />
             <input className="text-input" type="password" placeholder={cfg?.hasSecret ? 'Secreto del cliente: guardado (escribe para cambiarlo)' : 'Secreto del cliente'} value={secret} onChange={(e) => setSecret(e.target.value)} spellCheck={false} />
           </div>
-          <button className="btn-ghost" onClick={saveCfg}>Guardar</button>
+          <div className="row">
+            <button className="btn-ghost" onClick={saveCfg}>Guardar</button>
+            {cfg?.builtIn && cfg.clientId && (
+              <button className="btn-ghost" onClick={backToClipoClient}>
+                Volver a la conexión de Clipo
+              </button>
+            )}
+          </div>
           <Note>
             Todo se guarda cifrado en este equipo. Con apps de escritorio Google entrega un “secreto” que no es realmente secreto, pero igual lo pide al conectar.
-            Tu proyecto puede subir hasta 100 videos por día. Mientras la app de Google esté “en prueba”, Google corta la conexión cada 7 días y hay que volver a conectar.
+{' '}
+            {cfg?.builtIn ? 'Solo hace falta si quieres usar tu propia cuota de YouTube. ' : ''}
+            Tu proyecto puede subir hasta 100 videos por día. Mientras la app de Google esté “en prueba”, Google corta la conexión cada 7 días: publícala (“En producción”) para que no caduque.
           </Note>
         </details>
       </section>
@@ -577,13 +604,19 @@ function Accounts() {
           <section key={n} className="pub-card pending">
             <header>
               <b>{NETWORKS[n].name}</b>
-              <span className="pub-badge">Requiere configuración</span>
+              <span className="pub-badge">Con su app</span>
             </header>
-            <p className="small">Clipo todavía no puede publicar aquí. Lo que falta:</p>
-            <ul className="small">
-              {NETWORKS[n].needs.map((x) => <li key={x}>{x}</li>)}
-            </ul>
-            <a className="small" href={NETWORKS[n].docs} target="_blank" rel="noreferrer">Ver la documentación oficial</a>
+            <p className="small">
+              En <b>Redes → Guardar una versión para cada formato</b>, toca <b>“Publicar en {NETWORKS[n].name}”</b>: Clipo guarda el video, copia el texto y abre {NETWORKS[n].name},
+              donde ya tienes tu sesión. Solo pegas y publicas.
+            </p>
+            <details className="small">
+              <summary>¿Por qué no se publica solo?</summary>
+              <ul>
+                {NETWORKS[n].needs.map((x) => <li key={x}>{x}</li>)}
+              </ul>
+              <a href={NETWORKS[n].docs} target="_blank" rel="noreferrer">Ver la documentación oficial</a>
+            </details>
           </section>
         ))}
     </>
