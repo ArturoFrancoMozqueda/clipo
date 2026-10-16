@@ -566,6 +566,11 @@ function Accounts() {
         )}
         {msg && <p className={msg.ok ? 'pub-ok' : 'warn'}>{msg.text}</p>}
 
+        {cfg && !cfg.clientId && !cfg.usingBuiltIn && !accounts.length && (
+          <Note>
+            ¿Sin ganas de configurar Google? En <b>Redes → Guardar una versión para cada formato</b>, “Publicar en YouTube” copia el texto y abre YouTube Studio, donde ya tienes tu sesión.
+          </Note>
+        )}
         {cfg?.usingBuiltIn && !accounts.length && (
           <Note>Se abrirá tu navegador para que entres con tu cuenta de Google y elijas el canal. Tu sesión se guarda cifrada en este equipo.</Note>
         )}
