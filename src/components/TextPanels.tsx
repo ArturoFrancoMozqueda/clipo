@@ -4,7 +4,7 @@ import { Captions, Download, Search, Star, TriangleAlert, Upload } from 'lucide-
 import type { KaraokeMode, TextItem } from '../types';
 import { useStore } from '../store';
 import { TEXT_STYLES, getTextStyle, styleToCss } from '../textStyles';
-import { FONT_CATEGORIES, POPULAR_FONTS, ensureFont, fontFamily, fontsIn, getFont, searchFonts, warmFont, type FontCategory } from '../fonts';
+import { FONT_CATEGORIES, POPULAR_FONTS, ensureFont, fontFamily, fontsIn, getFont, searchFonts, warmFont, type FontPickerTab } from '../fonts';
 import { TEXT_PRESETS } from '../textPresets';
 import { editPose, poseNow } from '../ops';
 import {
@@ -48,7 +48,7 @@ function ColorRow(props: { value?: string; onPick: (c: string | undefined) => vo
 
 function FontPicker({ value, onPick }: { value?: string; onPick: (id: string | undefined) => void }) {
   const current = getFont(value);
-  const [cat, setCat] = useState<FontCategory | 'populares'>(() => (current && !POPULAR_FONTS.includes(current.id) ? current.category : 'populares'));
+  const [cat, setCat] = useState<FontPickerTab>(() => (current && !POPULAR_FONTS.includes(current.id) ? current.category : 'populares'));
   const [q, setQ] = useState('');
   const searching = q.trim().length > 0;
   const list = searching ? searchFonts(q) : fontsIn(cat);
@@ -222,6 +222,14 @@ function CaptionKaraokeSection({ text }: { text: TextItem }) {
 
 // ---------- text panel ----------
 
+/** In fashion right now (styles, presets and caption looks). */
+function TrendTag() {
+  return <em className="trend-tag">Tendencia</em>;
+}
+
+/** Text styles with the ones in fashion first. */
+const STYLES_SHOWN = [...TEXT_STYLES.filter((s) => s.trend), ...TEXT_STYLES.filter((s) => !s.trend)];
+
 const POSITIONS = [
   { label: 'Arriba', y: 0.15 },
   { label: 'Centro', y: 0.5 },
@@ -232,6 +240,8 @@ export function TextPanel() {
   const text = useSelected<TextItem>('text');
   const kit = useBrand();
   useStore((s) => (s.playing ? -1 : s.time)); // size and position follow keyframes at the playhead (not re-rendered while playing)
+  // The preset tiles are drawn in their own fonts.
+  useEffect(() => TEXT_PRESETS.forEach((pr) => warmFont(pr.font)), []);
   if (!text) return <NeedsSelection what="un texto" />;
   const pose = poseNow('text', text.id) ?? text;
   return (
@@ -273,6 +283,7 @@ export function TextPanel() {
             >
               <span style={{ ...styleToCss(st), fontFamily: fontFamily(f), fontWeight: f.weight }}>{pr.name}</span>
               <small>{pr.use}</small>
+              {pr.trend && <TrendTag />}
             </button>
           );
         })}
@@ -283,13 +294,14 @@ export function TextPanel() {
       <FontPicker value={text.font} onPick={(id) => { checkpoint(); if (id) warmFont(id); editSelected((t) => void (t.font = id)); }} />
       <p className="label">Estilo</p>
       <div className="style-grid">
-        {TEXT_STYLES.map((st) => (
+        {STYLES_SHOWN.map((st) => (
           <button
             key={st.id}
             className={`style ${text.styleId === st.id ? 'active' : ''}`}
             onClick={() => { checkpoint(); editSelected((t) => void (t.styleId = st.id)); }}
           >
             <span style={styleToCss(st)}>{st.name}</span>
+            {st.trend && <TrendTag />}
           </button>
         ))}
       </div>
@@ -357,6 +369,7 @@ function CaptionLookPicker({ look, setLook }: { look: CaptionLook; setLook: (l: 
               <span style={{ ...styleToCss(getTextStyle(c.styleId)), ...(f ? { fontFamily: fontFamily(f), fontWeight: f.weight } : {}), ...(c.fill ? { color: c.fill } : {}) }}>
                 {c.name}
               </span>
+              {'trend' in c && c.trend && <TrendTag />}
             </button>
           );
         })}

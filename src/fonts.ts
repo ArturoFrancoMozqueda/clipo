@@ -21,9 +21,13 @@ export interface FontDef {
   license?: 'Apache-2.0';
 }
 
-/** Tabs of the font picker, in order. "populares" is a curated list across categories. */
-export const FONT_CATEGORIES: { id: FontCategory | 'populares'; name: string }[] = [
+/** A category, or one of the curated lists ("populares", "tendencia") that mix categories. */
+export type FontPickerTab = FontCategory | 'populares' | 'tendencia';
+
+/** Tabs of the font picker, in order. "populares" and "tendencia" are curated lists across categories. */
+export const FONT_CATEGORIES: { id: FontPickerTab; name: string }[] = [
   { id: 'populares', name: 'Populares' },
+  { id: 'tendencia', name: 'Tendencia' },
   { id: 'modernas', name: 'Modernas' },
   { id: 'condensadas', name: 'Condensadas' },
   { id: 'serif', name: 'Serif' },
@@ -42,6 +46,13 @@ export const FONT_CATEGORIES: { id: FontCategory | 'populares'; name: string }[]
 export const POPULAR_FONTS = [
   'montserrat', 'poppins', 'bebas', 'anton', 'oswald', 'bangers', 'luckiest',
   'righteous', 'marker', 'caveat', 'pacifico', 'lobster', 'dancing', 'playfair',
+];
+
+/** What short-form creators are using now (editorial serifs, wide grotesques, Y2K and pixel). */
+export const TRENDING_FONTS = [
+  'instrument-serif', 'bricolage-grotesque', 'unbounded', 'archivo-black', 'syne', 'fraunces',
+  'dela-gothic-one', 'rubik-mono-one', 'shrikhand', 'bagel-fat-one', 'sour-gummy', 'silkscreen',
+  'big-shoulders-display', 'gloock', 'young-serif', 'rubik-glitch', 'anton', 'space-grotesk',
 ];
 
 // Ids of the first 14 fonts are the ones saved in older projects; don't rename them.
@@ -145,6 +156,23 @@ export const FONTS: FontDef[] = [
   { id: 'forum', name: 'Forum', category: 'elegantes', weight: 400, hint: 'Antigua y noble' },
   { id: 'tenor-sans', name: 'Tenor Sans', category: 'elegantes', weight: 400, hint: 'Boutique' },
   { id: 'belleza', name: 'Belleza', category: 'elegantes', weight: 400, hint: 'Belleza y cosmética' },
+  // Trending in 2026 (see TRENDING_FONTS).
+  { id: 'instrument-serif', name: 'Instrument Serif', category: 'serif', weight: 400, hint: 'Editorial, la de moda' },
+  { id: 'bricolage-grotesque', name: 'Bricolage Grotesque', category: 'modernas', weight: 800, hint: 'Moderna con carácter' },
+  { id: 'unbounded', name: 'Unbounded', category: 'modernas', weight: 800, hint: 'Ancha, de marcas nuevas' },
+  { id: 'syne', name: 'Syne', category: 'modernas', weight: 800, hint: 'Artística y creativa' },
+  { id: 'archivo-black', name: 'Archivo Black', category: 'modernas', weight: 400, hint: 'Negrita de impacto' },
+  { id: 'big-shoulders-display', name: 'Big Shoulders Display', category: 'condensadas', weight: 900, hint: 'Alta y urbana' },
+  { id: 'fraunces', name: 'Fraunces', category: 'serif', weight: 900, hint: 'Serif suave y retro' },
+  { id: 'young-serif', name: 'Young Serif', category: 'serif', weight: 400, hint: 'Cálida, de cafetería' },
+  { id: 'gloock', name: 'Gloock', category: 'serif', weight: 400, hint: 'Titulares con contraste' },
+  { id: 'shrikhand', name: 'Shrikhand', category: 'retro', weight: 400, hint: 'Cursiva gruesa setentera' },
+  { id: 'rubik-mono-one', name: 'Rubik Mono One', category: 'tecnologia', weight: 400, hint: 'Bloques anchos Y2K' },
+  { id: 'bagel-fat-one', name: 'Bagel Fat One', category: 'divertidas', weight: 400, hint: 'Gordita y tierna' },
+  { id: 'sour-gummy', name: 'Sour Gummy', category: 'divertidas', weight: 800, hint: 'Gomita, muy alegre' },
+  { id: 'dela-gothic-one', name: 'Dela Gothic One', category: 'decorativas', weight: 400, hint: 'Gruesa, estilo anime' },
+  { id: 'silkscreen', name: 'Silkscreen', category: 'decorativas', weight: 400, hint: 'Píxel Y2K' },
+  { id: 'rubik-glitch', name: 'Rubik Glitch', category: 'decorativas', weight: 400, hint: 'Glitch digital' },
 ];
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
@@ -159,8 +187,10 @@ const byId = new Map(FONTS.map((f) => [f.id, f]));
 export const getFont = (id: string | undefined) => (id ? byId.get(id) : undefined);
 
 /** Fonts of a picker tab. */
-export function fontsIn(cat: FontCategory | 'populares') {
-  return cat === 'populares' ? POPULAR_FONTS.map((id) => byId.get(id)!) : FONTS.filter((f) => f.category === cat);
+export function fontsIn(cat: FontPickerTab) {
+  if (cat === 'populares') return POPULAR_FONTS.map((id) => byId.get(id)!);
+  if (cat === 'tendencia') return TRENDING_FONTS.map((id) => byId.get(id)!);
+  return FONTS.filter((f) => f.category === cat);
 }
 
 const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();

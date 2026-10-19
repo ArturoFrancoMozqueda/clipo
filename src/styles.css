@@ -533,3 +533,12 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   .spinner { animation: spin 1.6s linear infinite !important; } /* keep a slow spin so "working" stays visible */
 }
+
+/* ---------- "Tendencia": what is in fashion right now ---------- */
+.fx-trend, .trend-tag { position: absolute; top: 5px; left: 5px; z-index: 1; padding: 1px 6px; border-radius: 6px; font-size: 10px; font-weight: 700; font-style: normal; letter-spacing: .02em; line-height: 16px; color: #fff; background: var(--grad); box-shadow: 0 2px 8px rgba(0,0,0,.45); pointer-events: none; }
+.preset, .style { position: relative; }
+.chip.trend::after { content: ''; width: 6px; height: 6px; margin-left: 2px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 6px var(--accent-2); }
+/* On text tiles the tag sits on the top edge so it never covers the sample. */
+.preset-row { padding-top: 9px; }
+.preset .trend-tag, .style .trend-tag { top: -8px; left: auto; right: 6px; }
+.style-grid { padding-top: 6px; }

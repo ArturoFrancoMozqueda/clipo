@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Ban, Blend, FileUp, FlipHorizontal2, FlipVertical2, HeartPulse,
-  ImageUp, Keyboard, Minimize2, RotateCw, Sparkle, Trash2, type LucideIcon,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Ban, Blend, Cloud, Droplets, FileUp, FlipHorizontal2, FlipVertical2,
+  HeartPulse, ImageUp, Keyboard, Minimize2, RotateCw, Sparkle, Trash2, Type, Vibrate, Waves, Zap, type LucideIcon,
 } from 'lucide-react';
 import type { Clip, Direction, EffectId, StickerItem, TextAnim, TextItem, Transition, TransitionId } from '../types';
 import { useStore } from '../store';
@@ -71,6 +71,7 @@ export function TransitionPanel() {
             <button key={tr.id} className={`fx ${type === tr.id ? 'active' : ''}`} onClick={() => set(withDir(tr.id, dir))}>
               <div>
                 <TransitionThumb type={tr.id} dir={dir} a={frameA} b={frameB} />
+                {tr.trend && <TrendBadge />}
               </div>
               <span className="fx-name"><Icon size={14} /> {tr.name}</span>
             </button>
@@ -123,6 +124,11 @@ export function TransitionPanel() {
   );
 }
 
+/** Marks what is in fashion right now on the tiles of the pickers. */
+function TrendBadge() {
+  return <span className="fx-trend">Tendencia</span>;
+}
+
 // ---------- effects ----------
 
 export function EffectsPanel() {
@@ -154,6 +160,7 @@ export function EffectsPanel() {
             <button key={e.id} className={`fx ${id === e.id ? 'active' : ''}`} onClick={() => pick(e.id)}>
               <div>
                 <EffectThumb id={e.id} intensity={id === e.id ? intensity : EFFECT_DEFAULT_INTENSITY} pic={pic} />
+                {e.trend && <TrendBadge />}
               </div>
               <span className="fx-name"><Icon size={14} /> {e.name}</span>
             </button>
@@ -373,9 +380,14 @@ export function CropPanel() {
 
 // ---------- text animations ----------
 
-const IN_ICONS: Record<TextAnim['in'], LucideIcon> = { none: Ban, fade: Blend, pop: Sparkle, slideUp: ArrowUp, typewriter: Keyboard };
-const OUT_ICONS: Record<TextAnim['out'], LucideIcon> = { none: Ban, fade: Blend, pop: Minimize2 };
-const LOOP_ICONS: Record<TextAnim['loop'], LucideIcon> = { none: Ban, bounce: ArrowUpDown, pulse: HeartPulse };
+const IN_ICONS: Record<TextAnim['in'], LucideIcon> = {
+  none: Ban, fade: Blend, pop: Sparkle, slideUp: ArrowUp, typewriter: Keyboard,
+  slam: Zap, words: Type, blurIn: Droplets, drop: ArrowDown, slideLeft: ArrowLeft,
+};
+const OUT_ICONS: Record<TextAnim['out'], LucideIcon> = { none: Ban, fade: Blend, pop: Minimize2, blurOut: Droplets, up: ArrowUp };
+const LOOP_ICONS: Record<TextAnim['loop'], LucideIcon> = {
+  none: Ban, bounce: ArrowUpDown, pulse: HeartPulse, wiggle: Waves, float: Cloud, shake: Vibrate,
+};
 
 export function TextAnimSection({ text }: { text: TextItem }) {
   const anim = text.anim ?? NO_ANIM;
@@ -388,14 +400,14 @@ export function TextAnimSection({ text }: { text: TextItem }) {
     else if (key === 'out') previewRange(Math.max(text.start, end - 1.2), end);
     else previewRange(text.start, Math.min(end, text.start + 2.5));
   };
-  const row = <K extends keyof TextAnim>(key: K, label: string, opts: { id: TextAnim[K]; name: string }[], icons: Record<string, LucideIcon>) => (
+  const row = <K extends keyof TextAnim>(key: K, label: string, opts: { id: TextAnim[K]; name: string; trend?: true }[], icons: Record<string, LucideIcon>) => (
     <>
       <p className="label">{label}</p>
       <div className="chips">
         {opts.map((o) => {
           const Icon = icons[o.id];
           return (
-            <button key={o.id} className={`chip ${anim[key] === o.id ? 'active' : ''}`} onClick={() => set(key, o.id)}>
+            <button key={o.id} className={`chip ${anim[key] === o.id ? 'active' : ''} ${o.trend ? 'trend' : ''}`} onClick={() => set(key, o.id)}>
               {Icon && <Icon size={16} />} {o.name}
             </button>
           );

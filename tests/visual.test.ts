@@ -3,7 +3,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import './helpers/hooks.ts';
 import { CROP_MIN, cropEdges, cropForAspect, cropRect, hasFraming, normCrop, pointInFrame, setCropEdge } from '../src/framing.ts';
-import { coverScale, grainValues, hash, irisRadius, peak, pixelBlock, pushOffsets, smoothNoise } from '../src/fxmath.ts';
+import {
+  beatPulse, coverScale, grainValues, hash, irisRadius, letterboxBar, peak, pixelBlock, pushOffsets, recTimecode, smoothNoise,
+} from '../src/fxmath.ts';
 
 // lut.ts imports other app modules Vite-style (no extension): load it through the test hooks.
 const {
@@ -231,4 +233,65 @@ test('automatic reframe follows the person through crop and flip', () => {
   // Outside the crop it clamps to the edge (flipped: right edge of the original crop = left side).
   assert.deepEqual(pointInFrame(clip, { x: 0.2, y: 0.4 }), { x: 1, y: 0.4 });
   assert.deepEqual(pointInFrame({} as Parameters<typeof pointInFrame>[0], { x: 0.3, y: 0.6 }), { x: 0.3, y: 0.6 });
+});
+
+// ---------- trending effects and text animations ----------
+
+test('beat punch peaks on each beat and fades before the next', () => {
+  near(beatPulse(0), 1);
+  near(beatPulse(1.5), 1);
+  assert.ok(beatPulse(0.45) < 0.01);
+  assert.ok(beatPulse(0.1) > beatPulse(0.3));
+  near(beatPulse(-0.5), 1);
+});
+
+test('widescreen bars: real 2.39:1 on landscape, a fixed band on tall frames', () => {
+  near(letterboxBar(1920, 1080), (1080 - 1920 / 2.39) / 2 / 1080);
+  assert.equal(letterboxBar(1080, 1920), 0.1);
+  assert.equal(letterboxBar(1080, 1080), 0.1);
+});
+
+test('camcorder counter reads hours, minutes and seconds', () => {
+  assert.equal(recTimecode(0), '00:00:00');
+  assert.equal(recTimecode(7.9), '00:00:07');
+  assert.equal(recTimecode(3725), '01:02:05');
+});
+
+const { textPose, wordRevealChars } = await import('../src/visuals.ts');
+const textItem = (text: string, anim: Record<string, string>) =>
+  ({ text, duration: 4, anim: { in: 'none', out: 'none', loop: 'none', ...anim } }) as unknown as Parameters<typeof textPose>[0];
+
+test('word by word shows one more whole word at a time', () => {
+  const t = 'Hola a todos\nbienvenidos';
+  assert.equal(wordRevealChars(t, 0, 4), 4); // "Hola"
+  assert.equal(wordRevealChars(t, 10, 4), t.length);
+  const mid = wordRevealChars(t, 0.5, 4);
+  assert.ok([6, 12].includes(mid), `ends on a word: ${mid}`);
+  assert.equal(wordRevealChars('   ', 1, 4), 0);
+});
+
+test('new text entrances end exactly at rest', () => {
+  for (const id of ['slam', 'blurIn', 'drop', 'slideLeft']) {
+    const p = textPose(textItem('Hola', { in: id }), 1.5);
+    near(p.alpha, 1, 1e-6);
+    near(p.scale, 1, 1e-6);
+    near(p.dy, 0, 1e-6);
+    near(p.dx ?? 0, 0, 1e-6);
+    near(p.blur ?? 0, 0, 1e-6);
+  }
+  // At the start they are visibly away from rest.
+  assert.ok(textPose(textItem('Hola', { in: 'slam' }), 0.02).scale > 2);
+  assert.ok((textPose(textItem('Hola', { in: 'slideLeft' }), 0.02).dx ?? 0) > 0.2);
+  assert.ok((textPose(textItem('Hola', { in: 'blurIn' }), 0.02).blur ?? 0) > 0.2);
+});
+
+test('new exits and loops stay small and leave the text readable', () => {
+  const up = textPose(textItem('Hola', { out: 'up' }), 3.99);
+  assert.ok(up.alpha < 0.1 && up.dy < 0);
+  for (const loop of ['wiggle', 'float', 'shake']) {
+    for (let t = 0; t < 3; t += 0.37) {
+      const p = textPose(textItem('Hola', { loop }), t);
+      assert.ok(Math.abs(p.rot ?? 0) <= 0.07 + 1e-9 && Math.abs(p.dy) <= 0.02 && Math.abs(p.dx ?? 0) <= 0.01, `${loop} at ${t}`);
+    }
+  }
 });

@@ -347,6 +347,8 @@ export interface CaptionStyleDef {
   styleId: string;
   font?: string;
   size: number;
+  /** In fashion right now: shown with a badge. */
+  trend?: true;
 }
 
 /** Ready-made caption looks. "marca" (the brand kit) is added by the panel when there is one. */
@@ -355,6 +357,11 @@ export const CAPTION_STYLES: CaptionStyleDef[] = [
   { id: 'amarillo', name: 'Amarillo', styleId: 'amarillo', font: 'montserrat', size: 0.06 },
   { id: 'caja', name: 'Con fondo', styleId: 'caja', font: 'poppins', size: 0.055 },
   { id: 'impacto', name: 'Impacto', styleId: 'clasico', font: 'anton', size: 0.07 },
+  { id: 'verde', name: 'Verde viral', styleId: 'verde', font: 'montserrat', size: 0.065, trend: true },
+  { id: 'sombra3d', name: 'Sombra 3D', styleId: 'sombra3d', font: 'archivo-black', size: 0.06, trend: true },
+  { id: 'burbuja', name: 'Burbuja', styleId: 'burbuja', font: 'bagel-fat-one', size: 0.065, trend: true },
+  { id: 'editorial', name: 'Editorial', styleId: 'elegante', font: 'instrument-serif', size: 0.075, trend: true },
+  { id: 'glitch', name: 'Glitch', styleId: 'glitch', font: 'unbounded', size: 0.05, trend: true },
 ];
 
 export interface CaptionLook {

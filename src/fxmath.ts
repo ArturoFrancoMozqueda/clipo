@@ -55,3 +55,25 @@ export const irisRadius = (k: number, W: number, H: number) => k * Math.hypot(W,
 
 /** Size in output pixels of one pixelate block (scaled with the frame so preview and export match). */
 export const pixelBlock = (amt: number, W: number, H: number) => Math.max(2, (4 + 36 * amt) * Math.min(W, H) / 720);
+
+/** Beat used by the rhythmic effects: 120 BPM, a common tempo for short-form music. */
+export const BEAT = 0.5;
+
+/** 1 right on each beat, decaying fast to 0 before the next one (a "punch"). */
+export function beatPulse(t: number, period = BEAT) {
+  const p = (((t % period) + period) % period) / period;
+  return Math.exp(-p * 7);
+}
+
+/** Height of each widescreen bar as a fraction of the frame: real 2.39:1 on landscape, a band elsewhere. */
+export function letterboxBar(W: number, H: number) {
+  const bar = (H - W / 2.39) / 2 / H;
+  return bar > 0.04 && bar < 0.2 ? bar : 0.1;
+}
+
+/** Camcorder counter for `t` seconds: "00:00:07". */
+export function recTimecode(t: number) {
+  const s = Math.max(0, Math.floor(t));
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${two(Math.floor(s / 3600))}:${two(Math.floor(s / 60) % 60)}:${two(s % 60)}`;
+}

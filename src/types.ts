@@ -18,7 +18,8 @@ export interface Asset {
 
 export type TransitionId =
   | 'none' | 'fade' | 'slide' | 'zoom' | 'wipe'
-  | 'fadeBlack' | 'fadeWhite' | 'push' | 'iris' | 'flash' | 'spin' | 'blur' | 'glitch';
+  | 'fadeBlack' | 'fadeWhite' | 'push' | 'iris' | 'flash' | 'spin' | 'blur' | 'glitch'
+  | 'whip' | 'zoomBlur' | 'filmBurn' | 'shake' | 'pixelate';
 /** Direction the new clip comes from (push transition). */
 export type Direction = 'left' | 'right' | 'up' | 'down';
 export interface Transition {
@@ -31,16 +32,17 @@ export interface Transition {
 
 export type EffectId =
   | 'none' | 'glitch' | 'blur' | 'vignette' | 'shake' | 'kenburns'
-  | 'grain' | 'vhs' | 'rgb' | 'pixelate' | 'mirror' | 'glow' | 'lightleak' | 'bwdrama';
+  | 'grain' | 'vhs' | 'rgb' | 'pixelate' | 'mirror' | 'glow' | 'lightleak' | 'bwdrama'
+  | 'zoomout' | 'beatzoom' | 'strobe' | 'dreamy' | 'y2k' | 'cinematic' | 'camcorder' | 'duotone' | 'sparkle';
 export interface Effect {
   id: EffectId;
   /** 0..1 */
   intensity: number;
 }
 
-export type TextInAnim = 'none' | 'fade' | 'pop' | 'slideUp' | 'typewriter';
-export type TextOutAnim = 'none' | 'fade' | 'pop';
-export type TextLoopAnim = 'none' | 'bounce' | 'pulse';
+export type TextInAnim = 'none' | 'fade' | 'pop' | 'slideUp' | 'typewriter' | 'slam' | 'blurIn' | 'drop' | 'slideLeft' | 'words';
+export type TextOutAnim = 'none' | 'fade' | 'pop' | 'blurOut' | 'up';
+export type TextLoopAnim = 'none' | 'bounce' | 'pulse' | 'wiggle' | 'float' | 'shake';
 export interface TextAnim {
   in: TextInAnim;
   out: TextOutAnim;

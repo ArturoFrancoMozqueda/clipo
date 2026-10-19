@@ -130,6 +130,22 @@ se quieren agregar (paquete + `src/fontFiles.ts` + `FONTS` en `src/fonts.ts`).
 | Forum | Elegantes | 400 | OFL-1.1 | `@fontsource/forum` 5.3.0 | latin + latin-ext |
 | Tenor Sans | Elegantes | 400 | OFL-1.1 | `@fontsource/tenor-sans` 5.3.0 | latin + latin-ext |
 | Belleza | Elegantes | 400 | OFL-1.1 | `@fontsource/belleza` 5.3.0 | latin + latin-ext |
+| Instrument Serif | Serif (también en Tendencia) | 400 | OFL-1.1 | `@fontsource/instrument-serif` 5.3.0 | latin + latin-ext |
+| Bricolage Grotesque | Modernas (también en Tendencia) | 800 | OFL-1.1 | `@fontsource/bricolage-grotesque` 5.3.0 | latin + latin-ext |
+| Unbounded | Modernas (también en Tendencia) | 800 | OFL-1.1 | `@fontsource/unbounded` 5.3.0 | latin + latin-ext |
+| Syne | Modernas (también en Tendencia) | 800 | OFL-1.1 | `@fontsource/syne` 5.3.0 | latin + latin-ext |
+| Archivo Black | Modernas (también en Tendencia) | 400 | OFL-1.1 | `@fontsource/archivo-black` 5.3.0 | latin + latin-ext |
+| Big Shoulders Display | Condensadas (también en Tendencia) | 900 | OFL-1.1 | `@fontsource/big-shoulders-display` 5.3.0 | latin + latin-ext |
+| Fraunces | Serif (también en Tendencia) | 900 | OFL-1.1 | `@fontsource/fraunces` 5.3.0 | latin + latin-ext |
+| Young Serif | Serif (también en Tendencia) | 400 | OFL-1.1 | `@fontsource/young-serif` 5.3.0 | latin + latin-ext |
+| Gloock | Serif (también en Tendencia) | 400 | OFL-1.1 | `@fontsource/gloock` 5.3.0 | latin + latin-ext |
+| Shrikhand | Retro (también en Tendencia) | 400 | OFL-1.1 | `@fontsource/shrikhand` 5.3.0 | latin + latin-ext |
+| Rubik Mono One | Tecnología (también en Tendencia) | 400 | OFL-1.1 | `@fontsource/rubik-mono-one` 5.3.0 | latin + latin-ext |
+| Bagel Fat One | Redondeadas (también en Tendencia) | 400 | OFL-1.1 | `@fontsource/bagel-fat-one` 5.3.0 | latin + latin-ext |
+| Sour Gummy | Redondeadas (también en Tendencia) | 800 | OFL-1.1 | `@fontsource/sour-gummy` 5.3.0 | latin + latin-ext |
+| Dela Gothic One | Decorativas y terror (también en Tendencia) | 400 | OFL-1.1 | `@fontsource/dela-gothic-one` 5.3.0 | latin + latin-ext |
+| Silkscreen | Decorativas y terror (también en Tendencia) | 400 | OFL-1.1 | `@fontsource/silkscreen` 5.3.0 | latin + latin-ext |
+| Rubik Glitch | Decorativas y terror (también en Tendencia) | 400 | OFL-1.1 | `@fontsource/rubik-glitch` 5.3.0 | latin + latin-ext |
 
 ---
 

@@ -191,6 +191,38 @@ import tenorSansX from '@fontsource/tenor-sans/files/tenor-sans-latin-ext-400-no
 import bellezaL from '@fontsource/belleza/files/belleza-latin-400-normal.woff2?url';
 import bellezaX from '@fontsource/belleza/files/belleza-latin-ext-400-normal.woff2?url';
 
+import instrumentSerifL from '@fontsource/instrument-serif/files/instrument-serif-latin-400-normal.woff2?url';
+import instrumentSerifX from '@fontsource/instrument-serif/files/instrument-serif-latin-ext-400-normal.woff2?url';
+import bricolageGrotesqueL from '@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-800-normal.woff2?url';
+import bricolageGrotesqueX from '@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-ext-800-normal.woff2?url';
+import unboundedL from '@fontsource/unbounded/files/unbounded-latin-800-normal.woff2?url';
+import unboundedX from '@fontsource/unbounded/files/unbounded-latin-ext-800-normal.woff2?url';
+import syneL from '@fontsource/syne/files/syne-latin-800-normal.woff2?url';
+import syneX from '@fontsource/syne/files/syne-latin-ext-800-normal.woff2?url';
+import archivoBlackL from '@fontsource/archivo-black/files/archivo-black-latin-400-normal.woff2?url';
+import archivoBlackX from '@fontsource/archivo-black/files/archivo-black-latin-ext-400-normal.woff2?url';
+import bigShouldersDisplayL from '@fontsource/big-shoulders-display/files/big-shoulders-display-latin-900-normal.woff2?url';
+import bigShouldersDisplayX from '@fontsource/big-shoulders-display/files/big-shoulders-display-latin-ext-900-normal.woff2?url';
+import frauncesL from '@fontsource/fraunces/files/fraunces-latin-900-normal.woff2?url';
+import frauncesX from '@fontsource/fraunces/files/fraunces-latin-ext-900-normal.woff2?url';
+import youngSerifL from '@fontsource/young-serif/files/young-serif-latin-400-normal.woff2?url';
+import youngSerifX from '@fontsource/young-serif/files/young-serif-latin-ext-400-normal.woff2?url';
+import gloockL from '@fontsource/gloock/files/gloock-latin-400-normal.woff2?url';
+import gloockX from '@fontsource/gloock/files/gloock-latin-ext-400-normal.woff2?url';
+import shrikhandL from '@fontsource/shrikhand/files/shrikhand-latin-400-normal.woff2?url';
+import shrikhandX from '@fontsource/shrikhand/files/shrikhand-latin-ext-400-normal.woff2?url';
+import rubikMonoOneL from '@fontsource/rubik-mono-one/files/rubik-mono-one-latin-400-normal.woff2?url';
+import rubikMonoOneX from '@fontsource/rubik-mono-one/files/rubik-mono-one-latin-ext-400-normal.woff2?url';
+import bagelFatOneL from '@fontsource/bagel-fat-one/files/bagel-fat-one-latin-400-normal.woff2?url';
+import bagelFatOneX from '@fontsource/bagel-fat-one/files/bagel-fat-one-latin-ext-400-normal.woff2?url';
+import sourGummyL from '@fontsource/sour-gummy/files/sour-gummy-latin-800-normal.woff2?url';
+import sourGummyX from '@fontsource/sour-gummy/files/sour-gummy-latin-ext-800-normal.woff2?url';
+import delaGothicOneL from '@fontsource/dela-gothic-one/files/dela-gothic-one-latin-400-normal.woff2?url';
+import delaGothicOneX from '@fontsource/dela-gothic-one/files/dela-gothic-one-latin-ext-400-normal.woff2?url';
+import silkscreenL from '@fontsource/silkscreen/files/silkscreen-latin-400-normal.woff2?url';
+import silkscreenX from '@fontsource/silkscreen/files/silkscreen-latin-ext-400-normal.woff2?url';
+import rubikGlitchL from '@fontsource/rubik-glitch/files/rubik-glitch-latin-400-normal.woff2?url';
+import rubikGlitchX from '@fontsource/rubik-glitch/files/rubik-glitch-latin-ext-400-normal.woff2?url';
 export const FONT_FILES: Record<string, [latin: string, latinExt?: string]> = {
   montserrat: [montserratL, montserratX],
   poppins: [poppinsL, poppinsX],
@@ -291,4 +323,20 @@ export const FONT_FILES: Record<string, [latin: string, latinExt?: string]> = {
   forum: [forumL, forumX],
   'tenor-sans': [tenorSansL, tenorSansX],
   belleza: [bellezaL, bellezaX],
+  'instrument-serif': [instrumentSerifL, instrumentSerifX],
+  'bricolage-grotesque': [bricolageGrotesqueL, bricolageGrotesqueX],
+  unbounded: [unboundedL, unboundedX],
+  syne: [syneL, syneX],
+  'archivo-black': [archivoBlackL, archivoBlackX],
+  'big-shoulders-display': [bigShouldersDisplayL, bigShouldersDisplayX],
+  fraunces: [frauncesL, frauncesX],
+  'young-serif': [youngSerifL, youngSerifX],
+  gloock: [gloockL, gloockX],
+  shrikhand: [shrikhandL, shrikhandX],
+  'rubik-mono-one': [rubikMonoOneL, rubikMonoOneX],
+  'bagel-fat-one': [bagelFatOneL, bagelFatOneX],
+  'sour-gummy': [sourGummyL, sourGummyX],
+  'dela-gothic-one': [delaGothicOneL, delaGothicOneX],
+  silkscreen: [silkscreenL, silkscreenX],
+  'rubik-glitch': [rubikGlitchL, rubikGlitchX],
 };

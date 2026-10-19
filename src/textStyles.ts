@@ -4,6 +4,7 @@ import type { TextPose } from './visuals';
 import { ensureFont, fontCss, getFont } from './fonts';
 import { activeWord, wordTimings } from './subtitles';
 import { requestRedraw } from './redraw';
+import { supportsCanvasFilter } from './filters';
 
 export interface TextStyle {
   id: string;
@@ -19,6 +20,12 @@ export interface TextStyle {
   shadowBlur?: number;
   upper?: boolean;
   italic?: boolean;
+  /** Copies of the letters drawn behind, offset by (dx, dy) font sizes: 3D shadows, glitch edges. */
+  echo?: [color: string, dx: number, dy: number][];
+  /** Top-to-bottom colors filling the letters (instead of `fill`). */
+  gradient?: string[];
+  /** Shown first, with a badge, in the style picker. */
+  trend?: true;
 }
 
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
@@ -33,22 +40,37 @@ export const TEXT_STYLES: [TextStyle, ...TextStyle[]] = [
   { id: 'neon', name: 'Neón', font: SANS, weight: 800, fill: '#ffe6fa', shadow: '#ff2bd6', shadowBlur: 0.45 },
   { id: 'titulo', name: 'Título', font: SANS, weight: 900, fill: '#ffffff', shadow: 'rgba(0,0,0,0.8)', shadowBlur: 0.25, upper: true },
   { id: 'elegante', name: 'Elegante', font: SERIF, weight: 700, fill: '#ffffff', italic: true, shadow: 'rgba(0,0,0,0.7)', shadowBlur: 0.2 },
+  // In fashion on short-form video right now.
+  { id: 'verde', name: 'Verde viral', font: SANS, weight: 900, fill: '#2bff6b', stroke: '#000000', strokeW: 0.16, upper: true, trend: true },
+  { id: 'sombra3d', name: 'Sombra 3D', font: SANS, weight: 900, fill: '#ffffff', stroke: '#000000', strokeW: 0.1, echo: [['#000000', 0.03, 0.03], ['#000000', 0.06, 0.06], ['#000000', 0.09, 0.09]], trend: true },
+  { id: 'burbuja', name: 'Burbuja', font: SANS, weight: 900, fill: '#ffffff', stroke: '#7c3aed', strokeW: 0.24, trend: true },
+  { id: 'glitch', name: 'Glitch', font: SANS, weight: 900, fill: '#ffffff', echo: [['#00f0ff', -0.06, 0.01], ['#ff2d55', 0.06, -0.01]], upper: true, trend: true },
+  { id: 'degradado', name: 'Atardecer', font: SANS, weight: 900, fill: '#ff5e7e', gradient: ['#ffd23f', '#ff5e7e', '#a34bff'], stroke: '#1a0b2e', strokeW: 0.1, trend: true },
+  { id: 'cromo', name: 'Cromo Y2K', font: SANS, weight: 900, fill: '#dfe6f2', gradient: ['#ffffff', '#c9d2e3', '#6b7891', '#e8eef8'], stroke: '#1d2333', strokeW: 0.08, shadow: 'rgba(120,180,255,0.6)', shadowBlur: 0.3, trend: true },
+  { id: 'contorno', name: 'Contorno', font: SANS, weight: 900, fill: 'rgba(0,0,0,0)', stroke: '#ffffff', strokeW: 0.05, upper: true, trend: true },
 ];
 
 export const getTextStyle = (id: string) => TEXT_STYLES.find((s) => s.id === id) ?? TEXT_STYLES[0];
 
 /** Approximate the style in HTML for the style picker. */
 export function styleToCss(st: TextStyle): CSSProperties {
+  // Preview text is about 16px: offsets in font sizes become pixels.
+  const shadows = [
+    ...(st.echo ?? []).map(([c, dx, dy]) => `${(dx * 16).toFixed(1)}px ${(dy * 16).toFixed(1)}px 0 ${c}`),
+    ...(st.shadow ? [`0 0 8px ${st.shadow}`] : []),
+  ];
   return {
-    color: st.fill,
-    background: st.bg ?? 'transparent',
+    color: st.gradient ? 'transparent' : st.fill,
+    background: st.gradient ? `linear-gradient(180deg, ${st.gradient.join(', ')}) text` : (st.bg ?? 'transparent'),
+    WebkitBackgroundClip: st.gradient ? 'text' : undefined,
     fontFamily: st.font,
     fontWeight: st.weight,
     fontStyle: st.italic ? 'italic' : 'normal',
     textTransform: st.upper ? 'uppercase' : 'none',
-    WebkitTextStroke: st.stroke ? `3px ${st.stroke}` : undefined,
+    WebkitTextStroke: st.stroke ? `${Math.max(1, Math.round((st.strokeW ?? 0.14) * (st.gradient ? 8 : 16)))}px ${st.stroke}` : undefined,
     paintOrder: 'stroke fill',
-    textShadow: st.shadow ? `0 0 8px ${st.shadow}` : undefined,
+    textShadow: shadows.length && !st.gradient ? shadows.join(', ') : undefined,
+    filter: st.gradient && st.shadow ? `drop-shadow(0 0 4px ${st.shadow})` : undefined,
   };
 }
 
@@ -158,14 +180,27 @@ export function drawText(
       return box;
     }
     ctx.globalAlpha *= Math.min(1, pose.alpha);
-    ctx.translate(cx, cy + pose.dy * H);
+    ctx.translate(cx + (pose.dx ?? 0) * W, cy + pose.dy * H);
+    if (pose.rot) ctx.rotate(pose.rot);
     ctx.scale(pose.scale, pose.scale);
     ctx.translate(-cx, -cy);
+    if (pose.blur && supportsCanvasFilter) ctx.filter = `blur(${(pose.blur * fs).toFixed(2)}px)`;
   }
   // Typewriter: reveal characters one by one, keeping each line where it will end up.
   let budget = pose?.chars ?? Infinity;
   const fill = item.fill ?? st.fill;
   const paint = (s: string, x: number, y: number, color: string) => {
+    if (st.echo) {
+      for (const [c, dx, dy] of st.echo) {
+        ctx.fillStyle = c;
+        if (st.stroke) {
+          ctx.strokeStyle = c;
+          ctx.lineWidth = (st.strokeW ?? 0.14) * fs;
+          ctx.strokeText(s, x + dx * fs, y + dy * fs);
+        }
+        ctx.fillText(s, x + dx * fs, y + dy * fs);
+      }
+    }
     if (st.shadow) {
       ctx.shadowColor = st.shadow;
       ctx.shadowBlur = (st.shadowBlur ?? 0.2) * fs;
@@ -176,7 +211,12 @@ export function drawText(
       ctx.strokeText(s, x, y);
       ctx.shadowColor = 'transparent';
     }
-    ctx.fillStyle = color;
+    if (st.gradient && color === st.fill) {
+      // Spans one line of letters (textBaseline is "middle").
+      const g = ctx.createLinearGradient(0, y - fs * 0.5, 0, y + fs * 0.5);
+      st.gradient.forEach((c, i) => g.addColorStop(i / Math.max(1, st.gradient!.length - 1), c));
+      ctx.fillStyle = g;
+    } else ctx.fillStyle = color;
     ctx.fillText(s, x, y);
     ctx.shadowColor = 'transparent';
   };
