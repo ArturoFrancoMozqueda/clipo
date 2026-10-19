@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Download, Film, FolderInput, LayoutTemplate, Plus, Trash2, X } from 'lucide-react';
+import { Clapperboard, Download, Film, FolderInput, ImagePlus, LayoutTemplate, Plus, Scissors, Share2, ShieldCheck, Trash2, X } from 'lucide-react';
 import type { AspectId } from '../types';
 import { deleteProject, getBlob, getProject, listProjectMeta, type ProjectMeta } from '../db';
 import { useStore } from '../store';
@@ -13,6 +13,12 @@ import { SaveTemplateButton } from '../templates/SaveTemplateButton';
 // Opened on demand from the start screen.
 const TemplateGallery = lazy(() => import('../templates/TemplateGallery').then((m) => ({ default: m.TemplateGallery })));
 const CapcutImport = lazy(() => import('./CapcutImport').then((m) => ({ default: m.CapcutImport })));
+
+const STEPS = [
+  { icon: ImagePlus, title: 'Agrega tus videos y fotos', text: 'Desde tu galería o tu computadora.' },
+  { icon: Scissors, title: 'Corta, pon texto y música', text: 'Subtítulos, filtros y efectos en un toque.' },
+  { icon: Share2, title: 'Guárdalo y compártelo', text: 'En el formato de cada red social.' },
+];
 
 export function Home() {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
@@ -58,6 +64,7 @@ export function Home() {
 
   return (
     <div className="home">
+      <div className="home-glow" aria-hidden="true" />
       <header className="home-head">
         <img src="./icon.svg" alt="" width={36} height={36} />
         <h1>Clipo</h1>
@@ -70,28 +77,48 @@ export function Home() {
       </header>
 
       <section className="hero">
-        <h2>Crea videos geniales en minutos</h2>
-        <p>Sin experiencia, sin cuenta y sin marca de agua. Tus videos nunca salen de tu dispositivo.</p>
-        <button className="btn-primary big" onClick={() => setPicking(true)}>
-          <Plus size={24} /> Nuevo video
-        </button>
-        <button className="btn-primary alt big home-template-btn" onClick={() => setTemplates(true)}>
-          <LayoutTemplate size={24} /> Usar una plantilla
-        </button>
+        <span className="hero-badge">
+          <ShieldCheck size={16} /> Gratis · Sin marca de agua · Privado
+        </span>
+        <h2>
+          Crea videos geniales <span className="grad-text">en minutos</span>
+        </h2>
+        <p>Sin experiencia y sin cuenta. Tus videos nunca salen de tu dispositivo.</p>
+        <div className="hero-actions">
+          <button className="btn-primary big" onClick={() => setPicking(true)}>
+            <Plus size={22} /> Nuevo video
+          </button>
+          <button className="btn-primary alt big home-template-btn" onClick={() => setTemplates(true)}>
+            <LayoutTemplate size={22} /> Usar una plantilla
+          </button>
+        </div>
         <button className="btn-ghost hero-alt" onClick={() => setImporting(true)}>
           <FolderInput size={18} /> Importar proyecto de CapCut
         </button>
         <ol className="steps">
-          <li><b>1</b> Agrega tus videos y fotos</li>
-          <li><b>2</b> Corta, pon texto y música</li>
-          <li><b>3</b> Guárdalo y compártelo</li>
+          {STEPS.map(({ icon: Icon, title, text }, i) => (
+            <li key={title}>
+              <span className="step-icon"><Icon size={20} /></span>
+              <div>
+                <strong>{title}</strong>
+                {text}
+              </div>
+              <b aria-hidden="true">0{i + 1}</b>
+            </li>
+          ))}
         </ol>
       </section>
 
       <section className="projects">
-        <h3>Tus proyectos</h3>
+        <div className="projects-head">
+          <h3>Tus proyectos</h3>
+          {!!projects?.length && <span>{projects.length}</span>}
+        </div>
         {projects === null ? null : projects.length === 0 ? (
-          <p className="muted">Aún no tienes proyectos. Toca “Nuevo video” para empezar.</p>
+          <div className="projects-empty">
+            <Clapperboard size={32} />
+            <p>Aún no tienes proyectos. Toca “Nuevo video” para empezar.</p>
+          </div>
         ) : (
           <div className="project-grid">
             {projects.map((p) => {

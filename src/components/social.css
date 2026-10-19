@@ -5,8 +5,10 @@
 .safe-tag { position: absolute; left: 6px; top: 6px; pointer-events: auto; display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.7); color: #fff; font-size: 12px; font-weight: 600; }
 
 .social .net-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.social .net { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); text-align: left; }
-.social .net.active { border-color: var(--accent); background: rgba(124, 108, 255, 0.18); }
+.social .net { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line-strong); text-align: left; font-weight: 600; transition: border-color .15s, background-color .15s, box-shadow .15s, transform .15s var(--ease); }
+.social .net:active { transform: scale(.98); }
+@media (hover: hover) { .social .net:hover:not(.active) { background: rgba(255, 255, 255, 0.08); } }
+.social .net.active { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px rgba(139, 123, 255, 0.15); }
 .social .net small { color: var(--muted); font-size: 12px; }
 .social .net-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
 .social .net-row b { min-width: 120px; }
@@ -24,9 +26,10 @@
 .social .versions .handoff { display: flex; gap: 6px; flex-wrap: wrap; flex-basis: 100%; }
 .social .cover { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .social .cover img { max-width: 96px; max-height: 120px; border-radius: 8px; border: 1px solid var(--line); }
-.social textarea, .social input[type='text'] { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: inherit; font: inherit; }
+.social textarea, .social input[type='text'] { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--bg); color: inherit; font: inherit; transition: border-color .15s, box-shadow .15s; }
+.social textarea:focus, .social input[type='text']:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139, 123, 255, 0.2); }
 .social textarea { min-height: 72px; resize: vertical; }
 .social .count { font-size: 12px; color: var(--muted); text-align: right; }
 .social .count.over { color: #ff8a8a; }
-.social details { margin: 8px 0; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+.social details { margin: 8px 0; border: 1px solid var(--line-strong); border-radius: 14px; padding: 10px 14px; background: rgba(255, 255, 255, 0.02); }
 .social summary { cursor: pointer; font-weight: 700; }

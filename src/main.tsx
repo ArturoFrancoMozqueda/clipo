@@ -5,6 +5,12 @@ import { useStore } from './store';
 import { collectGarbage, holdTabLock, projectAssetIds, requestPersistence } from './db';
 import { createAutosave } from './autosave';
 import { startPublishing } from './publish/store';
+// UI font, bundled so it works offline (the video text fonts load on demand in fonts.ts).
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-500.css';
+import '@fontsource/inter/latin-600.css';
+import '@fontsource/inter/latin-700.css';
+import '@fontsource/inter/latin-800.css';
 import './styles.css';
 
 // Autosave: every edit is written to the device shortly after the editing pauses.
