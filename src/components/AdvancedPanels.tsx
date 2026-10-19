@@ -6,7 +6,7 @@ import type { BlendMode, Clip, ColorAdjust, OverlayItem, SelectionKind, StickerI
 import { itemsOf, useStore } from '../store';
 import { engine } from '../engine';
 import { clamp, layout, overlayDur } from '../model';
-import { importFiles } from '../media';
+import { ACCEPT_VISUAL, importFiles } from '../media';
 import { addOverlays, editPose, localTime, poseNow } from '../ops';
 import { COLOR_KEYS, COLOR_LABELS, autoColor, type ColorKey } from '../color';
 import { EASINGS, KF_EPS, addKeyframe, clearKeyframes, keyframeAt, removeKeyframe } from '../keyframes';
@@ -101,7 +101,7 @@ function OverlayPicker() {
       <input
         ref={input}
         type="file"
-        accept="video/*,image/*"
+        accept={ACCEPT_VISUAL}
         multiple
         hidden
         onChange={async (e) => {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { PanelLeftClose } from 'lucide-react';
 import { useStore } from '../store';
 import { engine } from '../engine';
 import { deleteSelected, splitAtPlayhead } from '../ops';
@@ -12,8 +13,28 @@ import { Onboarding } from './Onboarding';
 import { importAndAdd } from './ImportButton';
 import { useKeyboardInset } from './useKeyboardInset';
 
+const LIBRARY_KEY = 'clipo.library';
+
 export function Editor() {
   const [dragging, setDragging] = useState(false);
+  // The "Tus archivos" column (wide screens only) can be hidden to give the preview more room.
+  const [libraryOpen, setLibraryOpen] = useState(() => {
+    try {
+      return localStorage.getItem(LIBRARY_KEY) !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const toggleLibrary = () => {
+    setLibraryOpen((v) => {
+      try {
+        localStorage.setItem(LIBRARY_KEY, v ? '0' : '1');
+      } catch {
+        /* private mode: remembered for this session only */
+      }
+      return !v;
+    });
+  };
   const exporting = useStore((s) => s.exporting);
   const root = useRef<HTMLDivElement>(null);
   useKeyboardInset();
@@ -68,7 +89,7 @@ export function Editor() {
   return (
     <div
       ref={root}
-      className={`editor ${exporting ? 'exporting' : ''}`}
+      className={`editor ${exporting ? 'exporting' : ''} ${libraryOpen ? '' : 'library-off'}`}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
@@ -84,10 +105,15 @@ export function Editor() {
         if (e.dataTransfer.files.length) importAndAdd(e.dataTransfer.files);
       }}
     >
-      <TopBar />
+      <TopBar libraryOpen={libraryOpen} onToggleLibrary={toggleLibrary} />
       <div className="workspace">
-        <aside className="library-side">
-          <h3>Tus archivos</h3>
+        <aside className="library-side" aria-label="Tus archivos">
+          <div className="library-head">
+            <h3>Tus archivos</h3>
+            <button className="icon-btn" onClick={toggleLibrary} aria-label="Ocultar tus archivos" title="Ocultar">
+              <PanelLeftClose size={18} />
+            </button>
+          </div>
           <MediaLibrary />
         </aside>
         <Preview />

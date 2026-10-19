@@ -2,6 +2,7 @@
 // instead of loading the whole file into memory and decoding all of it with decodeAudioData.
 // mediabunny drives WebCodecs' AudioDecoder (which decodes off the main thread); when it can't
 // read the container or decode the codec, the old decodeAudioData path takes over.
+import { firstDecodable } from './convertVideo';
 
 /** Decoded sound of [start, start + length / sampleRate) seconds of the source. */
 export interface Pcm {
@@ -34,9 +35,11 @@ async function openTrack(blob: Blob) {
   const mb = await loadMb();
   const input = new mb.Input({ source: new mb.BlobSource(blob), formats: mb.ALL_FORMATS });
   try {
-    const track = await input.getPrimaryAudioTrack();
-    if (!track) return { mb, input, track: null };
-    if (!(await track.canDecode())) throw new Fallback('cannot decode');
+    // iPhone videos can carry several sound tracks, spatial audio first: use the first one this device decodes.
+    const all = await input.getAudioTracks();
+    if (!all.length) return { mb, input, track: null };
+    const track = await firstDecodable(all, await input.getPrimaryAudioTrack());
+    if (!track) throw new Fallback('cannot decode');
     return { mb, input, track };
   } catch (e) {
     input.dispose();

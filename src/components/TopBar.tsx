@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, CircleHelp, Ellipsis, LayoutTemplate, Redo2, Undo2, Upload } from 'lucide-react';
+import { ChevronLeft, CircleHelp, Ellipsis, LayoutTemplate, PanelLeftOpen, Redo2, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store';
 import { engine } from '../engine';
 import { saveProject } from '../db';
@@ -62,7 +62,7 @@ function MoreMenu() {
   );
 }
 
-export function TopBar() {
+export function TopBar({ libraryOpen, onToggleLibrary }: { libraryOpen: boolean; onToggleLibrary: () => void }) {
   const name = useStore((s) => s.project!.name);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
@@ -88,6 +88,12 @@ export function TopBar() {
         onChange={(e) => s().live((p) => void (p.name = e.target.value))}
       />
       <div className="spacer" />
+      {!libraryOpen && (
+        <button className="icon-btn labeled topbar-library" onClick={onToggleLibrary} title="Ver tus archivos" aria-label="Ver tus archivos">
+          <PanelLeftOpen size={20} />
+          <span>Tus archivos</span>
+        </button>
+      )}
       <button className="icon-btn labeled" disabled={!canUndo} onClick={() => s().undo()} title="Deshacer (Ctrl+Z)" aria-label="Deshacer">
         <Undo2 size={20} />
         <span>Deshacer</span>

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Droplets, ImageUp, Palette, RefreshCw, TriangleAlert, UserRound } from 'lucide-react';
 import type { BgMode, BgRemoval, Clip } from '../types';
 import { useStore } from '../store';
-import { importFiles } from '../media';
+import { ACCEPT_VISUAL, importFiles } from '../media';
 import { BG_COLORS, BG_DEFAULT, BG_LOAD_ERROR, preparePreview, useSegStatus } from '../segmentation';
 import { Hint, NeedsSelection, Slider, checkpoint, editSelected, useSelected } from './Panels';
 import './background.css';
@@ -155,7 +155,7 @@ export function BackgroundPanel() {
       <input
         ref={input}
         type="file"
-        accept="image/*,video/*"
+        accept={ACCEPT_VISUAL}
         hidden
         onChange={(e) => {
           if (e.target.files?.length) pickMedia(e.target.files).finally(() => (e.target.value = ''));

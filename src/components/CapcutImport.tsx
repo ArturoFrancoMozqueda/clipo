@@ -3,6 +3,7 @@ import { CheckCircle2, CircleAlert, FileJson, FolderOpen, Plus, X } from 'lucide
 import { FAILURE_MESSAGE, findDraftFile, matchMedia, parseDraft, type DraftPlan } from '../importers/capcut';
 import { buildProject } from '../importers/capcutProject';
 import { ASPECTS } from '../model';
+import { ACCEPT_MEDIA } from '../media';
 import { useStore } from '../store';
 import { Modal } from './Modal';
 
@@ -159,7 +160,7 @@ export function CapcutImport({ onClose }: { onClose: () => void }) {
                   <Plus size={18} /> Agregar videos, fotos y audios
                 </button>
                 <Picker
-                  accept="video/*,image/*,audio/*"
+                  accept={ACCEPT_MEDIA}
                   inputRef={mediaInput}
                   onFiles={(more) => setFiles((prev) => [...more, ...prev])}
                 />

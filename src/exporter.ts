@@ -11,6 +11,7 @@ import { LOUDNESS_TARGET, analyzeAsset, buildVoiceFx, mixOf, projectDuckCurve, v
 import { AUDIO_BITRATE, audioLevels, exportBitrate, type AudioLevels } from './platforms';
 import { canFastExport, hasRecorder, UnsupportedAspectError } from './exportSupport';
 import { extractAudio, releaseAudioCache, toAudioBuffer } from './audioExtract';
+import { firstDecodable } from './convertVideo';
 
 export { canExport, canFastExport, UnsupportedAspectError } from './exportSupport';
 
@@ -186,8 +187,9 @@ async function fastExport(
       const input = new mb.Input({ source: new mb.BlobSource(await blobOf(clip.assetId)), formats: mb.ALL_FORMATS });
       let track;
       try {
-        track = await input.getPrimaryVideoTrack();
-        if (!track || !(await track.canDecode())) throw new Unsupported('cannot decode a video', 'decode');
+        // Some phones add extra picture tracks: use the first one this device can decode.
+        track = await firstDecodable(await input.getVideoTracks(), await input.getPrimaryVideoTrack());
+        if (!track) throw new Unsupported('cannot decode a video', 'decode');
       } catch (e) {
         input.dispose();
         // A container mediabunny can't read may still play in the preview, which the recorder films.
