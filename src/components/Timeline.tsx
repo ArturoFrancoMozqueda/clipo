@@ -29,7 +29,7 @@ const MIN_H = 76; // ruler + compact clip row
 const COMPACT_H = 104; // what "compact" snaps to
 const AUTO_COMPACT_BELOW = 110;
 const AUTO_EXPAND_ABOVE = 150;
-const PREVIEW_MIN = 180; // the preview and its play controls keep at least this much
+const PREVIEW_MIN = 240; // the preview and its play controls keep at least this much
 
 function readNum(key: string): number | null {
   try {
@@ -104,7 +104,6 @@ function useTimelineSize(box: React.RefObject<HTMLDivElement | null>, scroller: 
     const max = maxHeight();
     let h = h0;
     let moved = false;
-    let auto = false;
     let isCompact = compact;
     const move = (ev: PointerEvent) => {
       if (!moved) {
@@ -117,11 +116,11 @@ function useTimelineSize(box: React.RefObject<HTMLDivElement | null>, scroller: 
       // Straight to the DOM while dragging (no re-render per move); React gets it on release.
       box.current?.style.setProperty('--tl-h', `${h}px`);
       if (!isCompact && h < AUTO_COMPACT_BELOW) {
-        isCompact = auto = true;
+        isCompact = true;
         setCompactState(true);
         setHeightState(h);
-      } else if (isCompact && auto && h > AUTO_EXPAND_ABOVE) {
-        isCompact = auto = false;
+      } else if (isCompact && h > AUTO_EXPAND_ABOVE) {
+        isCompact = false;
         setCompactState(false);
         setHeightState(h);
       }
