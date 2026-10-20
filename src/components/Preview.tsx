@@ -7,6 +7,7 @@ import { ImportButton } from './ImportButton';
 import { hitSticker, stickerHandle, stickerHandleRadius } from '../visuals';
 import { editPose, poseNow } from '../ops';
 import { SafeZoneGuide } from './SafeZoneGuide';
+import { ProxyBadge } from './ProxyStatus';
 
 /** Things that can be dragged, resized and rotated on the preview. */
 type Shape = 'sticker' | 'overlay';
@@ -201,6 +202,7 @@ export function Preview() {
   return (
     <div className="preview-area">
       <div className="canvas-wrap" ref={wrap}>
+        <ProxyBadge />
         <canvas
           ref={canvas}
           className="preview-canvas"

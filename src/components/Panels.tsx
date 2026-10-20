@@ -13,6 +13,7 @@ import { MediaLibrary } from './MediaLibrary';
 import { showOnboarding } from './Onboarding';
 import { AdvancedToggle, ColorPanel, KeyframesPanel, OverlayPanel } from './AdvancedPanels';
 import { BgError } from '../segmentation';
+import { ProxyToggle } from './ProxyStatus';
 
 /**
  * A named export of a module that is only downloaded the first time it's shown, so the editor
@@ -413,6 +414,7 @@ function HelpPanel() {
   return (
     <div className="help">
       <AdvancedToggle />
+      <ProxyToggle />
       <button className="btn-ghost" onClick={() => { useStore.getState().setPanel(null); showOnboarding(); }}>
         Ver la introducción otra vez
       </button>
