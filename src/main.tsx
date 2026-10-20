@@ -48,6 +48,9 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
+// Dev builds only: lets playback tests read the store and the engine.
+if (import.meta.env.DEV) void import('./engine').then(({ engine }) => Object.assign(window, { __clipo: { engine, useStore } }));
+
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 }
