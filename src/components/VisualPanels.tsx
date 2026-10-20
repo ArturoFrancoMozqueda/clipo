@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Ban, Blend, Cloud, Droplets, FileUp, FlipHorizontal2, FlipVertical2,
-  HeartPulse, ImageUp, Keyboard, Minimize2, RotateCw, Sparkle, Trash2, Type, Vibrate, Waves, Zap, type LucideIcon,
+  HeartPulse, ImageUp, Keyboard, Minimize2, Play, Plus, RotateCw, Sparkle, Trash2, Type, Vibrate, Waves, Zap, type LucideIcon,
 } from 'lucide-react';
 import type { Clip, Direction, EffectId, StickerItem, TextAnim, TextItem, Transition, TransitionId } from '../types';
 import { useStore } from '../store';
@@ -18,6 +18,8 @@ import { cropEdges, cropForAspect, normCrop, setCropEdge } from '../framing';
 import { deleteLut, importLuts } from '../visualOps';
 import { EFFECT_ICONS, TRANSITION_ICONS } from './fxIcons';
 import { EffectThumb, LutThumb, TransitionThumb, useFrame } from './FxPreview';
+import { addGenerated, playPreview, renderSfx, sfxById } from '../sound';
+import { TRANSITION_SFX } from '../soundPremium';
 import { Hint, NeedsSelection, Slider, checkpoint, editSelected, usePoseTime, useSelected } from './Panels';
 
 /** Play a short stretch of the video so the user sees what they just picked. */
@@ -42,6 +44,7 @@ export function TransitionPanel() {
   const next = i >= 0 ? placed[i + 1] : undefined;
   const frameA = useFrame(clip ? project.assets[clip.assetId]?.thumb : undefined, '#5b4bd6', 'A');
   const frameB = useFrame(next ? project.assets[next.clip.assetId]?.thumb : undefined, '#e0457b', 'B');
+  const [adding, setAdding] = useState(false);
   if (!clip) return <Hint>Toca el botón <b>⇄</b> que aparece entre dos clips en la línea de tiempo.</Hint>;
   if (!next) return <Hint>Este es el último clip: las transiciones van entre dos clips. Toca el botón <b>⇄</b> entre dos clips.</Hint>;
   const type = clip.transition?.type ?? 'none';
@@ -60,6 +63,20 @@ export function TransitionPanel() {
   };
   const withDir = (id: TransitionId, d: Direction): Transition => ({ type: id, duration, ...(id === 'push' ? { dir: d } : {}) });
   const tooShort = Math.min(clipDur(clip), clipDur(next.clip)) < duration && type !== 'none';
+  const soundId = TRANSITION_SFX[type];
+  const sound = soundId ? sfxById(soundId) : undefined;
+  const addSound = async () => {
+    if (!sound) return;
+    setAdding(true);
+    try {
+      // Line the sound's main moment (a whoosh's peak, a hit) up with the cut.
+      const cut = placed[i]!.end;
+      await addGenerated(await renderSfx(sound), `Sonido: ${sound.name}`, Math.max(0, cut - (sound.hit ?? 0)), { role: 'sfx', volume: 0.8 });
+      useStore.getState().notify(`Sonido “${sound.name}” agregado en la transición`);
+    } finally {
+      setAdding(false);
+    }
+  };
 
   return (
     <>
@@ -71,7 +88,7 @@ export function TransitionPanel() {
             <button key={tr.id} className={`fx ${type === tr.id ? 'active' : ''}`} onClick={() => set(withDir(tr.id, dir))}>
               <div>
                 <TransitionThumb type={tr.id} dir={dir} a={frameA} b={frameB} />
-                {tr.trend && <TrendBadge />}
+                {tr.pro ? <ProBadge /> : tr.trend && <TrendBadge />}
               </div>
               <span className="fx-name"><Icon size={14} /> {tr.name}</span>
             </button>
@@ -105,6 +122,20 @@ export function TransitionPanel() {
             onChange={(v) => editSelected((c) => void (c.transition = { ...withDir(type, dir), duration: v }))}
           />
           {tooShort && <Hint>Uno de los clips es más corto: la transición se acorta para que quepa.</Hint>}
+          {sound && (
+            <div className="sound-row transition-sound">
+              <button className="icon-btn round" onClick={async () => playPreview(await renderSfx(sound))} aria-label={`Escuchar ${sound.name}`}>
+                <Play size={18} />
+              </button>
+              <div className="sound-text">
+                <strong>{sound.name} <span className="pro-tag">Premium</span></strong>
+                <small>Sonido para esta transición, justo en el corte</small>
+              </div>
+              <button className="btn-ghost small-btn" disabled={adding} onClick={addSound}>
+                <Plus size={16} /> {adding ? 'Agregando…' : 'Agregar'}
+              </button>
+            </div>
+          )}
           <div className="row">
             <button className="btn-ghost" onClick={() => show(clip)}>Ver otra vez</button>
             <button
@@ -122,6 +153,11 @@ export function TransitionPanel() {
       )}
     </>
   );
+}
+
+/** Marks the premium, studio-style looks on the tiles of the pickers. */
+function ProBadge() {
+  return <span className="fx-trend fx-pro">Premium</span>;
 }
 
 /** Marks what is in fashion right now on the tiles of the pickers. */
@@ -160,7 +196,7 @@ export function EffectsPanel() {
             <button key={e.id} className={`fx ${id === e.id ? 'active' : ''}`} onClick={() => pick(e.id)}>
               <div>
                 <EffectThumb id={e.id} intensity={id === e.id ? intensity : EFFECT_DEFAULT_INTENSITY} pic={pic} />
-                {e.trend && <TrendBadge />}
+                {e.pro ? <ProBadge /> : e.trend && <TrendBadge />}
               </div>
               <span className="fx-name"><Icon size={14} /> {e.name}</span>
             </button>

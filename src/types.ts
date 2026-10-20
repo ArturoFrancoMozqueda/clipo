@@ -19,7 +19,8 @@ export interface Asset {
 export type TransitionId =
   | 'none' | 'fade' | 'slide' | 'zoom' | 'wipe'
   | 'fadeBlack' | 'fadeWhite' | 'push' | 'iris' | 'flash' | 'spin' | 'blur' | 'glitch'
-  | 'whip' | 'zoomBlur' | 'filmBurn' | 'shake' | 'pixelate';
+  | 'whip' | 'zoomBlur' | 'filmBurn' | 'shake' | 'pixelate'
+  | 'lightSweep' | 'spinZoom' | 'swipeUp' | 'cube' | 'flip' | 'split' | 'blinds' | 'mosaic';
 /** Direction the new clip comes from (push transition). */
 export type Direction = 'left' | 'right' | 'up' | 'down';
 export interface Transition {
@@ -33,7 +34,8 @@ export interface Transition {
 export type EffectId =
   | 'none' | 'glitch' | 'blur' | 'vignette' | 'shake' | 'kenburns'
   | 'grain' | 'vhs' | 'rgb' | 'pixelate' | 'mirror' | 'glow' | 'lightleak' | 'bwdrama'
-  | 'zoomout' | 'beatzoom' | 'strobe' | 'dreamy' | 'y2k' | 'cinematic' | 'camcorder' | 'duotone' | 'sparkle';
+  | 'zoomout' | 'beatzoom' | 'strobe' | 'dreamy' | 'y2k' | 'cinematic' | 'camcorder' | 'duotone' | 'sparkle'
+  | 'filmLook' | 'halation' | 'handheld' | 'heartbeat' | 'bokeh' | 'tiltShift' | 'anamorphic';
 export interface Effect {
   id: EffectId;
   /** 0..1 */

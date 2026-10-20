@@ -6,16 +6,27 @@ import type {
 import { clamp, clipDur, type Placed } from './model';
 import { supportsCanvasFilter } from './filters';
 import {
-  beatPulse, coverScale, grainValues, hash, irisRadius, letterboxBar, peak, pixelBlock, pushOffsets, recTimecode, smoothNoise,
+  beatPulse, coverScale, grainValues, hash, heartPulse, irisRadius, letterboxBar, peak, pixelBlock, pushOffsets, recTimecode, smoothNoise,
 } from './fxmath';
 import { emojiImage } from './stickers';
 import { redrawWhenLoaded } from './redraw';
 
 // ---------- transitions ----------
 
-/** `trend`: in fashion on TikTok/Reels right now; the pickers list these first with a badge. */
-export const TRANSITIONS: { id: TransitionId; name: string; trend?: true }[] = [
+/**
+ * `pro`: premium, studio-style looks (listed first, gold badge). `trend`: in fashion on TikTok/Reels
+ * right now; the pickers list these next with a badge.
+ */
+export const TRANSITIONS: { id: TransitionId; name: string; trend?: true; pro?: true }[] = [
   { id: 'none', name: 'Corte' },
+  { id: 'lightSweep', name: 'Barrido de luz', pro: true },
+  { id: 'spinZoom', name: 'Giro con zoom', pro: true },
+  { id: 'cube', name: 'Cubo 3D', pro: true },
+  { id: 'flip', name: 'Voltear', pro: true },
+  { id: 'swipeUp', name: 'Barrido vertical', pro: true },
+  { id: 'split', name: 'Dividir', pro: true },
+  { id: 'blinds', name: 'Persianas', pro: true },
+  { id: 'mosaic', name: 'Mosaico', pro: true },
   { id: 'whip', name: 'Barrido rápido', trend: true },
   { id: 'zoomBlur', name: 'Zoom rápido', trend: true },
   { id: 'filmBurn', name: 'Quemado de película', trend: true },
@@ -112,6 +123,7 @@ const S_COPY = 0;
 const S_CHANNEL = 1;
 const S_SMALL = 2;
 const S_SMALL2 = 3;
+const S_MASK = 4;
 
 /** Draw `src` blurred by about `px` pixels (canvas filter, or shrink-and-stretch where there is none). */
 function drawBlurred(ctx: CanvasRenderingContext2D, src: CanvasImageSource, W: number, H: number, px: number) {
@@ -362,6 +374,121 @@ export function drawTransition(
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(s, 0, 0, s.width * b, s.height * b);
     } else draw(src);
+  } else if (type === 'lightSweep') {
+    // A soft diagonal beam of light crosses the frame; the change happens under its brightest part.
+    const e = peak(k);
+    draw(from);
+    ctx.globalAlpha = clamp((k - 0.38) / 0.24, 0, 1);
+    draw(to);
+    ctx.globalAlpha = 1;
+    const x = (-0.35 + 1.7 * k) * W;
+    const band = Math.max(W, H) * 0.42;
+    const beam = (alpha: number, rgb: string) => {
+      const g = ctx.createLinearGradient(x - band, -band * 0.4, x + band, band * 0.4);
+      g.addColorStop(0, `rgba(${rgb},0)`);
+      g.addColorStop(0.5, `rgba(${rgb},${alpha.toFixed(3)})`);
+      g.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    };
+    ctx.globalCompositeOperation = 'screen';
+    beam(0.95 * e, '255,244,226');
+    ctx.globalCompositeOperation = 'lighter';
+    beam(0.3 * e, '255,214,170');
+  } else if (type === 'spinZoom') {
+    // A quarter turn while zooming in, blurred by the speed; the next clip spins out of it.
+    const e = 1 - Math.abs(2 * k - 1);
+    const src = k < 0.5 ? from : to;
+    const th = (k < 0.5 ? k * 2 : (k - 1) * 2) * Math.PI * 0.5 * Math.pow(e, 0.6);
+    const s = coverScale(th, W, H) * (1 + 0.6 * e * e);
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(th);
+    ctx.scale(s, s);
+    ctx.translate(-W / 2, -H / 2);
+    if (src) drawBlurred(ctx, src, W, H, e * e * Math.min(W, H) * 0.03);
+  } else if (type === 'swipeUp') {
+    // Fast vertical pan, smeared along the move.
+    const smear = Math.sin(Math.PI * k) * H * 0.14;
+    const n = 6;
+    for (let j = 0; j < n; j++) {
+      const y = k * H + (j / (n - 1) - 0.5) * smear;
+      ctx.globalAlpha = 1 / (j + 1);
+      if (from) ctx.drawImage(from, 0, -y, W, H);
+      if (to) ctx.drawImage(to, 0, H - y, W, H);
+    }
+  } else if (type === 'cube') {
+    // The picture turns like the face of a cube: the old face folds away as the new one opens.
+    const s = 1 - 0.12 * Math.sin(Math.PI * k);
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(s, s);
+    ctx.translate(-W / 2, -H / 2);
+    const wa = W * (1 - k);
+    if (from && wa > 0.5) {
+      ctx.drawImage(from, 0, 0, wa, H);
+      ctx.fillStyle = `rgba(0,0,0,${(0.65 * k).toFixed(3)})`;
+      ctx.fillRect(0, 0, wa, H);
+    }
+    if (to && W - wa > 0.5) {
+      ctx.drawImage(to, wa, 0, W - wa, H);
+      ctx.fillStyle = `rgba(0,0,0,${(0.65 * (1 - k)).toFixed(3)})`;
+      ctx.fillRect(wa, 0, W - wa, H);
+    }
+  } else if (type === 'flip') {
+    // A card turned over: the picture narrows to its edge and the other side opens.
+    const sx = Math.max(0.002, Math.abs(Math.cos(Math.PI * k)));
+    const s = 1 - 0.14 * Math.sin(Math.PI * k);
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(sx * s, s);
+    ctx.translate(-W / 2, -H / 2);
+    draw(k < 0.5 ? from : to);
+    ctx.fillStyle = `rgba(0,0,0,${(0.55 * (1 - sx)).toFixed(3)})`;
+    ctx.fillRect(0, 0, W, H);
+  } else if (type === 'split') {
+    // The old picture splits in two and slides apart, revealing the new one settling in.
+    const z = 1.12 - 0.12 * k;
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(z, z);
+    ctx.translate(-W / 2, -H / 2);
+    draw(to);
+    ctx.restore();
+    const off = k * H * 0.5;
+    for (const [y0, dy] of [[0, -off], [H / 2, off]] as const) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, y0 + dy, W, H / 2);
+      ctx.clip();
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = Math.min(W, H) * 0.04;
+      if (from) ctx.drawImage(from, 0, dy, W, H);
+      ctx.restore();
+    }
+  } else if (type === 'blinds') {
+    // Vertical slats open one after another.
+    draw(from);
+    const n = 8;
+    const w = W / n;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const p = clamp(k * 1.6 - (i / n) * 0.6, 0, 1);
+      if (p > 0) ctx.rect(i * w, 0, w * p + 0.5, H);
+    }
+    ctx.clip();
+    draw(to);
+  } else if (type === 'mosaic') {
+    // Tiles of the new picture appear in a random order.
+    draw(from);
+    const cols = 8;
+    const size = W / cols;
+    const rows = Math.ceil(H / size);
+    ctx.beginPath();
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (k >= hash(r * 31 + c * 7 + 3) * 0.85) ctx.rect(c * size, r * size, size + 0.5, size + 0.5);
+      }
+    }
+    ctx.clip();
+    draw(to);
   } else {
     draw(from);
     ctx.globalAlpha = k;
@@ -372,8 +499,15 @@ export function drawTransition(
 
 // ---------- clip effects ----------
 
-export const EFFECTS: { id: EffectId; name: string; /** No intensity slider. */ fixed?: boolean; trend?: true }[] = [
+export const EFFECTS: { id: EffectId; name: string; /** No intensity slider. */ fixed?: boolean; trend?: true; pro?: true }[] = [
   { id: 'none', name: 'Ninguno' },
+  { id: 'filmLook', name: 'Película 35 mm', pro: true },
+  { id: 'halation', name: 'Halo de cine', pro: true },
+  { id: 'anamorphic', name: 'Destello anamórfico', pro: true },
+  { id: 'bokeh', name: 'Bokeh', pro: true },
+  { id: 'tiltShift', name: 'Miniatura', pro: true },
+  { id: 'handheld', name: 'Cámara en mano', pro: true },
+  { id: 'heartbeat', name: 'Latido', pro: true },
   { id: 'beatzoom', name: 'Zoom al ritmo', trend: true },
   { id: 'cinematic', name: 'Cine panorámico', trend: true },
   { id: 'camcorder', name: 'Cámara REC', trend: true },
@@ -445,12 +579,35 @@ export function applyEffectTransform(ctx: CanvasRenderingContext2D, clip: Clip, 
     ctx.translate(W / 2, H / 2);
     ctx.scale(s, s);
     ctx.translate(-W / 2, -H / 2);
+  } else if (e.id === 'handheld') {
+    // Slow, smooth drift of a camera held by hand (calmer than "Temblor").
+    const f = local * 0.7;
+    const a = 0.008 + 0.022 * amt;
+    const s = 1 + a * 2.6;
+    ctx.translate(W / 2 + smoothNoise(f, 11) * W * a, H / 2 + smoothNoise(f * 1.1, 12) * H * a);
+    ctx.rotate(smoothNoise(f * 0.8, 13) * a * 0.6);
+    ctx.scale(s, s);
+    ctx.translate(-W / 2, -H / 2);
+  } else if (e.id === 'heartbeat') {
+    // Double "lub-dub" zoom pulse, once a second.
+    const s = 1 + (0.02 + 0.06 * amt) * heartPulse(local);
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(s, s);
+    ctx.translate(-W / 2, -H / 2);
+  } else if (e.id === 'filmLook') {
+    // Gate weave: the film frame wobbles a hair in the projector.
+    const step = Math.floor(local * 24);
+    const s = 1.012;
+    ctx.translate(W / 2 + (hash(step * 3 + 1) - 0.5) * W * 0.003 * amt, H / 2 + (hash(step * 5 + 2) - 0.5) * H * 0.004 * amt);
+    ctx.scale(s, s);
+    ctx.translate(-W / 2, -H / 2);
   }
 }
 
 /** Extra CSS filter for the effect (blur), combined with the color filter. */
 export function effectCss(clip: Clip, W: number) {
   const e = clip.effect;
+  if (e?.id === 'tiltShift') return `saturate(${(1.15 + 0.35 * clamp(e.intensity, 0, 1)).toFixed(2)}) contrast(1.06)`;
   if (e?.id !== 'blur') return '';
   return `blur(${(1 + 11 * clamp(e.intensity, 0, 1)) * (W / 720)}px)`;
 }
@@ -499,6 +656,29 @@ function bloom(ctx: CanvasRenderingContext2D, W: number, H: number, strength: nu
   ctx.globalAlpha = Math.min(1, strength);
   drawBlurred(ctx, b, W, H, radius);
   ctx.restore();
+}
+
+/**
+ * A small copy of the frame (w×h) that keeps only its bright parts, tinted, then doubled `boost` times.
+ * Each of the `passes` squares the values again (2 passes = 4th power), so more passes keep only the
+ * brightest spots. Lens glows and streaks are drawn from it.
+ */
+function highlights(src: CanvasImageSource, w: number, h: number, tint: string, boost: number, passes = 2) {
+  const b = scratch(S_COPY, w, h);
+  const bc = b.getContext('2d')!;
+  bc.globalAlpha = 1;
+  bc.globalCompositeOperation = 'copy';
+  bc.imageSmoothingEnabled = true;
+  bc.imageSmoothingQuality = 'high';
+  bc.drawImage(src, 0, 0, b.width, b.height);
+  bc.globalCompositeOperation = 'multiply';
+  for (let i = 0; i < passes; i++) bc.drawImage(b, 0, 0); // x², x⁴…: only the highlights survive
+  bc.fillStyle = tint;
+  bc.fillRect(0, 0, b.width, b.height);
+  bc.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < boost; i++) bc.drawImage(b, 0, 0);
+  bc.globalCompositeOperation = 'source-over';
+  return b;
 }
 
 /** A four-point twinkle star. */
@@ -796,6 +976,138 @@ export function applyEffectOverlay(ctx: CanvasRenderingContext2D, clip: Clip, lo
     g.addColorStop(1, `rgba(0,0,0,${(0.3 + 0.4 * amt).toFixed(3)})`);
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  } else if (e.id === 'filmLook') {
+    const step = Math.floor(local * 24);
+    ctx.save();
+    // Warm print with soft, slightly lifted blacks.
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha = 0.2 + 0.2 * amt;
+    ctx.fillStyle = '#ffc58f';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighten';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgb(22,18,16)';
+    ctx.fillRect(0, 0, W, H);
+    // Exposure flicker of an old projector.
+    const fl = smoothNoise(local * 9, 21) * (0.05 + 0.07 * amt);
+    if (fl > 0) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = fl;
+      ctx.drawImage(canvas, 0, 0, W, H);
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = -fl;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.globalAlpha = 0.06 + 0.16 * amt;
+    fillTiled(ctx, grainTile(step % 4), W, H, Math.max(1, short / 720), hash(step) * GRAIN_SIZE, hash(step + 1) * GRAIN_SIZE);
+    // Specks of dust and the odd scratch, different on every film frame.
+    ctx.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < 3 + Math.round(5 * amt); i++) {
+      if (hash(step * 17 + i) > 0.45) continue;
+      const r = short * (0.0015 + 0.004 * hash(step * 31 + i));
+      ctx.globalAlpha = 0.5 + 0.4 * hash(i + step);
+      ctx.fillStyle = hash(step * 37 + i) > 0.5 ? '#111' : '#eee';
+      ctx.beginPath();
+      ctx.ellipse(hash(step * 23 + i) * W, hash(step * 29 + i) * H, r, r * (0.4 + hash(i * 3 + step)), hash(i + step * 2) * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (hash(step * 41) < 0.12 + 0.2 * amt) {
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = '#f4f0e8';
+      ctx.fillRect(hash(step * 43) * W, 0, Math.max(1, short * 0.0015), H);
+    }
+    const r = Math.hypot(W, H) / 2;
+    const g = ctx.createRadialGradient(W / 2, H / 2, r * 0.5, W / 2, H / 2, r);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, `rgba(0,0,0,${(0.3 + 0.3 * amt).toFixed(3)})`);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  } else if (e.id === 'halation') {
+    // Red-orange glow bleeding around the highlights, like light scattering inside film.
+    const b = highlights(canvas, W / 4, H / 4, '#ff6a3d', 1);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = 0.55 + 0.45 * amt;
+    drawBlurred(ctx, b, W, H, short * (0.012 + 0.02 * amt));
+    ctx.globalAlpha = 0.35 + 0.3 * amt;
+    drawBlurred(ctx, b, W, H, short * (0.04 + 0.03 * amt));
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha = 0.15 + 0.15 * amt;
+    ctx.fillStyle = '#ffb37a';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  } else if (e.id === 'anamorphic') {
+    // Long horizontal blue streaks through the bright spots, like an anamorphic cinema lens. Shrinking
+    // the frame a lot sideways (and little in height) then stretching it back smears light horizontally.
+    const b = highlights(canvas, Math.max(4, W / 40), Math.max(8, H / 3), '#4f9dff', 3, 3);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.5 + 0.5 * amt;
+    ctx.drawImage(b, -W * 0.25, 0, W * 1.5, H);
+    ctx.globalAlpha = 0.25 + 0.35 * amt;
+    ctx.drawImage(b, -W * 0.6, 0, W * 2.2, H);
+    ctx.restore();
+  } else if (e.id === 'bokeh') {
+    // Soft out-of-focus circles of light floating up slowly.
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    const colors = ['255,214,150', '255,170,120', '255,240,210', '180,210,255'];
+    const n = 8 + Math.round(14 * amt);
+    for (let i = 0; i < n; i++) {
+      const r = short * (0.035 + 0.07 * hash(i * 3 + 1));
+      const speed = 0.015 + 0.03 * hash(i * 5 + 2);
+      const x = (hash(i * 7 + 3) + smoothNoise(local * 0.2, i + 40) * 0.08) * W;
+      const y = -r + ((((hash(i * 11 + 4) - local * speed) % 1) + 1) % 1) * (H + 2 * r);
+      const a = (0.18 + 0.3 * amt) * (0.6 + 0.4 * Math.sin(local * 0.8 + i));
+      const c = colors[i % colors.length]!;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(${c},${(a * 0.8).toFixed(3)})`);
+      g.addColorStop(0.75, `rgba(${c},${a.toFixed(3)})`);
+      g.addColorStop(1, `rgba(${c},0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  } else if (e.id === 'tiltShift') {
+    // Only a band across the middle stays sharp, so the scene looks like a miniature model.
+    const m = scratch(S_MASK, W, H);
+    const mc = m.getContext('2d')!;
+    mc.save();
+    mc.globalCompositeOperation = 'copy';
+    drawBlurred(mc, canvas, W, H, short * (0.008 + 0.02 * amt));
+    mc.globalCompositeOperation = 'destination-in';
+    const band = 0.12 + 0.1 * (1 - amt);
+    const g = mc.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#000');
+    g.addColorStop(0.35 - band, '#000');
+    g.addColorStop(0.5 - band, 'rgba(0,0,0,0)');
+    g.addColorStop(0.5 + band, 'rgba(0,0,0,0)');
+    g.addColorStop(0.65 + band, '#000');
+    g.addColorStop(1, '#000');
+    mc.fillStyle = g;
+    mc.fillRect(0, 0, W, H);
+    mc.restore();
+    ctx.drawImage(m, 0, 0, W, H);
+  } else if (e.id === 'heartbeat') {
+    // The edges darken and redden with each beat.
+    const p = heartPulse(local);
+    const r = Math.hypot(W, H) / 2;
+    const g = ctx.createRadialGradient(W / 2, H / 2, r * (0.6 - 0.25 * p * amt), W / 2, H / 2, r);
+    g.addColorStop(0, 'rgba(60,0,10,0)');
+    g.addColorStop(1, `rgba(60,0,10,${(0.25 + 0.45 * p * (0.4 + 0.6 * amt)).toFixed(3)})`);
+    ctx.save();
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();

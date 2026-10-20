@@ -18,9 +18,9 @@ conseguir más.
 | Estilos rápidos de texto | 12 | Combinaciones propias de fuente + color + animación | Propias |
 | Stickers | 152 | [Microsoft Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (estilo plano) | MIT. Aviso en `public/stickers/fluent/LICENSE.txt` |
 | Filtros | 22 | Valores propios | Propios |
-| Efectos de sonido | 115 en 11 categorías | 47 sintetizados por Clipo (`src/sound.ts`) + 68 grabaciones de [Kenney](https://kenney.nl/assets/category:Audio) | Propios + CC0 (dominio público) |
+| Efectos de sonido | 154 en 12 categorías | 39 Premium diseñados en capas por Clipo (`src/soundPremium.ts`) + 47 sintetizados (`src/sound.ts`) + 68 grabaciones de [Kenney](https://kenney.nl/assets/category:Audio) | Propios + CC0 (dominio público) |
 | Voces de texto a voz | 6 naturales + 2 de estudio | [Piper](https://github.com/rhasspy/piper) (`rhasspy/piper-voices`), se descargan la primera vez | Ver abajo |
-| Música | 6 estilos, versiones ilimitadas | Compuesta por Clipo en el dispositivo, del largo del video | Propia: sin atribución |
+| Música | 9 estilos, versiones ilimitadas | Compuesta por Clipo en el dispositivo, del largo del video | Propia: sin atribución |
 
 ### Tipografías incluidas
 
@@ -45,6 +45,13 @@ agregar más, añade el nombre en inglés del emoji (como aparece en la carpeta
 y copia la selección a `public/sfx/kenney/`. Para agregar más, añade el
 archivo a la lista `PICKS` del script. Los efectos sintetizados están en
 `src/sound.ts` (lista `SYNTH`).
+
+Los efectos **Premium** (`src/soundPremium.ts`) se arman como en un estudio: cada uno junta
+varias capas (sub grave, cuerpo, aire, golpe inicial), pasa por saturación y una reverb, y se
+masteriza al mismo pico, así todos suenan llenos y parejos. Las herramientas para crearlos
+(capas con curvas, reverb, saturación, campanas) están en `src/synth.ts`. Cada transición
+tiene su sonido Premium sugerido (`TRANSITION_SFX`), que se coloca para que su momento fuerte
+caiga justo en el corte.
 
 No hay risas, voces ni sonidos de animales: no se pueden sintetizar con buena
 calidad y los paquetes CC0 no los traen. Para eso, importa un archivo propio

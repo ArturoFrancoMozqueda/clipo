@@ -6,86 +6,14 @@ import { putBlob } from './db';
 import { uid, useStore } from './store';
 import { encodeWav } from './voice';
 import kenneyCatalog from './sfxCatalog.json';
-
-const SR = 44100;
-
-type Build = (ctx: OfflineAudioContext, out: AudioNode, rand: () => number) => void;
-
-/** Small deterministic random generator, so a "version" of a song can be rebuilt exactly. */
-function rng(seed: number) {
-  let s = seed >>> 0 || 1;
-  return () => {
-    s ^= s << 13;
-    s ^= s >>> 17;
-    s ^= s << 5;
-    return (s >>> 0) / 4294967296;
-  };
-}
-
-async function render(seconds: number, build: Build, seed = 1): Promise<Float32Array> {
-  const ctx = new OfflineAudioContext(1, Math.ceil(seconds * SR), SR);
-  const comp = ctx.createDynamicsCompressor();
-  comp.threshold.value = -14;
-  comp.ratio.value = 4;
-  comp.connect(ctx.destination);
-  build(ctx, comp, rng(seed));
-  const buf = await ctx.startRendering();
-  return buf.getChannelData(0);
-}
-
-const noiseCache = new WeakMap<BaseAudioContext, AudioBuffer>();
-function noise(ctx: BaseAudioContext) {
-  let b = noiseCache.get(ctx);
-  if (!b) {
-    b = ctx.createBuffer(1, SR * 2, SR);
-    const d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    noiseCache.set(ctx, b);
-  }
-  return b;
-}
-
-/** A gain node with an attack/decay envelope starting at t. */
-function env(ctx: BaseAudioContext, t: number, peak: number, attack: number, decay: number, dest: AudioNode) {
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + Math.max(0.002, attack));
-  g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
-  g.connect(dest);
-  return g;
-}
-
-function tone(ctx: BaseAudioContext, dest: AudioNode, t: number, type: OscillatorType, f0: number, f1: number, dur: number, peak: number, attack = 0.005) {
-  const o = ctx.createOscillator();
-  o.type = type;
-  o.frequency.setValueAtTime(f0, t);
-  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
-  o.connect(env(ctx, t, peak, attack, dur, dest));
-  o.start(t);
-  o.stop(t + attack + dur + 0.05);
-}
-
-function hiss(ctx: BaseAudioContext, dest: AudioNode, t: number, dur: number, peak: number, filter: BiquadFilterType, f0: number, f1 = f0, q = 1, attack = 0.005) {
-  const src = ctx.createBufferSource();
-  src.buffer = noise(ctx);
-  src.loop = true;
-  const bq = ctx.createBiquadFilter();
-  bq.type = filter;
-  bq.Q.value = q;
-  bq.frequency.setValueAtTime(f0, t);
-  if (f1 !== f0) bq.frequency.exponentialRampToValueAtTime(f1, t + attack + dur);
-  src.connect(bq).connect(env(ctx, t, peak, attack, dur, dest));
-  src.start(t, Math.random());
-  src.stop(t + attack + dur + 0.05);
-}
-
-const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
+import { SR, hiss, hz, master, pulsed, render, reverb, tone, vibrato, type Build } from './synth';
+import { PREMIUM_SFX } from './soundPremium';
 
 // ---------- sound effects ----------
 
 /** Categories in the order the picker shows them. */
 export const SFX_CATEGORIES = [
-  'Transiciones', 'Cómicos', 'Reacciones', 'Impactos', 'Interfaz', 'Juegos', 'Ciencia ficción y magia',
+  'Cinemáticos', 'Transiciones', 'Cómicos', 'Reacciones', 'Impactos', 'Interfaz', 'Juegos', 'Ciencia ficción y magia',
   'Objetos', 'Tiempo y dinero', 'Ambiente', 'Cortinillas',
 ] as const;
 export type SfxCategory = (typeof SFX_CATEGORIES)[number];
@@ -101,44 +29,10 @@ export interface Sfx {
   build?: Build;
   /** …or a bundled recording (Kenney, CC0) under public/sfx/kenney/. */
   file?: string;
-}
-
-/** An oscillator whose pitch wobbles (vibrato), with an attack/decay envelope. */
-function vibrato(ctx: BaseAudioContext, dest: AudioNode, t: number, type: OscillatorType, f: number, dur: number, peak: number, rate = 6, depth = 8) {
-  const o = ctx.createOscillator();
-  o.type = type;
-  o.frequency.setValueAtTime(f, t);
-  const lfo = ctx.createOscillator();
-  lfo.frequency.value = rate;
-  const lg = ctx.createGain();
-  lg.gain.value = depth;
-  lfo.connect(lg).connect(o.frequency);
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.value = 1800;
-  o.connect(lp).connect(env(ctx, t, peak, 0.03, dur, dest));
-  o.start(t);
-  lfo.start(t);
-  o.stop(t + dur + 0.1);
-  lfo.stop(t + dur + 0.1);
-  return o;
-}
-
-/** A tone switched on and off quickly (phone ring, vibration, crickets). */
-function pulsed(ctx: BaseAudioContext, dest: AudioNode, t: number, dur: number, type: OscillatorType, f: number, rate: number, peak: number) {
-  const o = ctx.createOscillator();
-  o.type = type;
-  o.frequency.value = f;
-  const g = ctx.createGain();
-  g.gain.value = 0;
-  const step = 1 / rate;
-  for (let x = 0; x < dur; x += step) {
-    g.gain.setValueAtTime(peak, t + x);
-    g.gain.setValueAtTime(0, t + x + step / 2);
-  }
-  o.connect(g).connect(dest);
-  o.start(t);
-  o.stop(t + dur + 0.05);
+  /** Studio-designed (layered, with reverb and mastering): listed first, with a badge. */
+  premium?: true;
+  /** Seconds into the sound where its main moment lands (a whoosh's peak), to line it up with a cut. */
+  hit?: number;
 }
 
 const SYNTH: Sfx[] = [
@@ -325,7 +219,11 @@ const KENNEY: Sfx[] = (kenneyCatalog as { id: string; name: string; use: string;
 }));
 
 /** Every sound effect, grouped by category in the picker. */
-export const SFX: Sfx[] = [...SYNTH, ...KENNEY].sort((a, b) => SFX_CATEGORIES.indexOf(a.category) - SFX_CATEGORIES.indexOf(b.category));
+export const SFX: Sfx[] = [...PREMIUM_SFX, ...SYNTH, ...KENNEY].sort(
+  (a, b) => SFX_CATEGORIES.indexOf(a.category) - SFX_CATEGORIES.indexOf(b.category) || Number(!!b.premium) - Number(!!a.premium),
+);
+
+export const sfxById = (id: string) => SFX.find((s) => s.id === id);
 
 const decoded = new Map<string, Promise<Float32Array>>();
 
@@ -339,7 +237,7 @@ function limit(d: Float32Array, max = 0.95) {
 
 /** Mono samples at Clipo's sample rate, for a synthesized or a bundled sound. */
 export function renderSfx(s: Sfx): Promise<Float32Array> {
-  if (s.build) return render(s.seconds ?? 1, s.build, 7).then((d) => limit(d));
+  if (s.build) return render(s.seconds ?? 1, s.build, 7).then((d) => (s.premium ? master(d) : limit(d)));
   let p = decoded.get(s.id);
   if (!p) {
     p = fetch(`./sfx/kenney/${s.file}`)
@@ -361,7 +259,7 @@ export function renderSfx(s: Sfx): Promise<Float32Array> {
 
 // ---------- background music ----------
 
-type DrumKit = 'none' | 'soft' | 'pop' | 'four' | 'epic';
+type DrumKit = 'none' | 'soft' | 'pop' | 'four' | 'epic' | 'trap';
 
 export interface Mood {
   id: string;
@@ -374,6 +272,9 @@ export interface Mood {
   pad: OscillatorType;
   lead: OscillatorType | null;
   lofi?: boolean;
+  /** Size of the room (reverb seconds) and how much of it is heard. */
+  space?: number;
+  wet?: number;
 }
 
 export const MOODS: Mood[] = [
@@ -383,6 +284,9 @@ export const MOODS: Mood[] = [
   { id: 'negocio', name: 'Negocio', hint: 'Productos, tutoriales, empresas', bpm: 108, chords: [[60, 64, 67], [53, 57, 60], [57, 60, 64], [55, 59, 62]], drums: 'pop', pad: 'triangle', lead: 'square' },
   { id: 'romantico', name: 'Romántico', hint: 'Parejas, bodas, recuerdos', bpm: 70, chords: [[60, 64, 67, 71], [57, 60, 64, 67], [53, 57, 60, 64], [55, 59, 62, 65]], drums: 'none', pad: 'sine', lead: 'sine' },
   { id: 'energia', name: 'Energía', hint: 'Ejercicio, fiestas, retos', bpm: 126, chords: [[57, 60, 64], [53, 57, 60], [60, 64, 67], [55, 59, 62]], drums: 'four', pad: 'sawtooth', lead: 'square' },
+  { id: 'urbano', name: 'Urbano', hint: 'Moda, autos, actitud', bpm: 140, chords: [[57, 60, 64], [53, 57, 60], [55, 59, 62], [52, 55, 59]], drums: 'trap', pad: 'sine', lead: 'triangle', space: 1.4, wet: 0.18 },
+  { id: 'cine', name: 'Cinemático', hint: 'Tráilers, documentales, historias', bpm: 84, chords: [[50, 57, 62, 65], [46, 53, 58, 62], [53, 60, 65, 69], [48, 55, 60, 64]], drums: 'epic', pad: 'sawtooth', lead: null, space: 3.2, wet: 0.35 },
+  { id: 'ambiental', name: 'Ambiental', hint: 'Naturaleza, meditación, viajes', bpm: 64, chords: [[60, 67, 71, 76], [57, 64, 67, 72], [53, 60, 64, 69], [55, 62, 67, 71]], drums: 'none', pad: 'sine', lead: 'sine', space: 4, wet: 0.45 },
 ];
 
 function kick(c: BaseAudioContext, o: AudioNode, t: number, v = 1) {
@@ -440,6 +344,11 @@ function buildSong(m: Mood, seconds: number): Build {
       out = lp;
       hiss(c, master, 0, seconds, 0.015, 'highpass', 4000);
     }
+    // One shared room, so the instruments sound like they play together instead of side by side.
+    const room = c.createGain();
+    room.connect(out);
+    room.connect(reverb(c, out, m.space ?? 1.8, m.wet ?? 0.2, 5000));
+    out = room;
     // Arpeggio pattern for this "version": positions in the chord for each 8th note.
     const pattern = Array.from({ length: 8 }, () => Math.floor(r() * 4));
     const rests = Array.from({ length: 8 }, () => r() < 0.25);
@@ -449,8 +358,13 @@ function buildSong(m: Mood, seconds: number): Build {
       playChord(c, out, t0, bar, chord, m.pad);
       // Bass on the root, an octave down.
       const root = chord[0]! - 24;
-      const bassHits = m.drums === 'four' || m.drums === 'epic' ? [0, 1, 2, 3] : [0, 2];
-      for (const k of bassHits) tone(c, out, t0 + k * beat, 'triangle', hz(root), hz(root), beat * 0.9, 0.35, 0.01);
+      if (m.drums === 'trap') {
+        // Long 808 bass under the whole bar.
+        tone(c, out, t0, 'sine', hz(root), hz(root), bar * 0.85, 0.5, 0.01);
+      } else {
+        const bassHits = m.drums === 'four' || m.drums === 'epic' ? [0, 1, 2, 3] : [0, 2];
+        for (const k of bassHits) tone(c, out, t0 + k * beat, 'triangle', hz(root), hz(root), beat * 0.9, 0.35, 0.01);
+      }
       // Melody/arpeggio: skip the first bars so the song builds up.
       if (m.lead && b >= 2) {
         for (let i = 0; i < 8; i++) {
@@ -461,6 +375,14 @@ function buildSong(m: Mood, seconds: number): Build {
       }
       // Drums.
       if (m.drums === 'none') continue;
+      if (m.drums === 'trap') {
+        // Half-time beat: kicks off the grid, snare on the third beat, fast hi-hats with a roll every other bar.
+        for (const kb of [0, 1.5, 2.75]) kick(c, out, t0 + kb * beat, 1.1);
+        snare(c, out, t0 + 2 * beat, 1.1);
+        for (let h = 0; h < 8; h++) hat(c, out, t0 + (h * beat) / 2, h % 2 ? 0.5 : 0.8);
+        if (b % 2) for (let h = 0; h < 6; h++) hat(c, out, t0 + 3.5 * beat + (h * beat) / 12, 0.45);
+        continue;
+      }
       for (let k = 0; k < 4; k++) {
         const t = t0 + k * beat;
         if (m.drums === 'four') kick(c, out, t);
@@ -477,7 +399,8 @@ function buildSong(m: Mood, seconds: number): Build {
 }
 
 /** Render a piece of music in a mood. A different `version` gives a different melody. */
-export const renderSong = (m: Mood, seconds: number, version = 1) => render(seconds, buildSong(m, seconds), version * 7919 + m.bpm);
+export const renderSong = (m: Mood, seconds: number, version = 1) =>
+  render(seconds, buildSong(m, seconds), version * 7919 + m.bpm).then((d) => limit(d));
 
 // ---------- preview and adding to the project ----------
 

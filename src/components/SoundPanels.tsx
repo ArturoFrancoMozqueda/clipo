@@ -7,12 +7,12 @@ import { MOODS, SFX, SFX_CATEGORIES, addGenerated, playPreview, renderSfx, rende
 /** Sound effects placed at the white line, browsable by category or by search. */
 export function SfxPanel() {
   const [busy, setBusy] = useState<string | null>(null);
-  const [cat, setCat] = useState<SfxCategory | 'Todos'>('Todos');
+  const [cat, setCat] = useState<SfxCategory | 'Todos' | 'Premium'>('Todos');
   const [query, setQuery] = useState('');
   useEffect(() => stopPreview, []);
 
   const q = query.trim().toLowerCase();
-  const list = SFX.filter((s) => (cat === 'Todos' || s.category === cat) && (!q || `${s.name} ${s.use} ${s.category}`.toLowerCase().includes(q)));
+  const list = SFX.filter((s) => (cat === 'Todos' || s.category === cat || (cat === 'Premium' && s.premium)) && (!q || `${s.name} ${s.use} ${s.category}`.toLowerCase().includes(q)));
 
   const listen = async (s: Sfx) => playPreview(await renderSfx(s));
   const add = async (s: Sfx) => {
@@ -36,8 +36,8 @@ export function SfxPanel() {
         onChange={(e) => setQuery(e.target.value)}
       />
       <div className="chips sfx-cats">
-        {(['Todos', ...SFX_CATEGORIES] as const).map((c) => (
-          <button key={c} className={`chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>
+        {(['Todos', 'Premium', ...SFX_CATEGORIES] as const).map((c) => (
+          <button key={c} className={`chip ${cat === c ? 'active' : ''} ${c === 'Premium' ? 'chip-pro' : ''}`} onClick={() => setCat(c)}>
             {c}
           </button>
         ))}
@@ -49,8 +49,8 @@ export function SfxPanel() {
               <Play size={18} />
             </button>
             <div className="sound-text">
-              <strong>{s.name}</strong>
-              <small>{s.use}{cat === 'Todos' ? ` · ${s.category}` : ''}</small>
+              <strong>{s.name}{s.premium && <span className="pro-tag">Premium</span>}</strong>
+              <small>{s.use}{cat === 'Todos' || cat === 'Premium' ? ` · ${s.category}` : ''}</small>
             </div>
             <button className="btn-ghost small-btn" disabled={busy === s.id} onClick={() => add(s)}>
               <Plus size={16} /> Agregar
@@ -59,7 +59,7 @@ export function SfxPanel() {
         ))}
         {!list.length && <p className="muted small">No hay sonidos con ese nombre. Prueba otra palabra.</p>}
       </div>
-      <p className="muted small">Hechos por Clipo y por Kenney (dominio público, CC0): puedes usarlos en cualquier video, también con fines comerciales.</p>
+      <p className="muted small">Los Premium están diseñados en capas, con reverb y masterizados: suenan llenos y parejos. Hechos por Clipo y por Kenney (dominio público, CC0): puedes usarlos en cualquier video, también con fines comerciales.</p>
     </>
   );
 }

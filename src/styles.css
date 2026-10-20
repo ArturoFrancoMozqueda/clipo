@@ -596,3 +596,13 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
 .preset-row { padding-top: 9px; }
 .preset .trend-tag, .style .trend-tag { top: -8px; left: auto; right: 6px; }
 .style-grid { padding-top: 6px; }
+
+/* ---------- "Premium": studio-made sounds, transitions and effects ---------- */
+.fx-pro { color: #2a1a00; background: linear-gradient(120deg, #ffe7a3, #f5b942 55%, #ffd77a); }
+.pro-tag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 5px; font-size: 9.5px; font-weight: 800; letter-spacing: .03em; line-height: 15px; vertical-align: 2px; color: #2a1a00; background: linear-gradient(120deg, #ffe7a3, #f5b942 55%, #ffd77a); }
+.chip.chip-pro { color: #f5c96a; border-color: rgba(245, 185, 66, .45); }
+.chip.chip-pro.active { color: #2a1a00; background: linear-gradient(120deg, #ffe7a3, #f5b942 55%, #ffd77a); border-color: transparent; }
+.transition-sound { margin: 10px 0; }
+.mood-urbano { background: linear-gradient(135deg, #a855f7, #1e1b4b); }
+.mood-cine { background: linear-gradient(135deg, #b45309, #0c0a09); }
+.mood-ambiental { background: linear-gradient(135deg, #14b8a6, #134e4a); }

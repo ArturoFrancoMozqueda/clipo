@@ -65,6 +65,13 @@ export function beatPulse(t: number, period = BEAT) {
   return Math.exp(-p * 7);
 }
 
+/** Double "lub-dub" heartbeat once per `period` seconds: 1 on the first beat, a softer second one, decaying fast. */
+export function heartPulse(t: number, period = 1) {
+  const p = ((t % period) + period) % period;
+  const dub = p >= 0.22 ? 0.65 * Math.exp(-(p - 0.22) * 14) : 0;
+  return Math.min(1, Math.exp(-p * 14) + dub);
+}
+
 /** Height of each widescreen bar as a fraction of the frame: real 2.39:1 on landscape, a band elsewhere. */
 export function letterboxBar(W: number, H: number) {
   const bar = (H - W / 2.39) / 2 / H;
