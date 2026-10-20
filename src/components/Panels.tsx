@@ -141,6 +141,15 @@ export function useSelected<T extends Clip | TextItem | AudioItem | StickerItem 
   });
 }
 
+/**
+ * Re-render with the playhead only where the item's pose depends on it: paused, and the item has
+ * keyframes. Otherwise scrubbing the timeline would re-render the whole panel on every step.
+ */
+export function usePoseTime(item: { keyframes?: unknown[] } | null | undefined) {
+  const animated = !!item?.keyframes?.length;
+  return useStore((s) => (s.playing || !animated ? -1 : s.time));
+}
+
 /** Change the selected item without a history step (call checkpoint() first). */
 export function editSelected(fn: (item: Clip & TextItem & AudioItem & StickerItem & OverlayItem) => void) {
   const s = useStore.getState();
