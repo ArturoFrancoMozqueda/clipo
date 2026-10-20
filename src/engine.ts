@@ -33,8 +33,8 @@ interface MediaRec<E extends HTMLMediaElement> {
   movedAt?: number;
   /** When it was last hard-seeked while playing (those are rate-limited). */
   seekAt?: number;
-  /** Pending requestVideoFrameCallback handle (0 = none). */
-  vfc?: number;
+  /** As a follower: its drift from the timeline (s), averaged over recent frames. */
+  drift?: number;
 }
 
 /**
@@ -66,6 +66,8 @@ const SLOW_FRAME_MS = 12;
 // other element (music, voice-overs, overlays, the other clip of a transition) follows the timeline
 // through small playbackRate changes. A hard seek stalls the picture and skips the sound of a playing
 // element, so it is kept for large drift only.
+// requestVideoFrameCallback is deliberately not used: in Chrome, armed on these hidden elements it
+// froze 4K HEVC (iPhone) decoding mid-clip.
 /** The timeline jumps to the clock element when they disagree by more than this (s)... */
 const CLOCK_SNAP = 0.25;
 /** ...and otherwise takes this share of the gap each frame (smooths out currentTime's jitter). */
@@ -83,8 +85,6 @@ const FOLLOW_SEEK = 0.35;
 const FOLLOW_SEEK_MS = 2000;
 /** While the clock waits for buffering longer than this (ms), followers pause instead of running ahead. */
 const FOLLOW_HOLD_MS = 120;
-/** While playing a video, draw at least this often (ms) even without a new frame (texts, transitions). */
-const MIN_DRAW_MS = 32;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -112,8 +112,6 @@ function nudge(drift: number) {
   const k = a < 0.015 ? 0 : a < 0.04 ? 0.015 : a < 0.12 ? 0.03 : 0.05;
   return drift > 0 ? -k : k;
 }
-
-const hasFrameCallback = typeof HTMLVideoElement !== 'undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
 
 /**
  * Plays the project by driving hidden media elements from one master clock and compositing frames
@@ -144,9 +142,6 @@ class Engine {
   private wallOnly: string | null = null;
   /** The real-time export waits for another visible video: everything holds still. */
   private exportHold = false;
-  /** The picture follows video frames (requestVideoFrameCallback), not every animation frame. */
-  private paced = false;
-  private lastDraw = 0;
   private onEnded: (() => void) | null = null;
   private abortExport: (() => void) | null = null;
   /** Voice activity of each media file (for ducking), filled in as files are analyzed. */
@@ -215,12 +210,10 @@ class Engine {
 
   private frame = (now: number) => {
     this.raf = 0;
-    // Asked for (an edit, a media event, a new video frame) rather than just the clock moving.
-    const asked = this.dirty;
     this.dirty = false;
     this.ticking = true;
     try {
-      this.tick(now, asked);
+      this.tick(now);
     } finally {
       this.ticking = false;
     }
@@ -392,7 +385,6 @@ class Engine {
   private release(r: MediaRec<HTMLMediaElement>) {
     if (!r.live) return;
     r.live = false;
-    this.unwatch(r);
     r.el.pause();
     r.el.preload = 'none';
     r.el.removeAttribute('src');
@@ -413,7 +405,6 @@ class Engine {
   }
 
   private dispose(r: MediaRec<HTMLMediaElement>) {
-    this.unwatch(r);
     r.fx?.chain?.dispose();
     r.src?.disconnect();
     r.gain?.disconnect();
@@ -424,27 +415,6 @@ class Engine {
     r.el.removeAttribute('src');
     r.el.load();
     r.el.remove();
-  }
-
-  /**
-   * Draw when this video presents a new frame. Drawing on every animation frame instead redraws the
-   * same picture two or more times per video frame (a 30 fps clip on a 60-120 Hz screen) for nothing.
-   */
-  private watch(r: MediaRec<HTMLMediaElement>) {
-    if (r.vfc || !hasFrameCallback || !(r.el instanceof HTMLVideoElement)) return;
-    const el = r.el;
-    const onFrame = () => {
-      r.vfc = 0;
-      this.markDirty();
-      if (!el.paused && r.live) r.vfc = el.requestVideoFrameCallback(onFrame);
-    };
-    r.vfc = el.requestVideoFrameCallback(onFrame);
-  }
-
-  private unwatch(r: MediaRec<HTMLMediaElement>) {
-    if (!r.vfc) return;
-    (r.el as HTMLVideoElement).cancelVideoFrameCallback(r.vfc);
-    r.vfc = 0;
   }
 
   /** Audio graph: element -> gain -> master -> (speakers via monitor, recorder). */
@@ -582,7 +552,7 @@ class Engine {
 
   // ---------- frame loop ----------
 
-  private tick(now: number, asked = true) {
+  private tick(now: number) {
     const s = useStore.getState();
     const p = s.project;
     if (!p || !this.ctx || !this.canvas || this.hold) return;
@@ -610,11 +580,7 @@ class Engine {
     this.fitResolution(playing, p);
     const t0 = performance.now();
     this.updateMedia(p, t, playing, placed, now);
-    // While a video plays, its new frames ask for the drawing (see watch); in between only the
-    // clock moved, and a few frames a second keep texts and transitions moving.
-    if (playing && this.paced && !asked && !this.exporting && now - this.lastDraw < MIN_DRAW_MS) return;
     const drawn = this.render(p, t, s.selection, placed);
-    if (drawn) this.lastDraw = now;
     if (playing && !this.exporting && !this.lowered && drawn) this.measure(performance.now() - t0);
     // A picture isn't decoded yet: media events wake the loop, but retry for a moment anyway.
     if (drawn) this.misses = 0;
@@ -744,8 +710,8 @@ class Engine {
     setRate(el, rate);
     r.lastCt = el.currentTime;
     r.movedAt = 0;
+    r.drift = undefined;
     el.play().catch(() => {});
-    this.watch(r);
   }
 
   /** The active clip's element while it is the clock: started where it belongs, then left alone. */
@@ -758,7 +724,6 @@ class Engine {
       setRate(el, rate);
       // Only a gross mismatch is corrected (the clock waits for it otherwise).
       if (!el.seeking && el.readyState >= 1 && Math.abs(el.currentTime - target) > 1) el.currentTime = target;
-      this.watch(r);
     }
   }
 
@@ -777,10 +742,15 @@ class Engine {
     const now = performance.now();
     if (Math.abs(drift) > FOLLOW_SEEK && (Math.abs(drift) > 1 || now - (r.seekAt ?? 0) > FOLLOW_SEEK_MS)) {
       r.seekAt = now;
+      r.drift = 0;
       el.currentTime = target;
       setRate(el, rate);
-    } else setRate(el, rate * (1 + nudge(drift)));
-    this.watch(r);
+      return;
+    }
+    // Steered by the averaged drift: currentTime jitters by a few ms per read, and reacting to that
+    // would flip the rate back and forth.
+    r.drift = (r.drift ?? drift) * 0.9 + drift * 0.1;
+    setRate(el, rate * (1 + nudge(r.drift)));
   }
 
   /** Shows the frame at `src` while paused or scrubbing (precise), or while its footage holds still. */
@@ -796,7 +766,6 @@ class Engine {
     const partner = tr ? (tr.out.index === cur?.index ? tr.in : tr.out) : null;
     // Followers run unless the clock has been waiting a while (buffering) or the export is holding.
     const run = playing && !this.exportHold && !(this.holdSince && now - this.holdSince > FOLLOW_HOLD_MS);
-    this.paced = false;
     for (const l of placed) {
       const r = this.videos.get(l.clip.id);
       if (!r) continue;
@@ -812,7 +781,6 @@ class Engine {
         else if (this.wallOnly === l.clip.id) this.follow(r, src, l.clip.speed, run);
         else if (r.live && atEnd(el)) el.pause(); // out of footage: it holds its last frame
         else this.drive(r, src, l.clip.speed);
-        this.paced = playing && hasFrameCallback && !el.paused;
       } else if (partner && l.index === partner.index) {
         this.need(r);
         const raw = l.clip.in + (t - l.start) * l.clip.speed;
