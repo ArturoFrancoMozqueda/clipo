@@ -3,6 +3,7 @@
 // mediabunny drives WebCodecs' AudioDecoder (which decodes off the main thread); when it can't
 // read the container or decode the codec, the old decodeAudioData path takes over.
 import { firstDecodable } from './convertVideo';
+import { fallbackOrigin, mp3StartDelay } from './gapless';
 
 /** Decoded sound of [start, start + length / sampleRate) seconds of the source. */
 export interface Pcm {
@@ -22,8 +23,36 @@ interface Opts {
   fallbackRate?: number;
 }
 
-/** mediabunny can't read this file: use decodeAudioData instead. */
-class Fallback extends Error {}
+/** mediabunny can't read this file: use decodeAudioData instead. `origin`: source time of its first sample. */
+class Fallback extends Error {
+  constructor(
+    message: string,
+    readonly origin = 0,
+  ) {
+    super(message);
+  }
+}
+
+/** Where decodeAudioData's output starts for this track (it ignores a late start of the sound). */
+const originOf = async (track: { getFirstTimestamp(): Promise<number> } | null) => fallbackOrigin(await track?.getFirstTimestamp().catch(() => 0));
+
+/**
+ * Seconds the decoded timestamps run ahead of the real sound: an MP3's encoder + decoder delay,
+ * which players (and the preview) skip. Without it a song or voice-over plays ~25 ms late.
+ */
+async function leadOf(blob: Blob, codec: string | null): Promise<number> {
+  if (codec !== 'mp3') return 0;
+  try {
+    const head = new Uint8Array(await blob.slice(0, 10).arrayBuffer());
+    // Skip an ID3v2 tag (it can hold a big cover picture) so only the first frame is read.
+    const id3 = head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33
+      ? 10 + (((head[6]! & 0x7f) << 21) | ((head[7]! & 0x7f) << 14) | ((head[8]! & 0x7f) << 7) | (head[9]! & 0x7f)) + (head[5]! & 0x10 ? 10 : 0)
+      : 0;
+    return mp3StartDelay(new Uint8Array(await blob.slice(id3, id3 + 8192).arrayBuffer()));
+  } catch {
+    return 0;
+  }
+}
 
 const yieldNow = () => new Promise<void>((r) => setTimeout(r, 0));
 
@@ -37,10 +66,11 @@ async function openTrack(blob: Blob) {
   try {
     // iPhone videos can carry several sound tracks, spatial audio first: use the first one this device decodes.
     const all = await input.getAudioTracks();
-    if (!all.length) return { mb, input, track: null };
-    const track = await firstDecodable(all, await input.getPrimaryAudioTrack());
-    if (!track) throw new Fallback('cannot decode');
-    return { mb, input, track };
+    if (!all.length) return { mb, input, track: null, lead: 0 };
+    const primary = await input.getPrimaryAudioTrack();
+    const track = await firstDecodable(all, primary);
+    if (!track) throw new Fallback('cannot decode', await originOf(primary ?? all[0]!));
+    return { mb, input, track, lead: await leadOf(blob, track.codec) };
   } catch (e) {
     input.dispose();
     throw e instanceof Fallback ? e : new Fallback(String(e));
@@ -82,10 +112,10 @@ export async function extractAudio(blob: Blob, from: number, to: number, opts: O
   let opened;
   try {
     opened = await openTrack(blob);
-  } catch {
-    return fallbackRange(blob, from, to, maxCh, opts.fallbackRate ?? 48000);
+  } catch (e) {
+    return fallbackRange(blob, from, to, maxCh, opts.fallbackRate ?? 48000, (e as Fallback).origin ?? 0);
   }
-  const { mb, input, track } = opened;
+  const { mb, input, track, lead } = opened;
   if (!track) {
     input.dispose();
     return null;
@@ -96,7 +126,8 @@ export async function extractAudio(blob: Blob, from: number, to: number, opts: O
     let sr = 0;
     let chans: Float32Array[] = [];
     let k = 0;
-    for await (const smp of sink.samples(from, to)) {
+    // Decoded timestamps are `lead` ahead of source time: read that much further and shift back.
+    for await (const smp of sink.samples(from + lead, to + lead)) {
       try {
         if (!sr) {
           // The decoder's rate (HE-AAC can differ from the container's).
@@ -104,7 +135,7 @@ export async function extractAudio(blob: Blob, from: number, to: number, opts: O
           const len = Math.max(1, Math.ceil((to - from) * sr));
           chans = Array.from({ length: outCh }, () => new Float32Array(len));
         }
-        const at = Math.round((smp.timestamp - from) * sr);
+        const at = Math.round((smp.timestamp - lead - from) * sr);
         const data = planes(smp, outCh);
         const len = chans[0]!.length;
         const a = Math.max(0, -at);
@@ -124,7 +155,7 @@ export async function extractAudio(blob: Blob, from: number, to: number, opts: O
   } catch (e) {
     if ((e as Error)?.message === 'cancelled') throw e;
     console.warn('mediabunny could not decode the sound, using decodeAudioData', e);
-    return fallbackRange(blob, from, to, maxCh, opts.fallbackRate ?? 48000);
+    return fallbackRange(blob, from, to, maxCh, opts.fallbackRate ?? 48000, await originOf(track));
   } finally {
     input.dispose();
   }
@@ -138,11 +169,11 @@ export async function extractLevels(blob: Blob, frame: number, fallbackRate = 22
   let opened;
   try {
     opened = await openTrack(blob);
-  } catch {
-    const pcm = await fallbackRange(blob, 0, Infinity, 1, fallbackRate);
+  } catch (e) {
+    const pcm = await fallbackRange(blob, 0, Infinity, 1, fallbackRate, (e as Fallback).origin ?? 0);
     return pcm ? { levels: levelsOf(pcm.channels[0]!, pcm.sampleRate, frame) } : null;
   }
-  const { mb, input, track } = opened;
+  const { mb, input, track, lead } = opened;
   if (!track) {
     input.dispose();
     return null;
@@ -151,6 +182,8 @@ export async function extractLevels(blob: Blob, frame: number, fallbackRate = 22
     const sink = new mb.AudioSampleSink(track);
     const out: number[] = [];
     let n = 0; // samples per frame
+    let sr = 0;
+    let pos = 0; // source sample the next one belongs at, from time 0
     let sum = 0;
     let count = 0;
     let k = 0;
@@ -161,9 +194,15 @@ export async function extractLevels(blob: Blob, frame: number, fallbackRate = 22
     };
     for await (const smp of sink.samples()) {
       try {
-        if (!n) n = Math.max(1, Math.round(frame * smp.sampleRate));
+        if (!n) {
+          sr = smp.sampleRate;
+          n = Math.max(1, Math.round(frame * sr));
+        }
         const mono = planes(smp, 1)[0]!;
-        for (let i = 0; i < mono.length; i++) {
+        // Frames are in source time like the clips: priming before 0 is dropped, a late start is silence.
+        const at = Math.round((smp.timestamp - lead) * sr);
+        for (; pos < at; pos++) if (++count === n) flush();
+        for (let i = Math.max(0, pos - at); i < mono.length; i++, pos++) {
           sum += mono[i]! * mono[i]!;
           if (++count === n) flush();
         }
@@ -177,7 +216,7 @@ export async function extractLevels(blob: Blob, frame: number, fallbackRate = 22
     return { levels: Float32Array.from(out) };
   } catch (e) {
     console.warn('mediabunny could not decode the sound, using decodeAudioData', e);
-    const pcm = await fallbackRange(blob, 0, Infinity, 1, fallbackRate);
+    const pcm = await fallbackRange(blob, 0, Infinity, 1, fallbackRate, await originOf(track));
     return pcm ? { levels: levelsOf(pcm.channels[0]!, pcm.sampleRate, frame) } : null;
   } finally {
     input.dispose();
@@ -202,7 +241,8 @@ function levelsOf(samples: Float32Array, sampleRate: number, frame: number) {
 // The fallback decodes the whole file, so keep the last one: callers ask for several ranges of a file in a row.
 let lastFallback: { blob: Blob; rate: number; buf: Promise<AudioBuffer | null> } | null = null;
 
-async function fallbackRange(blob: Blob, from: number, to: number, maxCh: number, rate: number): Promise<Pcm | null> {
+/** [from, to) of the decodeAudioData output, whose first sample is at source time `origin`. */
+async function fallbackRange(blob: Blob, from: number, to: number, maxCh: number, rate: number, origin = 0): Promise<Pcm | null> {
   if (lastFallback?.blob !== blob || lastFallback.rate !== rate) {
     const buf = blob
       .arrayBuffer()
@@ -213,19 +253,22 @@ async function fallbackRange(blob: Blob, from: number, to: number, maxCh: number
   const buf = await lastFallback.buf;
   if (!buf) return null;
   const sr = buf.sampleRate;
-  const a = Math.min(buf.length, Math.floor(from * sr));
-  const b = Math.min(buf.length, Number.isFinite(to) ? Math.ceil(to * sr) : buf.length);
-  const len = Number.isFinite(to) ? Math.max(1, Math.ceil((to - from) * sr)) : Math.max(1, b - a);
+  // Buffer index of the first wanted sample; negative when the sound starts after `from` (silence before it).
+  const shift = Math.round((from - origin) * sr);
+  const len = Number.isFinite(to) ? Math.max(1, Math.ceil((to - from) * sr)) : Math.max(1, buf.length - shift);
+  const a = Math.min(buf.length, Math.max(0, shift));
+  const dst = a - shift;
+  const b = Math.max(a, Math.min(buf.length, a + len - dst));
   const outCh = Math.max(1, Math.min(maxCh, buf.numberOfChannels));
   const chans = Array.from({ length: outCh }, () => new Float32Array(len));
   if (outCh === 1 && buf.numberOfChannels > 1) {
     const mono = chans[0]!;
     for (let ch = 0; ch < buf.numberOfChannels; ch++) {
       const d = buf.getChannelData(ch).subarray(a, b);
-      for (let i = 0; i < d.length; i++) mono[i]! += d[i]! / buf.numberOfChannels;
+      for (let i = 0; i < d.length; i++) mono[dst + i]! += d[i]! / buf.numberOfChannels;
     }
-  } else {
-    for (let ch = 0; ch < outCh; ch++) chans[ch]!.set(buf.getChannelData(Math.min(ch, buf.numberOfChannels - 1)).subarray(a, b));
+  } else if (dst < len) {
+    for (let ch = 0; ch < outCh; ch++) chans[ch]!.set(buf.getChannelData(Math.min(ch, buf.numberOfChannels - 1)).subarray(a, b), dst);
   }
   return { sampleRate: sr, channels: chans, start: from };
 }
