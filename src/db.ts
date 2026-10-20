@@ -127,6 +127,13 @@ export const putBlob = (id: string, blob: Blob) => {
 };
 export const getBlob = (id: string) => run<Blob | undefined>('blobs', 'readonly', (tx) => tx.objectStore('blobs').get(id));
 
+// Preview proxies (proxies.ts): a light copy of a heavy video, stored next to its original under
+// this key and collected or deleted together with it. Export always reads the original.
+const PROXY = 'proxy:';
+export const proxyKey = (assetId: string) => PROXY + assetId;
+export const putProxy = (assetId: string, blob: Blob) => run<void>('blobs', 'readwrite', (tx) => tx.objectStore('blobs').put(blob, proxyKey(assetId)));
+export const getProxy = (assetId: string) => run<Blob | undefined>('blobs', 'readonly', (tx) => tx.objectStore('blobs').get(proxyKey(assetId)));
+
 /**
  * Summaries of the saved projects. With `strict`, a project that can't be read makes it throw
  * instead of being left out (the garbage collector must never miss a project).
@@ -180,7 +187,14 @@ export async function deleteProject(p: Pick<Project, 'id' | 'assets'> | ProjectM
   }
   // Media shared with another project stays.
   const gone = ids.filter((id) => !used.has(id));
-  if (gone.length) await run<void>('blobs', 'readwrite', (tx) => gone.forEach((id) => tx.objectStore('blobs').delete(id)));
+  if (gone.length) {
+    await run<void>('blobs', 'readwrite', (tx) =>
+      gone.forEach((id) => {
+        tx.objectStore('blobs').delete(id);
+        tx.objectStore('blobs').delete(proxyKey(id));
+      }),
+    );
+  }
 }
 
 // Keys of blobs that are not project media (see myVoice.ts): never collected.
@@ -189,10 +203,13 @@ const isMediaKey = (k: string) => /^[a-z0-9]{6,20}$/.test(k);
 /**
  * Pure part of the garbage collection: which stored keys to delete. Keeps anything a saved
  * project uses, anything in `keep` (the open project and its undo history, blobs of this
- * session) and anything that is not a project media key.
+ * session) and anything that is not a project media key. A preview proxy lives as long as its media.
  */
 export function blobsToDelete(stored: Iterable<string>, used: Set<string>, keep: Set<string>): string[] {
-  return [...stored].filter((k) => isMediaKey(k) && !used.has(k) && !keep.has(k));
+  return [...stored].filter((k) => {
+    const id = k.startsWith(PROXY) ? k.slice(PROXY.length) : k;
+    return isMediaKey(id) && !used.has(id) && !keep.has(id);
+  });
 }
 
 /**

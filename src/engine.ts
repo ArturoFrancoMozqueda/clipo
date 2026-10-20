@@ -122,7 +122,9 @@ class Engine {
 
   constructor() {
     useStore.subscribe((s, prev) => {
-      if (s.project !== prev.project || s.urls !== prev.urls) this.sync(s.project, s.urls);
+      if (s.project !== prev.project || s.urls !== prev.urls || s.proxyUrls !== prev.proxyUrls || s.proxyPreview !== prev.proxyPreview) {
+        this.sync(s.project, s.urls);
+      }
       // Time and play state written by the frame loop itself are drawn by that same frame.
       const own = this.ticking && s.project === prev.project && s.selection === prev.selection;
       if (!own) this.markDirty();
@@ -209,6 +211,15 @@ class Engine {
     else this.relink(r, url);
   }
 
+  /**
+   * File a preview video element plays: the light proxy of a heavy video when there is one (see
+   * proxies.ts), except while recording an export, which must show the original at full quality.
+   */
+  private videoUrl(assetId: string, urls: Record<string, string>) {
+    const s = useStore.getState();
+    return (!this.exporting && s.proxyPreview && s.proxyUrls[assetId]) || urls[assetId];
+  }
+
   private sync(p: Project | null, urls: Record<string, string>) {
     if (typeof document === 'undefined') return;
     // "Quitar fondo" frees its models when no clip uses it any more, and right away when the project closes.
@@ -223,7 +234,7 @@ class Engine {
         if (!a || !url) continue;
         if (a.kind === 'video') {
           keepV.add(c.id);
-          this.video(c.id, url);
+          this.video(c.id, this.videoUrl(c.assetId, urls)!);
         } else if (a.kind === 'image') {
           keepI.add(c.assetId);
           this.image(c.assetId, url);
@@ -236,7 +247,7 @@ class Engine {
           if (bg.kind === 'video') {
             const id = bgClipId(c.id);
             keepV.add(id);
-            this.video(id, bgUrl);
+            this.video(id, this.videoUrl(bg.id, urls)!);
           } else if (bg.kind === 'image') {
             keepI.add(bg.id);
             this.image(bg.id, bgUrl);
@@ -255,7 +266,7 @@ class Engine {
         if (!a || !url) continue;
         if (a.kind === 'video') {
           keepV.add(ov.id);
-          this.video(ov.id, url);
+          this.video(ov.id, this.videoUrl(ov.assetId, urls)!);
         } else if (a.kind === 'image') {
           keepI.add(ov.assetId);
           this.image(ov.assetId, url);
@@ -846,6 +857,7 @@ class Engine {
     canvas.width = w;
     canvas.height = h;
     this.exporting = true;
+    this.sync(p, s.urls); // record the originals, not the preview proxies
     s.setExporting(true);
     if (this.monitor) this.monitor.gain.value = 0; // don't blast the export through the speakers
     s.setTime(0);
@@ -889,6 +901,7 @@ class Engine {
       canvas.height = prevH;
       if (this.monitor) this.monitor.gain.value = 1;
       this.exporting = false;
+      this.sync(useStore.getState().project, useStore.getState().urls);
       useStore.getState().setPlaying(false);
       useStore.getState().setExporting(false);
       this.markDirty();

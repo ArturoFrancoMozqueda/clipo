@@ -5,6 +5,7 @@ import { useStore } from './store';
 import { collectGarbage, holdTabLock, projectAssetIds, requestPersistence } from './db';
 import { createAutosave } from './autosave';
 import { startPublishing } from './publish/store';
+import { startProxies } from './proxies';
 // UI font, bundled so it works offline (the video text fonts load on demand in fonts.ts).
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
@@ -29,6 +30,8 @@ requestPersistence();
 holdTabLock();
 // Desktop app only: reload the publish queue and its local scheduler.
 startPublishing().catch((e) => console.error(e));
+// Light copies of heavy videos for a smooth preview, made in the background.
+startProxies();
 
 // Free media left behind (e.g. a file imported and then undone) once the app is idle.
 const idle = (fn: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 10_000 }) : setTimeout(fn, 3000));

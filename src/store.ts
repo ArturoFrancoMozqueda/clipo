@@ -26,6 +26,12 @@ interface State {
   captioning: boolean;
   /** Shows the advanced tools (overlays, keyframes, color correction). Remembered per device. */
   advanced: boolean;
+  /** Object URLs of the preview proxies (light copies of heavy videos), keyed by asset id. Owned by proxies.ts. */
+  proxyUrls: Record<string, string>;
+  /** The preview plays the proxies when they exist ("Vista previa optimizada"). Remembered per device. */
+  proxyPreview: boolean;
+  /** Proxy being made now, for the small progress indicator. */
+  proxyJob: { name: string; progress: number } | null;
 
   open(p: Project, urls: Record<string, string>): void;
   close(): void;
@@ -46,6 +52,9 @@ interface State {
   setExporting(b: boolean): void;
   setCaptioning(b: boolean): void;
   setAdvanced(b: boolean): void;
+  setProxyUrls(u: Record<string, string>): void;
+  setProxyPreview(b: boolean): void;
+  setProxyJob(j: { name: string; progress: number } | null): void;
 }
 
 const ADVANCED_KEY = 'clipo.advanced';
@@ -54,6 +63,15 @@ function loadAdvanced() {
     return localStorage.getItem(ADVANCED_KEY) === '1';
   } catch {
     return false;
+  }
+}
+
+const PROXY_PREVIEW_KEY = 'clipo.proxyPreview';
+function loadProxyPreview() {
+  try {
+    return localStorage.getItem(PROXY_PREVIEW_KEY) !== '0';
+  } catch {
+    return true;
   }
 }
 
@@ -128,6 +146,9 @@ export const useStore = create<State>()((set, get) => ({
   exporting: false,
   captioning: false,
   advanced: loadAdvanced(),
+  proxyUrls: {},
+  proxyPreview: loadProxyPreview(),
+  proxyJob: null,
 
   open: (p, urls) => {
     let project: Project;
@@ -191,4 +212,14 @@ export const useStore = create<State>()((set, get) => ({
     }
     set({ advanced: b });
   },
+  setProxyUrls: (u) => set({ proxyUrls: u }),
+  setProxyPreview: (b) => {
+    try {
+      localStorage.setItem(PROXY_PREVIEW_KEY, b ? '1' : '0');
+    } catch {
+      /* private mode: only this session */
+    }
+    set({ proxyPreview: b });
+  },
+  setProxyJob: (j) => set({ proxyJob: j }),
 }));
