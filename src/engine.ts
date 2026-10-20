@@ -28,6 +28,13 @@ interface MediaRec<E extends HTMLMediaElement> {
   src?: MediaElementAudioSourceNode | null;
   /** Voice effect currently wired between src and gain. */
   fx?: { id: VoiceFxId; chain: FxChain | null };
+  /** As the clock: last currentTime seen and when it last moved (0 = not since it started). */
+  lastCt?: number;
+  movedAt?: number;
+  /** When it was last hard-seeked while playing (those are rate-limited). */
+  seekAt?: number;
+  /** As a follower: its drift from the timeline (s), averaged over recent frames. */
+  drift?: number;
 }
 
 /**
@@ -54,11 +61,56 @@ const EXPORT_STALL_MS = 20_000;
 /** Average drawing time (ms) above which playback switches to the lighter preview size. */
 const SLOW_FRAME_MS = 12;
 
+// Playback sync. The active clip's element is the clock while it plays: its picture and its voice
+// come out of one decoder, so they can't drift apart. The timeline follows that element, and every
+// other element (music, voice-overs, overlays, the other clip of a transition) follows the timeline
+// through small playbackRate changes. A hard seek stalls the picture and skips the sound of a playing
+// element, so it is kept for large drift only.
+// requestVideoFrameCallback is deliberately not used: in Chrome, armed on these hidden elements it
+// froze 4K HEVC (iPhone) decoding mid-clip.
+/** The timeline jumps to the clock element when they disagree by more than this (s)... */
+const CLOCK_SNAP = 0.25;
+/** ...and otherwise takes this share of the gap each frame (smooths out currentTime's jitter). */
+const CLOCK_PULL = 0.2;
+/** The clock element counts as running for this long (ms) after its time last moved. */
+const CLOCK_FRESH_MS = 120;
+/** "Playing" but its time hasn't moved for this long (ms): it stopped being a usable clock. */
+const CLOCK_STUCK_MS = 600;
+/** Waiting this long (ms) for the clock element to start, seek to where it is to unstick its decoder... */
+const CLOCK_KICK_MS = 2500;
+/** ...and after this long give up on it: the wall clock runs the clip and the element follows. */
+const CLOCK_GIVE_UP_MS = 6000;
+/** Followers further off than this (s) are hard-seeked, at most every FOLLOW_SEEK_MS unless very far. */
+const FOLLOW_SEEK = 0.35;
+const FOLLOW_SEEK_MS = 2000;
+/** While the clock waits for buffering longer than this (ms), followers pause instead of running ahead. */
+const FOLLOW_HOLD_MS = 120;
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Seek a media element unless it's already there (or still busy / without metadata). */
 function seekTo(el: HTMLMediaElement, t: number, tolerance: number) {
   if (el.readyState >= 1 && !el.seeking && Math.abs(el.currentTime - t) > tolerance) el.currentTime = t;
+}
+
+/** At the end of its footage. play() would restart it from 0, so it must never be "resumed". */
+function atEnd(el: HTMLMediaElement) {
+  return el.ended || (Number.isFinite(el.duration) && el.duration > 0 && el.currentTime >= el.duration - 0.05);
+}
+
+function setRate(el: HTMLMediaElement, rate: number) {
+  // Only real changes: every write makes the decoder re-time its sound.
+  if (Math.abs(el.playbackRate - rate) > 1e-3) el.playbackRate = rate;
+}
+
+/**
+ * Rate change that pulls a follower `drift` seconds off (positive = ahead) back in line: a few coarse
+ * steps, so the rate rarely changes while it converges, and a dead band so it settles.
+ */
+function nudge(drift: number) {
+  const a = Math.abs(drift);
+  const k = a < 0.015 ? 0 : a < 0.04 ? 0.015 : a < 0.12 ? 0.03 : 0.05;
+  return drift > 0 ? -k : k;
 }
 
 /**
@@ -77,9 +129,19 @@ class Engine {
   private master: GainNode | null = null;
   private monitor: GainNode | null = null;
   private recDest: MediaStreamAudioDestinationNode | null = null;
-  private playWall = 0;
-  private playT = 0;
-  private lastNow = 0;
+  /** Timeline time at clockWall (performance.now); playback moves on from there. */
+  private clockT = 0;
+  private clockWall = 0;
+  /** Time the clock last wrote: anything else in the store while playing is a jump (re-place everything). */
+  private lastT = -1;
+  /** Since when the clock has been waiting for the clock element (0 = running). */
+  private holdSince = 0;
+  /** Which clip's element the clock is waiting for, since when, and whether it was kicked already. */
+  private wait = { id: '', since: 0, kicked: false };
+  /** Clip whose element couldn't drive the clock (won't start, froze): the wall clock runs it. */
+  private wallOnly: string | null = null;
+  /** The real-time export waits for another visible video: everything holds still. */
+  private exportHold = false;
   private onEnded: (() => void) | null = null;
   private abortExport: (() => void) | null = null;
   /** Voice activity of each media file (for ducking), filled in as files are analyzed. */
@@ -158,8 +220,9 @@ class Engine {
       this.ticking = false;
     }
     // Keep going while playing (the clock moves) or when this frame asked for another one.
-    if (useStore.getState().playing || this.dirty) this.markDirty();
-    else this.lastNow = 0; // the next frame after a pause doesn't count the idle time
+    if ((useStore.getState().playing || this.dirty) && !this.raf && typeof requestAnimationFrame !== 'undefined') {
+      this.raf = requestAnimationFrame(this.frame);
+    }
   };
 
   attach(canvas: HTMLCanvasElement) {
@@ -462,16 +525,27 @@ class Engine {
       t = 0;
       s.setTime(0);
     }
-    this.playT = t;
-    this.playWall = performance.now();
+    this.restart(t, performance.now());
+    this.wallOnly = null;
     s.setPlaying(true);
     this.markDirty();
+  }
+
+  /** Start the clock at t: every element is placed there and started again (no element is trusted to be in step). */
+  private restart(t: number, now: number) {
+    this.clockT = this.lastT = t;
+    this.clockWall = now;
+    this.holdSince = 0;
+    this.wait.since = 0;
+    this.pauseAll();
   }
 
   pause() {
     const s = useStore.getState();
     if (s.playing) s.setPlaying(false);
     this.pauseAll();
+    this.holdSince = 0;
+    this.exportHold = false;
     this.fitResolution(false);
   }
 
@@ -492,23 +566,16 @@ class Engine {
   private tick(now: number) {
     const s = useStore.getState();
     const p = s.project;
-    // Clamped: the loop sleeps while nothing changes, and a long gap isn't buffering time.
-    const dt = this.lastNow ? clamp(now - this.lastNow, 0, 250) : 0;
-    this.lastNow = now;
     if (!p || !this.ctx || !this.canvas || this.hold) return;
     this.stamp++;
 
     const placed = layout(p);
     let t = s.time;
     if (s.playing) {
-      // Hold the clock while the current video is still buffering so audio and picture stay together.
-      const cur = activeClip(p, t, placed);
-      const rec = cur && this.videos.get(cur.clip.id);
-      const busy = (r: MediaRec<HTMLVideoElement> | null | undefined) => !!r && (r.el.readyState < 3 || r.el.seeking);
-      if (busy(rec) || overlaysOf(p).some((o) => t >= o.start && t < o.start + overlayDur(o) && busy(this.videos.get(o.id)))) this.playWall += dt;
-
+      // Someone moved the playhead while playing: start over from there.
+      if (t !== this.lastT) this.restart(t, now);
+      t = this.advance(now, p, placed, t);
       const d = totalDuration(p);
-      t = this.playT + (now - this.playWall) / 1000;
       if (t >= d) {
         t = d;
         s.setTime(t);
@@ -518,16 +585,97 @@ class Engine {
         this.onEnded = null;
         cb?.();
       } else s.setTime(t);
+      this.lastT = t;
     }
     const playing = useStore.getState().playing;
     this.fitResolution(playing, p);
     const t0 = performance.now();
-    this.updateMedia(p, t, playing, placed);
+    this.updateMedia(p, t, playing, placed, now);
     const drawn = this.render(p, t, s.selection, placed);
     if (playing && !this.exporting && !this.lowered && drawn) this.measure(performance.now() - t0);
     // A picture isn't decoded yet: media events wake the loop, but retry for a moment anyway.
     if (drawn) this.misses = 0;
     else if (this.misses++ < 30) this.dirty = true;
+  }
+
+  /**
+   * Where the timeline is now. It runs on the wall clock, locked to the active clip's element
+   * whenever that one plays; it waits (never runs backwards) while that element buffers or starts.
+   */
+  private advance(now: number, p: Project, placed: Placed[], prevT: number) {
+    // The loop sleeps while nothing changes, and a long gap (a background tab) isn't playback time.
+    let t = this.clockT + clamp(now - this.clockWall, 0, 250) / 1000;
+    const cur = activeClip(p, prevT, placed);
+    const m = cur && this.masterOf(p, cur);
+    // The real-time export also waits for overlays and the other clip of a transition, or they'd be missing from the file.
+    this.exportHold = this.exporting && this.othersBusy(p, placed, prevT, cur);
+    let hold = this.exportHold;
+    if (cur && m && !hold) {
+      const el = m.el;
+      const ct = el.currentTime;
+      const going = !el.paused && !el.seeking;
+      const moved = going && ct !== m.lastCt;
+      if (moved) {
+        m.lastCt = ct;
+        m.movedAt = now;
+      }
+      if (moved) {
+        this.wait.since = 0;
+        const mt = cur.start + (ct - cur.clip.in) / cur.clip.speed;
+        const err = mt - t;
+        t = Math.abs(err) > CLOCK_SNAP ? mt : t + err * CLOCK_PULL;
+      } else if (going && m.movedAt && now - m.movedAt < CLOCK_FRESH_MS) {
+        // currentTime didn't tick this frame; the wall clock bridges it.
+      } else {
+        hold = true;
+        this.waitFor(cur.clip.id, m, now);
+      }
+    }
+    if (hold) {
+      t = prevT;
+      this.holdSince ||= now;
+    } else this.holdSince = 0;
+    // Never backwards while playing: it would flip back to the previous clip at a cut.
+    t = Math.max(t, prevT);
+    this.clockT = t;
+    this.clockWall = now;
+    return t;
+  }
+
+  /** The clock waits for this element to start or to get over a stall, but not forever. */
+  private waitFor(id: string, r: MediaRec<HTMLMediaElement>, now: number) {
+    const w = this.wait;
+    if (w.id !== id || !w.since) Object.assign(w, { id, since: now, kicked: false });
+    const el = r.el;
+    const waited = now - w.since;
+    // "Playing", fully loaded and still frozen: it isn't going to start.
+    const stuck = !el.paused && !el.seeking && el.readyState >= 3 && !!r.movedAt && now - r.movedAt > CLOCK_STUCK_MS;
+    if (stuck || waited > CLOCK_GIVE_UP_MS) {
+      this.wallOnly = id;
+    } else if (waited > CLOCK_KICK_MS && !w.kicked && el.readyState >= 1 && !el.seeking) {
+      // Decoders sometimes stall without an error: seeking to where it is gets them going again.
+      w.kicked = true;
+      el.currentTime = el.currentTime;
+    }
+  }
+
+  /** The element that drives the clock for the active clip, or null (photo, freeze frame, no footage left). */
+  private masterOf(p: Project, l: Placed) {
+    if (l.clip.freeze != null || this.wallOnly === l.clip.id || p.assets[l.clip.assetId]?.kind !== 'video') return null;
+    const r = this.videos.get(l.clip.id);
+    // Files are often a hair shorter than their metadata: past its last frame the wall clock ends the clip.
+    if (!r || (r.live && atEnd(r.el))) return null;
+    return r;
+  }
+
+  /** Some visible video besides the active one has no picture yet (only the export waits for these). */
+  private othersBusy(p: Project, placed: Placed[], t: number, cur: Placed | null) {
+    // HAVE_CURRENT_DATA is enough: a clip holding its last frame never gets more.
+    const busy = (r: MediaRec<HTMLVideoElement> | undefined) => !!r && r.live && (r.el.readyState < 2 || r.el.seeking);
+    if (overlaysOf(p).some((o) => t >= o.start && t < o.start + overlayDur(o) && busy(this.videos.get(o.id)))) return true;
+    const tr = cur && transitionAt(placed, t);
+    const partner = tr && cur ? (tr.out.index === cur.index ? tr.in : tr.out) : null;
+    return !!partner && busy(this.videos.get(partner.clip.id));
   }
 
   /** Track how long drawing takes while playing; a device that keeps missing the frame budget gets the lighter preview. */
@@ -563,11 +711,72 @@ class Engine {
     }
   }
 
-  private updateMedia(p: Project, t: number, playing: boolean, placed: Placed[]) {
+  /** Start a paused element at `target` (placed precisely first: it isn't playing, so seeking costs nothing audible). */
+  private start(r: MediaRec<HTMLMediaElement>, target: number, rate: number) {
+    const el = r.el;
+    if (el.readyState < 1 || el.seeking) return; // play() once it knows where it is
+    if (Math.abs(el.currentTime - target) > 0.04) el.currentTime = target;
+    // At the end of its footage play() would restart it from 0: it holds its last frame instead.
+    else if (atEnd(el)) return;
+    setRate(el, rate);
+    r.lastCt = el.currentTime;
+    r.movedAt = 0;
+    r.drift = undefined;
+    el.play().catch(() => {});
+  }
+
+  /** The active clip's element while it is the clock: started where it belongs, then left alone. */
+  private drive(r: MediaRec<HTMLMediaElement>, target: number, rate: number) {
+    const el = r.el;
+    if (this.exportHold) {
+      if (!el.paused) el.pause();
+    } else if (el.paused) this.start(r, target, rate);
+    else {
+      setRate(el, rate);
+      // Only a gross mismatch is corrected (the clock waits for it otherwise).
+      if (!el.seeking && el.readyState >= 1 && Math.abs(el.currentTime - target) > 1) el.currentTime = target;
+    }
+  }
+
+  /**
+   * Keep a playing element in step with the timeline: start it where it belongs, then steer it with
+   * small playbackRate changes. Only a large drift gets a hard seek, and not over and over (a decoder
+   * that can't keep up would otherwise stall on every frame).
+   */
+  private follow(r: MediaRec<HTMLMediaElement>, target: number, rate: number, run: boolean) {
+    const el = r.el;
+    // The clock waits for buffering: don't run ahead meanwhile.
+    if (!run) return void (el.paused || el.pause());
+    if (el.paused) return this.start(r, target, rate);
+    if (el.readyState < 1 || el.seeking) return;
+    const drift = el.currentTime - target;
+    const now = performance.now();
+    if (Math.abs(drift) > FOLLOW_SEEK && (Math.abs(drift) > 1 || now - (r.seekAt ?? 0) > FOLLOW_SEEK_MS)) {
+      r.seekAt = now;
+      r.drift = 0;
+      el.currentTime = target;
+      setRate(el, rate);
+      return;
+    }
+    // Steered by the averaged drift: currentTime jitters by a few ms per read, and reacting to that
+    // would flip the rate back and forth.
+    r.drift = (r.drift ?? drift) * 0.9 + drift * 0.1;
+    setRate(el, rate * (1 + nudge(r.drift)));
+  }
+
+  /** Shows the frame at `src` while paused or scrubbing (precise), or while its footage holds still. */
+  private still(el: HTMLMediaElement, src: number, tolerance: number) {
+    if (!el.paused) el.pause();
+    seekTo(el, src, tolerance);
+  }
+
+  private updateMedia(p: Project, t: number, playing: boolean, placed: Placed[], now = performance.now()) {
     const cur = activeClip(p, t, placed);
     const tr = transitionAt(placed, t);
     // During a transition the other clip is visible too: it plays muted alongside the current one.
     const partner = tr ? (tr.out.index === cur?.index ? tr.in : tr.out) : null;
+    // Followers run unless the clock has been waiting a while (buffering) or the export is holding.
+    const run = playing && !this.exportHold && !(this.holdSince && now - this.holdSince > FOLLOW_HOLD_MS);
     for (const l of placed) {
       const r = this.videos.get(l.clip.id);
       if (!r) continue;
@@ -579,28 +788,18 @@ class Engine {
         const frozen = l.clip.freeze != null;
         const src = frozen ? sourceTime(l, t, dur) : clamp(l.clip.in + (t - l.start) * l.clip.speed, l.clip.in, l.clip.out);
         this.setVolume(r, frozen ? 0 : l.clip.volume);
-        if (playing && !frozen) {
-          if (el.playbackRate !== l.clip.speed) el.playbackRate = l.clip.speed;
-          seekTo(el, src, 0.3);
-          if (el.paused) el.play().catch(() => {});
-        } else {
-          if (!el.paused) el.pause();
-          seekTo(el, src, 0.02);
-        }
+        if (!playing || frozen) this.still(el, src, 0.02);
+        else if (this.wallOnly === l.clip.id) this.follow(r, src, l.clip.speed, run);
+        else if (r.live && atEnd(el)) el.pause(); // out of footage: it holds its last frame
+        else this.drive(r, src, l.clip.speed);
       } else if (partner && l.index === partner.index) {
         this.need(r);
         const raw = l.clip.in + (t - l.start) * l.clip.speed;
         const src = sourceTime(l, t, dur);
         const held = Math.abs(raw - src) > 0.01; // ran out of footage: hold the edge frame
         this.setVolume(r, 0);
-        if (playing && !held) {
-          if (el.playbackRate !== l.clip.speed) el.playbackRate = l.clip.speed;
-          seekTo(el, src, 0.3);
-          if (el.paused) el.play().catch(() => {});
-        } else {
-          if (!el.paused) el.pause();
-          seekTo(el, src, playing ? 0.1 : 0.02);
-        }
+        if (playing && !held) this.follow(r, src, l.clip.speed, run);
+        else this.still(el, src, playing ? 0.1 : 0.02);
       } else {
         if (!el.paused) el.pause();
         // Pre-roll the next clip (to where its transition starts) so the cut is seamless. While
@@ -610,7 +809,8 @@ class Engine {
           this.need(r);
           const prev = placed[l.index - 1]!.clip;
           const lead = transitionLength(prev, l.clip) / 2;
-          seekTo(el, sourceTime(l, l.start - lead, dur), 0.05);
+          // Precise: it starts from here without another seek.
+          seekTo(el, sourceTime(l, l.start - lead, dur), 0.02);
         }
       }
     }
@@ -624,20 +824,14 @@ class Engine {
         this.need(r);
         const src = ov.in + local;
         this.setVolume(r, ov.volume);
-        if (playing) {
-          if (el.playbackRate !== 1) el.playbackRate = 1;
-          seekTo(el, src, 0.3);
-          if (el.paused) el.play().catch(() => {});
-        } else {
-          if (!el.paused) el.pause();
-          seekTo(el, src, 0.02);
-        }
+        if (playing) this.follow(r, src, 1, run);
+        else this.still(el, src, 0.02);
       } else {
         if (!el.paused) el.pause();
         // Pre-roll so the overlay appears on time.
         if (local < 0 && local > -3) {
           this.need(r);
-          seekTo(el, ov.in, 0.05);
+          seekTo(el, ov.in, 0.02);
         }
       }
     }
@@ -657,14 +851,8 @@ class Engine {
       this.need(r);
       const src = bgTime(bg.asset, l, t);
       this.setVolume(r, 0);
-      if (playing) {
-        if (el.playbackRate !== 1) el.playbackRate = 1;
-        seekTo(el, src, 0.3);
-        if (el.paused) el.play().catch(() => {});
-      } else {
-        if (!el.paused) el.pause();
-        seekTo(el, src, 0.02);
-      }
+      if (playing) this.follow(r, src, 1, run);
+      else this.still(el, src, 0.02);
     }
 
     for (const a of p.audios) {
@@ -681,18 +869,13 @@ class Engine {
         const duck = audioRole(a, p.assets[a.assetId]?.name) === 'music' ? this.duckAt(p, t) : 1;
         this.setFx(r, a.voiceFx);
         this.setVolume(r, a.volume * clamp(fade, 0, 1) * duck);
-        if (playing) {
-          seekTo(el, src, 0.3);
-          if (el.paused) el.play().catch(() => {});
-        } else {
-          if (!el.paused) el.pause();
-          seekTo(el, src, 0.05);
-        }
+        if (playing) this.follow(r, src, 1, run);
+        else this.still(el, src, 0.05);
       } else {
         if (!el.paused) el.pause();
         if (t < a.start && t > a.start - 5) {
           this.need(r);
-          seekTo(el, a.in, 0.05);
+          seekTo(el, a.in, 0.02);
         }
       }
     }
