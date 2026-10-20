@@ -1,17 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeftRight, Blend, Diamond, Image as ImageIcon, Layers, Music, Plus, Smile, Snowflake, Sparkles, Type } from 'lucide-react';
-import type { AudioItem, Clip, Keyframe, OverlayItem, Project, SelectionKind, StickerItem, TextItem, TransitionId } from '../types';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Diamond } from 'lucide-react';
+import type { AudioItem, Clip, OverlayItem, Project, SelectionKind, StickerItem, TextItem } from '../types';
 import { itemsOf, useStore } from '../store';
 import { engine } from '../engine';
-import { IMAGE_MAX, audioDur, clamp, fmtTime, lanes, layout, mainDuration, overlayDur, overlaysOf, totalDuration } from '../model';
+import { IMAGE_MAX, clamp, layout, mainDuration, overlaysOf, totalDuration } from '../model';
 import { keyframeAt } from '../keyframes';
 import { toggleKeyframe, useAnimated } from './AdvancedPanels';
-import { addText } from '../ops';
-import { getFilter } from '../filters';
-import { effectName, stickersOf, transitionName } from '../visuals';
-import { TRANSITION_ICONS } from './fxIcons';
-
-const JUNCTION_ICONS: Record<TransitionId, typeof Blend> = { ...TRANSITION_ICONS, none: ArrowLeftRight };
+import { stickersOf } from '../visuals';
+import { viewWindow, windowBucket } from '../timelineMath';
+import { AudioRow, MainRow, OverlayRow, Ruler, StickerRow, TextRow } from './TimelineRows';
 
 /** Touch screens get taller thin rows so text/sticker items are easier to hit. */
 const COARSE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -107,18 +104,6 @@ function startDrag(e: React.PointerEvent, kind: SelectionKind, id: string, mode:
   target.addEventListener('pointercancel', up);
 }
 
-/** Small diamonds where an item has keyframes. */
-function KfMarks({ kf, pps }: { kf?: Keyframe[]; pps: number }) {
-  if (!kf?.length) return null;
-  return (
-    <>
-      {kf.map((k, i) => (
-        <span key={i} className="tl-kf" style={{ left: k.t * pps }} />
-      ))}
-    </>
-  );
-}
-
 /** Diamond at the playhead: adds (or removes) a keyframe on the selected item. */
 function KeyframeButton() {
   const a = useAnimated();
@@ -138,15 +123,6 @@ function KeyframeButton() {
     >
       <Diamond size={16} fill={on ? 'currentColor' : 'none'} />
     </button>
-  );
-}
-
-function Handles({ kind, id }: { kind: SelectionKind; id: string }) {
-  return (
-    <>
-      <span className="handle l" onPointerDown={(e) => startDrag(e, kind, id, 'l')} onClick={(e) => e.stopPropagation()} />
-      <span className="handle r" onPointerDown={(e) => startDrag(e, kind, id, 'r')} onClick={(e) => e.stopPropagation()} />
-    </>
   );
 }
 
@@ -228,227 +204,34 @@ export function Timeline() {
     };
   }, []);
 
-  const select = (kind: SelectionKind, id: string) => (e: React.MouseEvent) => {
-    e.stopPropagation();
-    engine.pause();
-    useStore.getState().select({ kind, id });
-  };
-  const isSel = (kind: SelectionKind, id: string) => selection?.kind === kind && selection.id === id;
-  /** Keyboard access for timeline items: focusable, Enter/Space selects. */
-  const itemA11y = (kind: SelectionKind, id: string, label: string) => ({
-    role: 'button',
-    tabIndex: 0,
-    'aria-label': label,
-    'aria-pressed': isSel(kind, id),
-    onKeyDown: (e: React.KeyboardEvent) => {
-      if (e.target !== e.currentTarget) return;
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        e.stopPropagation();
-        engine.pause();
-        useStore.getState().select({ kind, id });
-      }
-    },
-  });
-
   const dur = totalDuration(project);
   const placed = layout(project);
+  const mainDur = mainDuration(project);
   const pad = vw / 2;
   const width = dur * pps + vw;
-  const textLanes = lanes(project.texts.map((t) => ({ id: t.id, start: t.start, end: t.start + t.duration })));
-  const stickers = stickersOf(project);
-  const stickerLanes = lanes(stickers.map((t) => ({ id: t.id, start: t.start, end: t.start + t.duration })));
-  const audioLanes = lanes(project.audios.map((a) => ({ id: a.id, start: a.start, end: a.start + audioDur(a) })));
-  const overlays = overlaysOf(project);
-  const overlayLanes = lanes(overlays.map((o) => ({ id: o.id, start: o.start, end: o.start + overlayDur(o) })));
+  // Missing lists become a new [] each time: keep one per project list so the rows can skip renders.
+  const stickers = useMemo(() => stickersOf(project), [project.stickers]); // eslint-disable-line react-hooks/exhaustive-deps
+  const overlays = useMemo(() => overlaysOf(project), [project.overlays]); // eslint-disable-line react-hooks/exhaustive-deps
   const advanced = useStore((s) => s.advanced);
+  const urls = useStore((s) => s.urls);
+  // Only the part of the timeline around the playhead is rendered; it moves in half-screen steps.
+  const bucket = useStore((s) => windowBucket(s.time, pps, vw));
+  const win = useMemo(() => viewWindow(bucket, pps, vw), [bucket, pps, vw]);
+  const selOf = (kind: SelectionKind) => (selection?.kind === kind ? selection.id : null);
+  const row = { pps, pad, win, drag: startDrag };
 
   return (
     <div className="timeline">
       <div className="tl-scroll" ref={ref} onScroll={onScroll} onClick={() => useStore.getState().select(null)}>
         <div className="tl-content" style={{ width }}>
-          <Ruler dur={dur} pps={pps} pad={pad} />
-
+          <Ruler dur={dur} pps={pps} pad={pad} from={win.from} to={win.to} />
           {(advanced || overlays.length > 0) && (
-            <div className="tl-row tl-overlays" style={{ height: Math.max(1, overlayLanes.count) * ROW_OVERLAY }}>
-              {overlays.length === 0 && (
-                <button className="tl-ghost" style={{ left: pad + 8 }} onClick={(e) => { e.stopPropagation(); useStore.getState().setPanel('overlay'); }}>
-                  <Layers size={14} /> Superponer video o foto
-                </button>
-              )}
-              {overlays.map((o) => {
-                const a = project.assets[o.assetId];
-                const sel = isSel('overlay', o.id);
-                return (
-                  <div
-                    key={o.id}
-                    className={`tl-item overlay ${sel ? 'selected' : ''}`}
-                    style={{
-                      left: pad + o.start * pps,
-                      width: Math.max(2, overlayDur(o) * pps),
-                      top: (overlayLanes.map[o.id] ?? 0) * ROW_OVERLAY,
-                      height: ROW_OVERLAY - 4,
-                      backgroundImage: a?.thumb ? `url(${a.thumb})` : undefined,
-                    }}
-                    onClick={select('overlay', o.id)}
-                    {...itemA11y('overlay', o.id, `Superposición: ${a?.name ?? 'sin nombre'}`)}
-                    onPointerDown={sel ? (e) => startDrag(e, 'overlay', o.id, 'body') : undefined}
-                    onDoubleClick={() => useStore.getState().setPanel('overlay')}
-                    title={a?.name}
-                  >
-                    <Layers size={12} /> <span>{a?.name ?? 'Superposición'}</span>
-                    <KfMarks kf={o.keyframes} pps={pps} />
-                    {sel && <Handles kind="overlay" id={o.id} />}
-                  </div>
-                );
-              })}
-            </div>
+            <OverlayRow {...row} overlays={overlays} assets={project.assets} urls={urls} rowH={ROW_OVERLAY} selId={selOf('overlay')} />
           )}
-
-          <div className="tl-row" style={{ height: ROW_CLIP }}>
-            {placed.map(({ clip, start, end }) => {
-              const a = project.assets[clip.assetId];
-              const sel = isSel('clip', clip.id);
-              const f = getFilter(clip.filter);
-              return (
-                <div
-                  key={clip.id}
-                  className={`tl-item clip ${sel ? 'selected' : ''}`}
-                  style={{
-                    left: pad + start * pps,
-                    width: Math.max(2, (end - start) * pps),
-                    backgroundImage: a?.thumb ? `url(${a.thumb})` : undefined,
-                  }}
-                  onClick={select('clip', clip.id)}
-                  {...itemA11y('clip', clip.id, `Clip: ${a?.name ?? 'sin nombre'}, ${fmtTime(end - start, true)}`)}
-                  title={a?.name}
-                >
-                  <span className="tl-badges">
-                    {a?.kind === 'image' && <ImageIcon size={12} />}
-                    {clip.freeze != null && <Snowflake size={12} />}
-                    {clip.speed !== 1 && <em>{clip.speed}×</em>}
-                    {f.id !== 'none' && <em>{f.name}</em>}
-                    {clip.effect && clip.effect.id !== 'none' && <em><Sparkles size={10} /> {effectName(clip.effect.id)}</em>}
-                    <em>{fmtTime(end - start, true)}</em>
-                  </span>
-                  {sel && <Handles kind="clip" id={clip.id} />}
-                </div>
-              );
-            })}
-            {placed.slice(0, -1).map(({ clip, end }) => {
-              const type = clip.transition?.type ?? 'none';
-              const Icon = JUNCTION_ICONS[type];
-              const label = type === 'none' ? 'Agregar transición' : `Transición: ${transitionName(type)}`;
-              return (
-                <button
-                  key={`j-${clip.id}`}
-                  className={`tl-junction ${type !== 'none' ? 'set' : ''}`}
-                  style={{ left: pad + end * pps }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    engine.pause();
-                    const s = useStore.getState();
-                    s.select({ kind: 'clip', id: clip.id });
-                    s.setPanel('transition');
-                  }}
-                  aria-label={label}
-                  title={label}
-                >
-                  <Icon size={14} />
-                </button>
-              );
-            })}
-            <button
-              className="tl-add"
-              style={{ left: pad + mainDuration(project) * pps + 8 }}
-              onClick={(e) => {
-                e.stopPropagation();
-                useStore.getState().setPanel('media');
-              }}
-              aria-label="Agregar videos o fotos"
-              title="Agregar videos o fotos"
-            >
-              <Plus size={22} />
-            </button>
-          </div>
-
-          <div className="tl-row" style={{ height: Math.max(1, textLanes.count) * ROW_TEXT }}>
-            {project.texts.length === 0 && (
-              <button className="tl-ghost" style={{ left: pad + 8 }} onClick={(e) => { e.stopPropagation(); addText(); }}>
-                <Type size={14} /> Agregar texto
-              </button>
-            )}
-            {project.texts.map((t) => {
-              const sel = isSel('text', t.id);
-              return (
-                <div
-                  key={t.id}
-                  className={`tl-item text ${sel ? 'selected' : ''}`}
-                  style={{ left: pad + t.start * pps, width: Math.max(2, t.duration * pps), top: (textLanes.map[t.id] ?? 0) * ROW_TEXT, height: ROW_TEXT - 4 }}
-                  onClick={select('text', t.id)}
-                  {...itemA11y('text', t.id, `Texto: ${t.text}`)}
-                  onPointerDown={sel ? (e) => startDrag(e, 'text', t.id, 'body') : undefined}
-                  onDoubleClick={() => useStore.getState().setPanel('text')}
-                >
-                  <Type size={12} /> <span>{t.text}</span>
-                  <KfMarks kf={t.keyframes} pps={pps} />
-                  {sel && <Handles kind="text" id={t.id} />}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="tl-row" style={{ height: Math.max(1, stickerLanes.count) * ROW_STICKER }}>
-            {stickers.length === 0 && (
-              <button className="tl-ghost" style={{ left: pad + 8 }} onClick={(e) => { e.stopPropagation(); useStore.getState().setPanel('stickers'); }}>
-                <Smile size={14} /> Agregar sticker
-              </button>
-            )}
-            {stickers.map((st) => {
-              const sel = isSel('sticker', st.id);
-              const thumb = st.assetId ? project.assets[st.assetId]?.thumb : undefined;
-              return (
-                <div
-                  key={st.id}
-                  className={`tl-item sticker ${sel ? 'selected' : ''}`}
-                  style={{ left: pad + st.start * pps, width: Math.max(2, st.duration * pps), top: (stickerLanes.map[st.id] ?? 0) * ROW_STICKER, height: ROW_STICKER - 4 }}
-                  onClick={select('sticker', st.id)}
-                  {...itemA11y('sticker', st.id, 'Sticker')}
-                  onPointerDown={sel ? (e) => startDrag(e, 'sticker', st.id, 'body') : undefined}
-                  onDoubleClick={() => useStore.getState().setPanel('stickers')}
-                >
-                  {thumb ? <img src={thumb} alt="" /> : <span className="tl-emoji">{st.emoji}</span>}
-                  <span>Sticker</span>
-                  <KfMarks kf={st.keyframes} pps={pps} />
-                  {sel && <Handles kind="sticker" id={st.id} />}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="tl-row" style={{ height: Math.max(1, audioLanes.count) * ROW_AUDIO }}>
-            {project.audios.length === 0 && (
-              <button className="tl-ghost" style={{ left: pad + 8 }} onClick={(e) => { e.stopPropagation(); useStore.getState().setPanel('audio'); }}>
-                <Music size={14} /> Agregar música
-              </button>
-            )}
-            {project.audios.map((a) => {
-              const sel = isSel('audio', a.id);
-              return (
-                <div
-                  key={a.id}
-                  className={`tl-item audio ${sel ? 'selected' : ''}`}
-                  style={{ left: pad + a.start * pps, width: Math.max(2, audioDur(a) * pps), top: (audioLanes.map[a.id] ?? 0) * ROW_AUDIO, height: ROW_AUDIO - 4 }}
-                  onClick={select('audio', a.id)}
-                  {...itemA11y('audio', a.id, `Audio: ${project.assets[a.assetId]?.name ?? 'sin nombre'}`)}
-                  onPointerDown={sel ? (e) => startDrag(e, 'audio', a.id, 'body') : undefined}
-                >
-                  <Music size={12} /> <span>{project.assets[a.assetId]?.name ?? 'Audio'}</span>
-                  {sel && <Handles kind="audio" id={a.id} />}
-                </div>
-              );
-            })}
-          </div>
+          <MainRow {...row} placed={placed} mainDur={mainDur} assets={project.assets} urls={urls} rowH={ROW_CLIP} selId={selOf('clip')} />
+          <TextRow {...row} texts={project.texts} rowH={ROW_TEXT} selId={selOf('text')} />
+          <StickerRow {...row} stickers={stickers} assets={project.assets} rowH={ROW_STICKER} selId={selOf('sticker')} />
+          <AudioRow {...row} audios={project.audios} assets={project.assets} urls={urls} rowH={ROW_AUDIO} selId={selOf('audio')} />
         </div>
       </div>
       <div className="playhead" />
@@ -456,18 +239,4 @@ export function Timeline() {
 
     </div>
   );
-}
-
-function Ruler({ dur, pps, pad }: { dur: number; pps: number; pad: number }) {
-  const step = [0.5, 1, 2, 5, 10, 15, 30, 60, 120].find((s) => s * pps >= 70) ?? 300;
-  const ticks = [];
-  for (let t = 0; t <= dur + step; t += step) {
-    ticks.push(
-      <span key={t} className="tick" style={{ left: pad + t * pps }}>
-        {fmtTime(t)}
-        {step < 1 && t % 1 ? '.5' : ''}
-      </span>,
-    );
-  }
-  return <div className="ruler">{ticks}</div>;
 }
