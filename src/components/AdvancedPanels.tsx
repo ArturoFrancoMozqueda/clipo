@@ -10,7 +10,7 @@ import { ACCEPT_VISUAL, importFiles } from '../media';
 import { addOverlays, editPose, localTime, poseNow } from '../ops';
 import { COLOR_KEYS, COLOR_LABELS, autoColor, type ColorKey } from '../color';
 import { EASINGS, KF_EPS, addKeyframe, clearKeyframes, keyframeAt, removeKeyframe } from '../keyframes';
-import { Hint, NeedsSelection, Slider, checkpoint, editSelected, useSelected } from './Panels';
+import { Hint, NeedsSelection, Slider, checkpoint, editSelected, usePoseTime, useSelected } from './Panels';
 
 const deg = (r: number) => Math.round((r * 180) / Math.PI);
 const pct = (v: number) => `${Math.round(v * 100)} %`;
@@ -47,7 +47,7 @@ const BLENDS: { id: BlendMode; name: string }[] = [
 export function OverlayPanel() {
   const ov = useSelected<OverlayItem>('overlay');
   // The pose depends on the playhead when there are keyframes; skip the 60fps re-renders while playing.
-  useStore((s) => (s.playing ? -1 : s.time));
+  usePoseTime(ov);
   if (!ov) return <OverlayPicker />;
   const kind = useStore.getState().project!.assets[ov.assetId]?.kind;
   const pose = poseNow('overlay', ov.id);
@@ -242,6 +242,21 @@ export function useAnimated() {
   if (!item || !kind) return null;
   const p = useStore.getState().project!;
   return { kind, item, local: localTime(p, kind, item, time), inside: time >= item.start - 1e-6 && time - item.start <= localTime(p, kind, item, Infinity) + 1e-3 };
+}
+
+/**
+ * Look of the timeline's keyframe button: hidden (null), playhead outside the item ('out'), inside it
+ * ('in') or on a keyframe ('on'). A string, so the button re-renders only when it changes, not per frame.
+ */
+export function keyframeButtonState(s: ReturnType<typeof useStore.getState>): 'on' | 'in' | 'out' | null {
+  const sel = s.selection;
+  if (!s.advanced || !s.project || !sel || !ANIMATED.includes(sel.kind)) return null;
+  const it = (itemsOf(s.project, sel.kind) as Animated[]).find((x) => x.id === sel.id);
+  if (!it) return null;
+  const t = s.time;
+  const inside = t >= it.start - 1e-6 && t - it.start <= localTime(s.project, sel.kind, it, Infinity) + 1e-3;
+  if (!inside) return 'out';
+  return keyframeAt(it, localTime(s.project, sel.kind, it, t)) >= 0 ? 'on' : 'in';
 }
 
 /** Add the keyframe at the playhead, or remove it if there already is one. */

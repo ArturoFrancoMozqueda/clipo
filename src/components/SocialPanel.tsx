@@ -509,7 +509,8 @@ async function snapshotPreview(): Promise<string | null> {
 
 function PostSection({ targets }: { targets: PublishTarget[] }) {
   const info = useStore((s) => pub(s.project!));
-  const time = useStore((s) => s.time);
+  // Shown with one decimal: re-render 10 times per second at most, not on every frame of playback.
+  const time = useStore((s) => Math.round(s.time * 10) / 10);
 
   const editInfo = (fn: (i: PublishInfo) => void) => useStore.getState().live((p) => fn((p.publish ??= {})));
   const editPost = (id: PlatformId, fn: (post: NonNullable<PublishInfo['posts']>[PlatformId] & object) => void) =>

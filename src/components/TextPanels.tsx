@@ -12,7 +12,7 @@ import {
   restyleCaptions, saveCaptionLook, subtitleFile, type CaptionLook, type CaptionProgress, type CaptionQuality,
 } from '../captions';
 import { brandLook, saveBrand, useBrand, type BrandKit } from '../brand';
-import { Hint, NeedsSelection, Slider, checkpoint, editSelected, useSelected } from './Panels';
+import { Hint, NeedsSelection, Slider, checkpoint, editSelected, usePoseTime, useSelected } from './Panels';
 import { TextAnimSection } from './VisualPanels';
 import './text.css';
 
@@ -239,7 +239,7 @@ const POSITIONS = [
 export function TextPanel() {
   const text = useSelected<TextItem>('text');
   const kit = useBrand();
-  useStore((s) => (s.playing ? -1 : s.time)); // size and position follow keyframes at the playhead (not re-rendered while playing)
+  usePoseTime(text); // size and position follow keyframes at the playhead (not re-rendered while playing)
   // The preset tiles are drawn in their own fonts.
   useEffect(() => TEXT_PRESETS.forEach((pr) => warmFont(pr.font)), []);
   if (!text) return <NeedsSelection what="un texto" />;

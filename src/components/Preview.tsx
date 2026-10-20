@@ -229,8 +229,11 @@ function PlayerControls() {
   // The timecode is written straight to the DOM so playback doesn't re-render React at 60fps.
   const tc = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
+    // Only when the text changes (10 times per second): a write re-lays the line out even if equal.
+    let shown = '';
     const paint = (t: number) => {
-      if (tc.current) tc.current.textContent = fmtTime(t, true);
+      const text = fmtTime(t, true);
+      if (tc.current && text !== shown) tc.current.textContent = shown = text;
     };
     paint(useStore.getState().time);
     return useStore.subscribe((s, prev) => void (s.time !== prev.time && paint(s.time)));

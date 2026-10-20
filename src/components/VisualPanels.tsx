@@ -18,7 +18,7 @@ import { cropEdges, cropForAspect, normCrop, setCropEdge } from '../framing';
 import { deleteLut, importLuts } from '../visualOps';
 import { EFFECT_ICONS, TRANSITION_ICONS } from './fxIcons';
 import { EffectThumb, LutThumb, TransitionThumb, useFrame } from './FxPreview';
-import { Hint, NeedsSelection, Slider, checkpoint, editSelected, useSelected } from './Panels';
+import { Hint, NeedsSelection, Slider, checkpoint, editSelected, usePoseTime, useSelected } from './Panels';
 
 /** Play a short stretch of the video so the user sees what they just picked. */
 let previewTimer = 0;
@@ -430,7 +430,7 @@ const deg = (r: number) => Math.round((r * 180) / Math.PI);
 
 export function StickersPanel() {
   const sticker = useSelected<StickerItem>('sticker');
-  useStore((s) => (s.playing ? -1 : s.time)); // size and turn follow keyframes at the playhead (not re-rendered while playing)
+  usePoseTime(sticker); // size and turn follow keyframes at the playhead (not re-rendered while playing)
   const pose = sticker ? poseNow('sticker', sticker.id) ?? sticker : null;
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
