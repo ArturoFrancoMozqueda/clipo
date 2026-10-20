@@ -16,6 +16,8 @@ export function stub(name: string, source: string) {
 
 registerHooks({
   resolve(specifier, context, next) {
+    // Vite asset imports (`?url`, styles) become their URL, as in the app.
+    if (/\?url$|\.css$/.test(specifier)) return { url: `asset:${specifier}`, shortCircuit: true };
     if (specifier.startsWith('.') && context.parentURL?.includes('/src/') && !/\.[cm]?[jt]sx?$|\.json$/.test(specifier)) {
       const base = new URL(specifier, context.parentURL);
       const name = fileURLToPath(base).split('/src/').pop()!;
@@ -29,6 +31,7 @@ registerHooks({
   load(url, context, next) {
     if (url.startsWith('stub:')) return { format: 'module', source: stubs.get(url.slice(5))!, shortCircuit: true };
     if (url.endsWith('.json')) return { ...next(url, { ...context, importAttributes: { type: 'json' } }), shortCircuit: true };
+    if (url.startsWith('asset:')) return { format: 'module', source: `export default ${JSON.stringify(url.slice(6))};`, shortCircuit: true };
     return next(url, context);
   },
 });

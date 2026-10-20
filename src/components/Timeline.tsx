@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowLeftRight, Blend, ChevronsDownUp, ChevronsUpDown, Diamond, Image as ImageIcon, Layers, Music, Plus, Smile, Snowflake, Sparkles, Type } from 'lucide-react';
-import type { AudioItem, Clip, Keyframe, OverlayItem, Project, SelectionKind, StickerItem, TextItem, TransitionId } from '../types';
-import { itemsOf, useStore } from '../store';
+import type { Keyframe, SelectionKind, TransitionId } from '../types';
+import { useStore } from '../store';
 import { engine } from '../engine';
-import { IMAGE_MAX, audioDur, clamp, fmtTime, lanes, layout, mainDuration, overlayDur, overlaysOf, totalDuration } from '../model';
+import { audioDur, clamp, fmtTime, lanes, layout, mainDuration, overlayDur, overlaysOf, totalDuration } from '../model';
 import { keyframeAt } from '../keyframes';
 import { toggleKeyframe, useAnimated } from './AdvancedPanels';
 import { addText } from '../ops';
 import { getFilter } from '../filters';
 import { effectName, stickersOf, transitionName } from '../visuals';
 import { TRANSITION_ICONS } from './fxIcons';
+import { DragGuides, startDrag, useRulerScrub } from './timelineDrag';
 
 const JUNCTION_ICONS: Record<TransitionId, typeof Blend> = { ...TRANSITION_ICONS, none: ArrowLeftRight };
 
@@ -170,92 +171,6 @@ function useTimelineSize(box: React.RefObject<HTMLDivElement | null>, scroller: 
   return { height, compact, toggleCompact, onPointerDown, onKeyDown, maxHeight };
 }
 
-type Mode = 'l' | 'r' | 'body';
-
-/** Apply a horizontal drag of `ds` seconds to an item, starting from its original values. */
-function applyDrag(p: Project, kind: SelectionKind, id: string, mode: Mode, ds: number, o: Clip | TextItem | AudioItem | StickerItem | OverlayItem) {
-  if (kind === 'overlay') {
-    const v = p.overlays?.find((x) => x.id === id);
-    const ov = o as OverlayItem;
-    if (!v) return;
-    if (mode === 'body') v.start = Math.max(0, ov.start + ds);
-    else if (p.assets[v.assetId]?.kind === 'image') {
-      // Photos: both edges change how long it shows.
-      if (mode === 'l') {
-        const d = clamp(ds, -ov.start, ov.out - 0.3);
-        v.start = ov.start + d;
-        v.out = ov.out - d;
-      } else v.out = clamp(ov.out + ds, 0.3, IMAGE_MAX);
-    } else if (mode === 'l') {
-      const d = clamp(ds, -Math.min(ov.in, ov.start), ov.out - ov.in - 0.2);
-      v.in = ov.in + d;
-      v.start = ov.start + d;
-    } else v.out = clamp(ov.out + ds, ov.in + 0.2, p.assets[v.assetId]?.duration ?? ov.out);
-  } else if (kind === 'clip') {
-    const c = p.clips.find((x) => x.id === id);
-    const oc = o as Clip;
-    if (!c) return;
-    const a = p.assets[c.assetId];
-    if (a?.kind === 'image' || c.freeze != null) {
-      // Photos and freeze frames have no "source" to trim: both handles change how long they show.
-      c.out = clamp(oc.out + (mode === 'l' ? -ds : ds), 0.3, IMAGE_MAX);
-    } else if (mode === 'l') c.in = clamp(oc.in + ds * oc.speed, 0, oc.out - 0.1);
-    else if (mode === 'r') c.out = clamp(oc.out + ds * oc.speed, oc.in + 0.1, a?.duration ?? oc.out);
-  } else if (kind === 'text' || kind === 'sticker') {
-    const t = (itemsOf(p, kind) as (TextItem | StickerItem)[]).find((x) => x.id === id);
-    const ot = o as TextItem;
-    if (!t) return;
-    const end = ot.start + ot.duration;
-    if (mode === 'l') {
-      t.start = clamp(ot.start + ds, 0, end - 0.2);
-      t.duration = end - t.start;
-    } else if (mode === 'r') t.duration = Math.max(0.2, ot.duration + ds);
-    else t.start = Math.max(0, ot.start + ds);
-  } else {
-    const a = p.audios.find((x) => x.id === id);
-    const oa = o as AudioItem;
-    if (!a) return;
-    if (mode === 'l') {
-      const d = clamp(ds, -Math.min(oa.in, oa.start), oa.out - oa.in - 0.2);
-      a.in = oa.in + d;
-      a.start = oa.start + d;
-    } else if (mode === 'r') a.out = clamp(oa.out + ds, oa.in + 0.2, p.assets[a.assetId]?.duration ?? oa.out);
-    else a.start = Math.max(0, oa.start + ds);
-  }
-}
-
-function startDrag(e: React.PointerEvent, kind: SelectionKind, id: string, mode: Mode) {
-  e.stopPropagation();
-  const s = useStore.getState();
-  const p = s.project!;
-  const found = (itemsOf(p, kind) as (Clip | TextItem | AudioItem | StickerItem | OverlayItem)[]).find((x) => x.id === id);
-  if (!found) return;
-  engine.pause();
-  const orig = structuredClone(found);
-  const pps = s.pps;
-  const x0 = e.clientX;
-  let moved = false;
-  const target = e.currentTarget as HTMLElement;
-  target.setPointerCapture(e.pointerId);
-  const move = (ev: PointerEvent) => {
-    if (!moved) {
-      if (Math.abs(ev.clientX - x0) < 3) return;
-      moved = true;
-      useStore.getState().checkpoint();
-    }
-    const ds = (ev.clientX - x0) / pps;
-    useStore.getState().live((q) => applyDrag(q, kind, id, mode, ds, orig));
-  };
-  const up = () => {
-    target.removeEventListener('pointermove', move);
-    target.removeEventListener('pointerup', up);
-    target.removeEventListener('pointercancel', up);
-  };
-  target.addEventListener('pointermove', move);
-  target.addEventListener('pointerup', up);
-  target.addEventListener('pointercancel', up);
-}
-
 /** Small diamonds where an item has keyframes. */
 function KfMarks({ kf, pps }: { kf?: Keyframe[]; pps: number }) {
   if (!kf?.length) return null;
@@ -327,6 +242,7 @@ export function Timeline() {
     lastProg.current = el.scrollLeft;
   }, []);
   useLayoutEffect(applyScroll, [vw, pps, project, applyScroll]);
+  useRulerScrub(ref);
   useEffect(() => useStore.subscribe((s, prev) => void (s.time !== prev.time && applyScroll())), [applyScroll]);
 
   const onScroll = () => {
@@ -446,6 +362,7 @@ export function Timeline() {
       <div className="tl-scroll" ref={ref} onScroll={onScroll} onClick={() => useStore.getState().select(null)}>
         <div className="tl-content" style={{ width }}>
           <Ruler dur={dur} pps={pps} pad={pad} />
+          <DragGuides pad={pad} pps={pps} />
 
           {(advanced || overlays.length > 0) && (
             <div className={`tl-row tl-overlays ${overlays.length ? '' : 'empty'}`}style={{ height: Math.max(1, overlayLanes.count) * ROW_OVERLAY }}>
@@ -499,6 +416,7 @@ export function Timeline() {
                   }}
                   onClick={select('clip', clip.id)}
                   {...itemA11y('clip', clip.id, `Clip: ${a?.name ?? 'sin nombre'}, ${fmtTime(end - start, true)}`)}
+                  onPointerDown={sel ? (e) => startDrag(e, 'clip', clip.id, 'body') : undefined}
                   title={a?.name}
                 >
                   <span className="tl-badges">
