@@ -8,7 +8,7 @@ import type { SelectionKind } from '../src/types.ts';
 // The preview engine needs a browser; editing only asks it to pause.
 stub('engine', 'export const engine = { pause() {}, play() {} };');
 const { useStore } = await import('../src/store.ts');
-const { splitAtPlayhead, deleteSelected } = await import('../src/ops.ts');
+const { splitAtPlayhead, deleteSelected, moveClipTo } = await import('../src/ops.ts');
 
 const st = () => useStore.getState();
 function at(kind: SelectionKind | null, id: string, time: number) {
@@ -100,4 +100,15 @@ test('delete removes the selected item of every kind, and undo brings it back', 
     st().undo();
     assert.ok(((st().project![list] ?? []) as { id: string }[]).some((x) => x.id === id), `${kind} back after undo`);
   }
+});
+
+test('moveClipTo reorders main clips in one undo step and keeps the playhead on the moved clip', () => {
+  at('clip', 'c1', 0);
+  assert.equal(moveClipTo('c1', 0), false);
+  assert.equal(moveClipTo('c1', 1), true);
+  assert.deepEqual(st().project!.clips.map((c) => c.id), ['c2', 'c1']);
+  assert.ok(Math.abs(st().time - 2.01) < 1e-9);
+  st().undo();
+  assert.deepEqual(st().project!.clips.map((c) => c.id), ['c1', 'c2']);
+  assert.equal(moveClipTo('c1', 5), false);
 });

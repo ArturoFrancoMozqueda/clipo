@@ -204,6 +204,21 @@ export function moveClip(dir: -1 | 1) {
   if (placed) s.setTime(placed.start + 0.01);
 }
 
+/** Move a main clip to `to`, its index once taken out of the list (one undo step). */
+export function moveClipTo(id: string, to: number) {
+  const s = get();
+  const i = s.project?.clips.findIndex((c) => c.id === id) ?? -1;
+  if (i < 0 || to === i || to < 0 || to >= s.project!.clips.length) return false;
+  engine.pause();
+  s.commit((p) => {
+    const [c] = p.clips.splice(i, 1);
+    if (c) p.clips.splice(to, 0, c);
+  });
+  const placed = layout(get().project!).find((l) => l.clip.id === id);
+  if (placed) s.setTime(placed.start + 0.01);
+  return true;
+}
+
 export function addText() {
   const s = get();
   if (!s.project) return;

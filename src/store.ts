@@ -26,6 +26,8 @@ interface State {
   captioning: boolean;
   /** Shows the advanced tools (overlays, keyframes, color correction). Remembered per device. */
   advanced: boolean;
+  /** Magnetic timeline: dragged edges stick to the playhead and other items. Remembered per device. */
+  snap: boolean;
 
   open(p: Project, urls: Record<string, string>): void;
   close(): void;
@@ -46,14 +48,24 @@ interface State {
   setExporting(b: boolean): void;
   setCaptioning(b: boolean): void;
   setAdvanced(b: boolean): void;
+  setSnap(b: boolean): void;
 }
 
 const ADVANCED_KEY = 'clipo.advanced';
-function loadAdvanced() {
+const SNAP_KEY = 'clipo.snap';
+function loadFlag(key: string, fallback: boolean) {
   try {
-    return localStorage.getItem(ADVANCED_KEY) === '1';
+    const v = localStorage.getItem(key);
+    return v == null ? fallback : v === '1';
   } catch {
-    return false;
+    return fallback;
+  }
+}
+function saveFlag(key: string, b: boolean) {
+  try {
+    localStorage.setItem(key, b ? '1' : '0');
+  } catch {
+    /* private mode: only this session */
   }
 }
 
@@ -127,7 +139,8 @@ export const useStore = create<State>()((set, get) => ({
   toast: null,
   exporting: false,
   captioning: false,
-  advanced: loadAdvanced(),
+  advanced: loadFlag(ADVANCED_KEY, false),
+  snap: loadFlag(SNAP_KEY, true),
 
   open: (p, urls) => {
     let project: Project;
@@ -184,11 +197,11 @@ export const useStore = create<State>()((set, get) => ({
   setExporting: (b) => set({ exporting: b }),
   setCaptioning: (b) => set({ captioning: b }),
   setAdvanced: (b) => {
-    try {
-      localStorage.setItem(ADVANCED_KEY, b ? '1' : '0');
-    } catch {
-      /* private mode: only this session */
-    }
+    saveFlag(ADVANCED_KEY, b);
     set({ advanced: b });
+  },
+  setSnap: (b) => {
+    saveFlag(SNAP_KEY, b);
+    set({ snap: b });
   },
 }));

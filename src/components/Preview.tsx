@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ImagePlus, Pause, Play, ZoomIn, ZoomOut } from 'lucide-react';
+import { ImagePlus, Magnet, Pause, Play, ZoomIn, ZoomOut } from 'lucide-react';
 import { useStore } from '../store';
 import { engine } from '../engine';
 import { ASPECTS, canvasSize, clamp, fmtTime, totalDuration } from '../model';
@@ -237,6 +237,7 @@ function PlayerControls() {
   }, []);
   const dur = useStore((s) => (s.project ? totalDuration(s.project) : 0));
   const playing = useStore((s) => s.playing);
+  const snap = useStore((s) => s.snap);
   const zoom = (k: number) => useStore.getState().setPps(useStore.getState().pps * k);
   return (
     <div className="controls">
@@ -247,6 +248,15 @@ function PlayerControls() {
         {playing ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" />}
       </button>
       <div className="zoom-btns">
+        <button
+          className={`icon-btn ${snap ? 'on' : ''}`}
+          onClick={() => useStore.getState().setSnap(!snap)}
+          aria-label="Imán: ajustar a la línea y a otros elementos"
+          aria-pressed={snap}
+          title={snap ? 'Imán activado (mantén Alt para soltarlo)' : 'Imán desactivado'}
+        >
+          <Magnet size={20} />
+        </button>
         <button className="icon-btn" onClick={() => zoom(1 / 1.4)} aria-label="Alejar línea de tiempo" title="Alejar">
           <ZoomOut size={20} />
         </button>
