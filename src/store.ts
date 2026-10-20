@@ -32,6 +32,8 @@ interface State {
   proxyPreview: boolean;
   /** Proxy being made now, for the small progress indicator. */
   proxyJob: { name: string; progress: number } | null;
+  /** Magnetic timeline: dragged edges stick to the playhead and other items. Remembered per device. */
+  snap: boolean;
 
   open(p: Project, urls: Record<string, string>): void;
   close(): void;
@@ -55,25 +57,28 @@ interface State {
   setProxyUrls(u: Record<string, string>): void;
   setProxyPreview(b: boolean): void;
   setProxyJob(j: { name: string; progress: number } | null): void;
+  setSnap(b: boolean): void;
 }
 
 const ADVANCED_KEY = 'clipo.advanced';
-function loadAdvanced() {
+const SNAP_KEY = 'clipo.snap';
+function loadFlag(key: string, fallback: boolean) {
   try {
-    return localStorage.getItem(ADVANCED_KEY) === '1';
+    const v = localStorage.getItem(key);
+    return v == null ? fallback : v === '1';
   } catch {
-    return false;
+    return fallback;
+  }
+}
+function saveFlag(key: string, b: boolean) {
+  try {
+    localStorage.setItem(key, b ? '1' : '0');
+  } catch {
+    /* private mode: only this session */
   }
 }
 
 const PROXY_PREVIEW_KEY = 'clipo.proxyPreview';
-function loadProxyPreview() {
-  try {
-    return localStorage.getItem(PROXY_PREVIEW_KEY) !== '0';
-  } catch {
-    return true;
-  }
-}
 
 /** The selection if its item is still in the project, else null. */
 export function selectionExists(p: Project | null, s: Selection): Selection {
@@ -145,10 +150,11 @@ export const useStore = create<State>()((set, get) => ({
   toast: null,
   exporting: false,
   captioning: false,
-  advanced: loadAdvanced(),
   proxyUrls: {},
-  proxyPreview: loadProxyPreview(),
+  proxyPreview: loadFlag(PROXY_PREVIEW_KEY, true),
   proxyJob: null,
+  advanced: loadFlag(ADVANCED_KEY, false),
+  snap: loadFlag(SNAP_KEY, true),
 
   open: (p, urls) => {
     let project: Project;
@@ -205,21 +211,17 @@ export const useStore = create<State>()((set, get) => ({
   setExporting: (b) => set({ exporting: b }),
   setCaptioning: (b) => set({ captioning: b }),
   setAdvanced: (b) => {
-    try {
-      localStorage.setItem(ADVANCED_KEY, b ? '1' : '0');
-    } catch {
-      /* private mode: only this session */
-    }
+    saveFlag(ADVANCED_KEY, b);
     set({ advanced: b });
   },
   setProxyUrls: (u) => set({ proxyUrls: u }),
   setProxyPreview: (b) => {
-    try {
-      localStorage.setItem(PROXY_PREVIEW_KEY, b ? '1' : '0');
-    } catch {
-      /* private mode: only this session */
-    }
+    saveFlag(PROXY_PREVIEW_KEY, b);
     set({ proxyPreview: b });
   },
   setProxyJob: (j) => set({ proxyJob: j }),
+  setSnap: (b) => {
+    saveFlag(SNAP_KEY, b);
+    set({ snap: b });
+  },
 }));

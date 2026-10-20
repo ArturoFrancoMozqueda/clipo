@@ -220,7 +220,28 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
 .zoom-btns { justify-self: end; display: flex; }
 
 /* ---------- timeline ---------- */
-.timeline { position: relative; flex: none; border-top: 1px solid var(--line); background: var(--bg-elev); }
+.timeline { --tl-bar: 22px; position: relative; flex: none; border-top: 1px solid var(--line); background: var(--bg-elev); }
+/* Resize grip on the top edge: a pill on a full-width strip, with a 44px hit area. */
+.tl-grip { position: relative; height: var(--tl-bar); touch-action: none; cursor: ns-resize; z-index: 7; }
+.tl-grip::before { content: ''; position: absolute; left: 0; right: 0; top: -6px; bottom: -16px; } /* stays clear of the play button above */
+.tl-grip::after { content: ''; position: absolute; left: 50%; top: 50%; width: 40px; height: 5px; transform: translate(-50%, -50%); border-radius: 3px; background: var(--line-strong); transition: background-color .15s, width .15s var(--ease); }
+.tl-grip:active::after, .tl-grip:focus-visible::after { background: var(--accent); width: 56px; }
+.tl-grip:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent-soft); }
+@media (hover: hover) { .tl-grip:hover::after { background: var(--muted); } }
+.tl-compact { position: absolute; top: 0; right: 6px; z-index: 8; width: 32px; height: var(--tl-bar); border-radius: 8px; display: grid; place-items: center; color: var(--muted); }
+.tl-compact::before { content: ''; position: absolute; inset: -11px -6px; } /* 44px touch target */
+.tl-compact[aria-pressed='true'] { color: var(--accent); }
+@media (hover: hover) { .tl-compact:hover { color: var(--text); background: var(--line); } }
+/* A height the user dragged to (capped so a smaller window keeps its preview). */
+.timeline.sized .tl-scroll { height: min(var(--tl-h), 70vh); height: min(var(--tl-h), 70dvh); max-height: none; }
+/* Compact: thinner rows, tighter gaps, no empty "Agregar ..." rows. */
+.timeline.compact .tl-row { margin-top: 3px; }
+.timeline.compact .tl-row.empty { display: none; }
+.timeline.compact .tl-content { padding-bottom: 4px; }
+.timeline.compact .tl-add { top: 4px; width: 32px; height: 32px; border-radius: 9px; }
+.timeline.compact .tl-add svg { width: 18px; height: 18px; }
+.timeline.compact .tl-junction { width: 24px; height: 24px; margin: -12px 0 0 -12px; }
+.timeline.compact .tl-item { font-size: 11px; }
 .tl-scroll { overflow-x: auto; overflow-y: auto; touch-action: pan-x pan-y; scrollbar-width: none; max-height: 34vh; max-height: 34dvh; }
 .tl-scroll::-webkit-scrollbar { display: none; }
 /* Mouse users: a thin vertical scrollbar shows that more tracks are below. */
@@ -230,7 +251,7 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
   .tl-scroll::-webkit-scrollbar-thumb { background: #4a4a58; border-radius: 4px; }
 }
 .tl-content { position: relative; padding-bottom: 8px; }
-.ruler { position: relative; height: 22px; }
+.ruler { position: sticky; top: 0; z-index: 5; height: 22px; background: var(--bg-elev); } /* time stays visible while tracks scroll */
 .tick { position: absolute; top: 4px; font-size: 11px; font-weight: 500; color: #7c7c8a; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tick::before { content: ''; position: absolute; left: 50%; top: 14px; width: 1px; height: 4px; background: #4a4a58; }
 .tl-row { position: relative; margin-top: 6px; }
@@ -253,7 +274,7 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
 @media (hover: hover) { .tl-add:hover { transform: scale(1.06); } }
 .tl-ghost { position: sticky; display: inline-flex; align-items: center; gap: 6px; height: calc(100% - 2px); padding: 0 12px; border-radius: 9px; border: 1px dashed var(--line-strong); color: var(--muted); font-size: 13px; font-weight: 500; transition: color .15s, border-color .15s, background-color .15s; }
 @media (hover: hover) { .tl-ghost:hover { color: var(--text); border-color: var(--accent); background: var(--accent-soft); } }
-.playhead { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: #fff; pointer-events: none; z-index: 5; box-shadow: 0 0 6px rgba(0,0,0,.6); }
+.playhead { position: absolute; top: var(--tl-bar); bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: #fff; pointer-events: none; z-index: 5; box-shadow: 0 0 6px rgba(0,0,0,.6); }
 .playhead::before { content: ''; position: absolute; top: 0; left: -5px; border: 6px solid transparent; border-top-color: #fff; }
 
 /* ---------- toolbar ---------- */
@@ -427,6 +448,11 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
   .play-btn { width: 44px; height: 44px; }
   .timeline { grid-area: tl; min-height: 0; display: flex; flex-direction: column; border-top: 0; border-left: 1px solid var(--line); }
   .tl-scroll { flex: 1; min-height: 0; max-height: none; }
+  /* The timeline is a full-height column here: no vertical resizing, compact toggle over the ruler. */
+  .timeline { --tl-bar: 0px; }
+  .tl-grip { display: none; }
+  .timeline.sized .tl-scroll { height: auto; }
+  .tl-compact { height: 22px; background: var(--bg-elev); }
   .toolbar { grid-area: tools; border-left: 1px solid var(--line); }
   .tool { min-height: 52px; min-width: 64px; padding: 4px 6px; }
   /* Panels open over the timeline column so the preview stays visible. */
@@ -458,7 +484,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
 .tl-item.overlay { background-color: #2d6b73; background-size: auto 100%; background-repeat: repeat-x; text-shadow: 0 1px 2px #000; }
 .tl-item.overlay.selected { touch-action: none; cursor: grab; }
 .tl-kf { position: absolute; top: 50%; width: 9px; height: 9px; margin: -5px 0 0 -5px; background: #ffd34d; border: 1px solid #000; transform: rotate(45deg); pointer-events: none; z-index: 3; }
-.tl-kf-btn { position: absolute; top: 2px; left: calc(50% + 8px); z-index: 6; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: #2a2a36; color: #ffd34d; border: 1px solid #ffd34d; }
+.tl-kf-btn { position: absolute; top: calc(var(--tl-bar) + 2px); left: calc(50% + 8px); z-index: 6; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: #2a2a36; color: #ffd34d; border: 1px solid #ffd34d; }
 .tl-kf-btn.on { background: #ffd34d; color: #000; }
 .tl-kf-btn.off { opacity: .45; }
 .adv-toggle { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }

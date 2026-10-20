@@ -1,0 +1,30 @@
+/* Timeline items: filmstrips, waveforms, labels and minor ruler ticks (rows in TimelineRows.tsx). */
+.tick-minor { position: absolute; top: 18px; width: 1px; height: 3px; margin-left: -.5px; background: #4a4a58; opacity: .7; }
+
+/* Layers inside an item: frames and waveform at the back, labels above, handles on top (z 3). */
+.tl-film { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.tl-film img { position: absolute; top: 0; object-fit: cover; }
+.tl-wave { position: absolute; pointer-events: none; z-index: 0; }
+.tl-wave.mid { top: 0; }
+.tl-wave.bottom { bottom: 0; opacity: .7; z-index: 1; }
+.tl-item > svg, .tl-item > span, .tl-item > em { position: relative; z-index: 1; flex: none; }
+.tl-item > .tl-label { flex: 0 1 auto; min-width: 0; text-shadow: 0 1px 2px rgba(0,0,0,.55); }
+.tl-item > .handle { position: absolute; z-index: 3; }
+.tl-item > .tl-film, .tl-item > .tl-kf { position: absolute; }
+.tl-item > .tl-film { z-index: 0; }
+.tl-item > .tl-kf { z-index: 3; }
+
+/* Clips: a soft shade at the bottom keeps badges readable over any picture. */
+.tl-item.clip::after { content: ''; position: absolute; inset: auto 0 0; height: 60%; background: linear-gradient(transparent, rgba(0,0,0,.55)); pointer-events: none; z-index: 0; }
+.tl-item.clip > .tl-badges { z-index: 2; }
+.tl-name { position: absolute !important; top: 3px; left: 6px; right: 6px; font-size: 11px; font-weight: 600; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; overflow: hidden; text-overflow: ellipsis; z-index: 2 !important; }
+
+/* Duration badge at the right end of text, sticker, audio and overlay items. */
+.tl-dur { margin-left: auto; font-style: normal; font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; padding: 0 5px; border-radius: 5px; background: rgba(0,0,0,.32); color: rgba(255,255,255,.88); }
+
+/* Audio: real waveform once it's ready (the stripes stay as a placeholder until then). */
+.tl-item.audio.waved { background: linear-gradient(180deg, #23806b, var(--audio-item)); }
+
+/* Selected: crisper ring; hover on desktop lifts items slightly. */
+.tl-item.selected { box-shadow: 0 0 0 3px rgba(139,123,255,.45), 0 8px 20px -6px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.2); }
+@media (hover: hover) { .tl-item:not(.selected):hover { filter: brightness(1.1); } }
