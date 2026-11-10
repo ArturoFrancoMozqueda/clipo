@@ -5,10 +5,11 @@ import type { KaraokeMode, TextItem } from '../types';
 import { useStore } from '../store';
 import { TEXT_STYLES, getTextStyle, styleToCss } from '../textStyles';
 import { FONT_CATEGORIES, POPULAR_FONTS, ensureFont, fontFamily, fontsIn, getFont, searchFonts, warmFont, type FontPickerTab } from '../fonts';
-import { TEXT_PRESETS } from '../textPresets';
+import { PRESET_CATEGORIES, TEXT_PRESETS, applyPreset, searchPresets, type PresetCategory, type TextPreset } from '../textPresets';
+import { addRecent, toggleFavorite, usePicks } from '../favorites';
 import { editPose, poseNow } from '../ops';
 import {
-  CAPTION_LANGUAGES, CAPTION_STYLES, captionDownloadMB, cancelCaptions, generateCaptions, importSubtitleFile, loadCaptionLook,
+  CAPTION_CHUNKS, CAPTION_LANGUAGES, CAPTION_STYLES, captionDownloadMB, lookWithStyle, cancelCaptions, generateCaptions, importSubtitleFile, loadCaptionLook,
   restyleCaptions, saveCaptionLook, subtitleFile, type CaptionLook, type CaptionProgress, type CaptionQuality,
 } from '../captions';
 import { brandLook, saveBrand, useBrand, type BrandKit } from '../brand';
@@ -236,12 +237,88 @@ const POSITIONS = [
   { label: 'Abajo', y: 0.8 },
 ];
 
+type PresetTab = PresetCategory | 'todos' | 'favoritos' | 'recientes';
+
+/** Quick looks with search, categories, favorites and recently used. */
+function PresetPicker() {
+  const [tab, setTab] = useState<PresetTab>('todos');
+  const [q, setQ] = useState('');
+  const favs = usePicks('textPresets.fav');
+  const recents = usePicks('textPresets.recent');
+  const byId = (ids: string[]) => ids.map((id) => TEXT_PRESETS.find((p) => p.id === id)).filter((p): p is TextPreset => !!p);
+  const searching = q.trim().length > 0;
+  const list = searching
+    ? searchPresets(q)
+    : tab === 'favoritos'
+      ? byId(favs)
+      : tab === 'recientes'
+        ? byId(recents)
+        : tab === 'todos'
+          ? [...TEXT_PRESETS.filter((p) => p.trend), ...TEXT_PRESETS.filter((p) => !p.trend)]
+          : TEXT_PRESETS.filter((p) => p.category === tab);
+  const key = list.map((p) => p.font).join();
+  // The tiles are drawn in their own fonts.
+  useEffect(() => list.forEach((p) => warmFont(p.font)), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tabs: { id: PresetTab; name: string }[] = [
+    { id: 'todos', name: 'Todos' },
+    ...(favs.length ? [{ id: 'favoritos' as const, name: 'Favoritos' }] : []),
+    ...(recents.length ? [{ id: 'recientes' as const, name: 'Recientes' }] : []),
+    ...PRESET_CATEGORIES,
+  ];
+  const use = (pr: TextPreset) => {
+    checkpoint();
+    warmFont(pr.font);
+    addRecent('textPresets.recent', pr.id);
+    editSelected((t) => applyPreset(t, pr));
+  };
+  return (
+    <>
+      <label className="tx-search">
+        <Search size={18} />
+        <input type="search" value={q} placeholder="Buscar: oferta, meme, cita, link en bio…" onChange={(e) => setQ(e.target.value)} />
+      </label>
+      {!searching && (
+        <div className="tx-tabs" role="tablist">
+          {tabs.map((c) => (
+            <button key={c.id} role="tab" aria-selected={tab === c.id} className={`chip ${tab === c.id ? 'active' : ''}`} onClick={() => setTab(c.id)}>
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {!list.length && <Hint>{searching ? 'No encontramos ese estilo. Prueba con otra palabra.' : 'Aquí aparecerán los que marques con la estrella o uses.'}</Hint>}
+      <div className="preset-grid">
+        {list.map((pr) => {
+          const st = getTextStyle(pr.styleId);
+          const f = getFont(pr.font)!;
+          const fav = favs.includes(pr.id);
+          return (
+            <div key={pr.id} className="preset-wrap">
+              <button className="preset" title={pr.use} onClick={() => use(pr)}>
+                <span style={{ ...styleToCss(st), fontFamily: fontFamily(f), fontWeight: f.weight }}>{pr.name}</span>
+                <small>{pr.use}</small>
+                {pr.trend && <TrendTag />}
+              </button>
+              <button
+                className={`preset-fav ${fav ? 'on' : ''}`}
+                aria-pressed={fav}
+                aria-label={fav ? `Quitar ${pr.name} de favoritos` : `Marcar ${pr.name} como favorito`}
+                onClick={() => toggleFavorite('textPresets.fav', pr.id)}
+              >
+                <Star size={14} fill={fav ? 'currentColor' : 'none'} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 export function TextPanel() {
   const text = useSelected<TextItem>('text');
   const kit = useBrand();
   usePoseTime(text); // size and position follow keyframes at the playhead (not re-rendered while playing)
-  // The preset tiles are drawn in their own fonts.
-  useEffect(() => TEXT_PRESETS.forEach((pr) => warmFont(pr.font)), []);
   if (!text) return <NeedsSelection what="un texto" />;
   const pose = poseNow('text', text.id) ?? text;
   return (
@@ -256,38 +333,7 @@ export function TextPanel() {
         onChange={(e) => editSelected((t) => void (t.text = e.target.value))}
       />
       <p className="label">Estilos rápidos</p>
-      <div className="preset-row">
-        {TEXT_PRESETS.map((pr) => {
-          const st = getTextStyle(pr.styleId);
-          const f = getFont(pr.font)!;
-          return (
-            <button
-              key={pr.id}
-              className="preset"
-              title={pr.use}
-              onClick={() => {
-                checkpoint();
-                warmFont(pr.font);
-                editSelected((t) => {
-                  t.font = pr.font;
-                  t.styleId = pr.styleId;
-                  t.size = pr.size;
-                  t.anim = { ...pr.anim };
-                  delete t.fill;
-                  if (pr.y !== undefined) {
-                    t.x = 0.5;
-                    t.y = pr.y;
-                  }
-                });
-              }}
-            >
-              <span style={{ ...styleToCss(st), fontFamily: fontFamily(f), fontWeight: f.weight }}>{pr.name}</span>
-              <small>{pr.use}</small>
-              {pr.trend && <TrendTag />}
-            </button>
-          );
-        })}
-      </div>
+      <PresetPicker />
       <p className="label">Mi marca</p>
       <BrandSection text={text} />
       <p className="label">Fuente</p>
@@ -365,7 +411,7 @@ function CaptionLookPicker({ look, setLook }: { look: CaptionLook; setLook: (l: 
         {styles.map((c) => {
           const f = getFont(c.font);
           return (
-            <button key={c.id} className={`style ${look.style === c.id ? 'active' : ''}`} onClick={() => setLook({ ...look, style: c.id })}>
+            <button key={c.id} className={`style ${look.style === c.id ? 'active' : ''}`} onClick={() => setLook(lookWithStyle(look, c.id))}>
               <span style={{ ...styleToCss(getTextStyle(c.styleId)), ...(f ? { fontFamily: fontFamily(f), fontWeight: f.weight } : {}), ...(c.fill ? { color: c.fill } : {}) }}>
                 {c.name}
               </span>
@@ -373,6 +419,14 @@ function CaptionLookPicker({ look, setLook }: { look: CaptionLook; setLook: (l: 
             </button>
           );
         })}
+      </div>
+      <p className="label">Cuántas palabras a la vez</p>
+      <div className="chips">
+        {CAPTION_CHUNKS.map((c) => (
+          <button key={c.id} className={`chip big ${(look.chunk ?? 'frase') === c.id ? 'active' : ''}`} onClick={() => setLook({ ...look, chunk: c.id })}>
+            {c.name} <small>{c.hint}</small>
+          </button>
+        ))}
       </div>
       <p className="label">Palabra por palabra</p>
       <KaraokePicker mode={look.karaoke} color={look.color} accent={kit?.accent} onChange={(karaoke, color) => setLook({ ...look, karaoke, color })} />

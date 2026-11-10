@@ -101,10 +101,12 @@ export const desktop = (): DesktopBridge | undefined => (typeof window !== 'unde
 
 /**
  * Errors thrown in the main process reach the page as "Error invoking remote method 'x': Error: <message>".
- * The main process writes "F|" before messages that retrying will not fix (see electron/publish/errors.cjs).
+ * The main process writes "F|" before messages that retrying will not fix and "A|" before ones that need the account connected again (see electron/publish/errors.cjs).
  */
-export function bridgeError(err: unknown): { message: string; retryable: boolean } {
+export function bridgeError(err: unknown): { message: string; retryable: boolean; reconnect: boolean } {
   const raw = (err instanceof Error ? err.message : String(err)).replace(/^Error invoking remote method '[^']+':\s*(\w*Error:\s*)?/, '');
-  const m = /^([RF])\|([\s\S]*)$/.exec(raw);
-  return m ? { message: m[2] ?? '', retryable: m[1] === 'R' } : { message: raw, retryable: true };
+  const m = /^([RFA])\|([\s\S]*)$/.exec(raw);
+  if (m) return { message: m[2] ?? '', retryable: m[1] !== 'F', reconnect: m[1] === 'A' };
+  // Not one of ours (a crash, "forbidden"…): never show the technical text.
+  return { message: 'Algo salió mal al conectar con la red. Pulsa “Reintentar”.', retryable: true, reconnect: false };
 }

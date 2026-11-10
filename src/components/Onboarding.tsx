@@ -46,11 +46,15 @@ export function Onboarding() {
         <div className="ob-icon"><s.icon size={36} /></div>
         <h3 id="ob-title">{s.title}</h3>
         <p>{s.text}</p>
-        <div className="ob-dots">
+        <div className="ob-dots" role="img" aria-label={`Paso ${step + 1} de ${STEPS.length}`}>
           {STEPS.map((_, i) => <span key={i} className={i === step ? 'on' : ''} />)}
         </div>
         <div className="ob-actions">
-          <button className="btn-ghost" onClick={done}>Saltar</button>
+          {last ? (
+            <button className="btn-ghost" onClick={() => setStep(step - 1)}>Atrás</button>
+          ) : (
+            <button className="btn-ghost" onClick={done}>Saltar</button>
+          )}
           <button className="btn-primary" onClick={() => (last ? done() : setStep(step + 1))}>
             {last ? '¡Empezar!' : 'Siguiente'}
           </button>

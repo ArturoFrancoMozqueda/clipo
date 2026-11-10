@@ -27,9 +27,11 @@ export interface GroupOptions {
   maxGap: number;
   /** Longest a caption stays on screen while words keep coming (seconds). */
   maxDur: number;
+  /** Most words in one caption (viral clips show two or three at a time). */
+  maxWords: number;
 }
 
-export const GROUP_DEFAULTS: GroupOptions = { maxChars: 32, maxGap: 0.7, maxDur: 3.2 };
+export const GROUP_DEFAULTS: GroupOptions = { maxChars: 32, maxGap: 0.7, maxDur: 3.2, maxWords: Infinity };
 
 const SENTENCE_END = /[.?!…]["»”')]*$/;
 
@@ -56,7 +58,7 @@ export function groupWords(input: TimedWord[], opts: Partial<GroupOptions> = {})
     const first = cur[0];
     const last = cur.at(-1);
     if (first && last) {
-      const tooLong = len(cur) + 1 + w.text.length > o.maxChars;
+      const tooLong = len(cur) + 1 + w.text.length > o.maxChars || cur.length >= o.maxWords;
       const pause = w.start - last.end > o.maxGap;
       const tooSlow = w.end - first.start > o.maxDur;
       const sentence = SENTENCE_END.test(last.text) && len(cur) >= 8;
@@ -70,6 +72,7 @@ export function groupWords(input: TimedWord[], opts: Partial<GroupOptions> = {})
     const c = cues[i]!;
     const prev = cues[i - 1]!;
     if (
+      prev.words!.length < o.maxWords &&
       c.words!.length === 1 &&
       c.text.length < 10 &&
       c.start - prev.end <= o.maxGap &&

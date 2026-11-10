@@ -37,3 +37,7 @@
 .pub-account { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
 .pub-account img { width: 32px; height: 32px; border-radius: 50%; }
 .pub-account span { flex: 1; }
+.pub-nets { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.pub-nets .btn-ghost, .pub-nets .btn-primary { min-height: 40px; padding: 0 14px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+.pub-over { color: #ff8a8a; }
+.pub-fields p { margin: 0; }

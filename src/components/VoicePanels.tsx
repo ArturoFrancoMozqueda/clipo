@@ -11,6 +11,7 @@ import {
 import './voice.css';
 import { deleteProfile, listProfiles, warmUpClone, type VoiceProfile } from '../myVoice';
 import { MyVoiceSetup } from './MyVoiceSetup';
+import { confirmDialog } from './confirm';
 
 function useProfiles() {
   const [list, setList] = useState<VoiceProfile[]>(listProfiles);
@@ -323,7 +324,7 @@ export function TtsPanel() {
               title="Borrar esta voz"
               aria-label={`Borrar la voz ${v.name}`}
               onClick={async () => {
-                if (!confirm(`¿Borrar la voz "${v.name}"? Se elimina la grabación de este dispositivo.`)) return;
+                if (!(await confirmDialog({ title: `¿Borrar la voz "${v.name}"?`, message: 'Se elimina la grabación de este dispositivo.', confirmLabel: 'Borrar', danger: true }))) return;
                 await deleteProfile(v.profileId!);
                 if (voice.id === v.id) setVoice(VOICES[0]);
               }}

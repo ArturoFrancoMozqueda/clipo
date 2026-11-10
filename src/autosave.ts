@@ -39,7 +39,7 @@ export function createAutosave(o: AutosaveOptions = {}) {
         failing = false;
       },
       (e) => {
-        console.error('Clipo: no se pudo guardar el proyecto', e);
+        console.warn('Clipo: no se pudo guardar el proyecto', e);
         if (!failing) {
           failing = true;
           o.onError?.(e);

@@ -16,7 +16,16 @@ export { hasRecorder };
  * (`reason`), and the real-time recorder can only film the project's own format.
  */
 export class UnsupportedAspectError extends Error {
-  constructor(readonly reason: 'decode' | 'encoder') {
+  readonly reason: 'decode' | 'encoder';
+  constructor(reason: 'decode' | 'encoder') {
     super('unsupported-aspect');
+    this.reason = reason;
+  }
+}
+
+/** An export failure whose `message` is already written for the user (what happened and what to do). */
+export class ExportError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
   }
 }

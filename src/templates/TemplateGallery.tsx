@@ -8,8 +8,9 @@ import { useStore } from '../store';
 import { BUILTIN_TEMPLATES } from './builtin';
 import { deleteUserTemplate, loadUserTemplates, projectFromTemplate } from './build';
 import { TemplatePreview } from './TemplatePreview';
-import { templateDuration, type Template } from './types';
+import { TEMPLATE_CATEGORIES, templateDuration, type Template, type TemplateCategory } from './types';
 import { Modal } from '../components/Modal';
+import { confirmDialog } from '../components/confirm';
 import './templates.css';
 
 const ACCEPT = 'video/*,image/*';
@@ -24,9 +25,11 @@ const secs = (n: number) => `${Math.round(n)} s`;
 export function TemplateGallery({ onClose }: { onClose: () => void }) {
   const [mine, setMine] = useState(loadUserTemplates);
   const [chosen, setChosen] = useState<Template | null>(null);
+  const [cat, setCat] = useState<TemplateCategory | 'todas'>('todas');
+  const shown = cat === 'todas' ? BUILTIN_TEMPLATES : BUILTIN_TEMPLATES.filter((t) => t.category === cat);
 
-  const remove = (t: Template) => {
-    if (!confirm(`¿Eliminar la plantilla "${t.name}"?`)) return;
+  const remove = async (t: Template) => {
+    if (!(await confirmDialog({ title: `¿Eliminar la plantilla "${t.name}"?`, message: 'Se borra de este dispositivo.', confirmLabel: 'Eliminar', danger: true }))) return;
     deleteUserTemplate(t.id);
     setMine(loadUserTemplates());
   };
@@ -72,7 +75,14 @@ export function TemplateGallery({ onClose }: { onClose: () => void }) {
                 <h4 className="tpl-section">Plantillas de Clipo</h4>
               </>
             )}
-            <div className="tpl-grid">{BUILTIN_TEMPLATES.map(card)}</div>
+            <div className="tx-tabs" role="tablist">
+              {[{ id: 'todas' as const, name: 'Todas' }, ...TEMPLATE_CATEGORIES].map((c) => (
+                <button key={c.id} role="tab" aria-selected={cat === c.id} className={`chip ${cat === c.id ? 'active' : ''}`} onClick={() => setCat(c.id)}>
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            <div className="tpl-grid">{shown.map(card)}</div>
           </>
         )}
     </Modal>

@@ -910,5 +910,221 @@
   "file": "1f30e.svg",
   "name": "Globe showing americas",
   "group": "Naturaleza"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/flecha-derecha.svg",
+  "name": "Flecha a la derecha",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/flecha-abajo.svg",
+  "name": "Flecha hacia abajo",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/flecha-izquierda.svg",
+  "name": "Flecha a la izquierda",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/flecha-arriba.svg",
+  "name": "Flecha hacia arriba",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/flecha-roja.svg",
+  "name": "Flecha roja",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/flecha-curva.svg",
+  "name": "Flecha curva",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/flecha-curva-izq.svg",
+  "name": "Flecha curva invertida",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/circulo.svg",
+  "name": "Círculo para resaltar",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/subrayado.svg",
+  "name": "Subrayado",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/tachado.svg",
+  "name": "Equis grande",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/palomita.svg",
+  "name": "Palomita grande",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/destello.svg",
+  "name": "Destellos",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/reloj.svg",
+  "name": "Cuenta atrás",
+  "group": "Señalar"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/globo.svg",
+  "name": "Globo de texto",
+  "group": "Globos"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/globo-hola.svg",
+  "name": "Globo \"Hola\"",
+  "group": "Globos"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/globo-wow.svg",
+  "name": "Globo \"WOW\"",
+  "group": "Globos"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/globo-que.svg",
+  "name": "Globo \"¿QUÉ?\"",
+  "group": "Globos"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/globo-pensar.svg",
+  "name": "Globo de pensamiento",
+  "group": "Globos"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/grito.svg",
+  "name": "Globo de grito",
+  "group": "Globos"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/oferta.svg",
+  "name": "Sello de oferta",
+  "group": "Ofertas"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/nuevo.svg",
+  "name": "Sello \"Nuevo\"",
+  "group": "Ofertas"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/descuento.svg",
+  "name": "Sello \"-20%\"",
+  "group": "Ofertas"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/gratis.svg",
+  "name": "Sello \"Gratis\"",
+  "group": "Ofertas"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/top.svg",
+  "name": "Sello \"Top\"",
+  "group": "Ofertas"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/etiqueta-precio.svg",
+  "name": "Etiqueta de precio",
+  "group": "Ofertas"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/ultimos.svg",
+  "name": "Últimos días",
+  "group": "Ofertas"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/envio.svg",
+  "name": "Envío gratis",
+  "group": "Ofertas"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/sigueme.svg",
+  "name": "Botón \"Sígueme\"",
+  "group": "Redes"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/suscribete.svg",
+  "name": "Botón \"Suscríbete\"",
+  "group": "Redes"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/link-bio.svg",
+  "name": "Botón \"Link en bio\"",
+  "group": "Redes"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/comparte.svg",
+  "name": "Botón \"Comparte\"",
+  "group": "Redes"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/guardalo.svg",
+  "name": "Botón \"Guárdalo\"",
+  "group": "Redes"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/like.svg",
+  "name": "Corazón de me gusta",
+  "group": "Redes"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/campana.svg",
+  "name": "Campana de avisos",
+  "group": "Redes"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/en-vivo.svg",
+  "name": "En vivo",
+  "group": "Redes"
+ },
+ {
+  "glyph": "",
+  "file": "clipo/parte.svg",
+  "name": "Parte 1",
+  "group": "Redes"
  }
 ]

@@ -54,12 +54,42 @@ export function projectMeta(p: Project): ProjectMeta {
   };
 }
 
+/** A storage failure with a message the person can read (what happened and what to do). */
+export class StorageError extends Error {
+  readonly kind: 'full' | 'unavailable' | 'blocked' | 'other';
+  constructor(message: string, kind: 'full' | 'unavailable' | 'blocked' | 'other', options?: { cause?: unknown }) {
+    super(message, options);
+    this.kind = kind;
+  }
+}
+
+/** Turns whatever IndexedDB threw into a StorageError with a friendly Spanish message. */
+export function toStorageError(e: unknown): StorageError {
+  if (e instanceof StorageError) return e;
+  const name = (e as DOMException)?.name ?? '';
+  if (name === 'QuotaExceededError' || /quota|space/i.test(String((e as Error)?.message ?? ''))) {
+    return new StorageError('No hay espacio suficiente en este dispositivo. Libera espacio (borra videos o apps que no uses) e inténtalo otra vez.', 'full', { cause: e });
+  }
+  if (name === 'SecurityError' || name === 'InvalidStateError' || name === 'UnknownError' || name === 'NotFoundError') {
+    return new StorageError('Este navegador no permite guardar proyectos ahora (¿ventana privada?). Puedes seguir editando y guardar el video antes de salir.', 'unavailable', { cause: e });
+  }
+  return new StorageError('No se pudo guardar en este dispositivo. Inténtalo otra vez; si sigue igual, guarda el video antes de cerrar.', 'other', { cause: e });
+}
+
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function db(): Promise<IDBDatabase> {
   if (!dbPromise) {
     dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, VERSION);
+      if (typeof indexedDB === 'undefined') return reject(toStorageError(new DOMException('no indexedDB', 'SecurityError')));
+      let req: IDBOpenDBRequest;
+      try {
+        req = indexedDB.open(DB_NAME, VERSION);
+      } catch (e) {
+        return reject(toStorageError(e));
+      }
+      req.onblocked = () =>
+        console.warn('Clipo: otra pestaña de Clipo impide actualizar el almacenamiento; ciérrala para continuar.');
       req.onupgradeneeded = () => {
         const d = req.result;
         if (!d.objectStoreNames.contains('projects')) d.createObjectStore('projects', { keyPath: 'id' });
@@ -89,7 +119,7 @@ function db(): Promise<IDBDatabase> {
         };
         resolve(d);
       };
-      req.onerror = () => reject(req.error);
+      req.onerror = () => reject(toStorageError(req.error));
     });
     dbPromise.catch(() => (dbPromise = null));
   }
@@ -98,16 +128,26 @@ function db(): Promise<IDBDatabase> {
 
 /** One transaction. `fn` may return a request (its result is returned) or a function read at the end. */
 function run<T>(store: string | string[], mode: IDBTransactionMode, fn: (tx: IDBTransaction) => IDBRequest | (() => T) | void): Promise<T> {
-  return db().then(
-    (d) =>
-      new Promise<T>((resolve, reject) => {
-        const tx = d.transaction(store, mode);
-        const req = fn(tx);
-        tx.oncomplete = () => resolve(typeof req === 'function' ? req() : req ? (req.result as T) : (undefined as T));
-        tx.onerror = () => reject(tx.error);
-        tx.onabort = () => reject(tx.error);
-      }),
-  );
+  return db()
+    .then(
+      (d) =>
+        new Promise<T>((resolve, reject) => {
+          let tx: IDBTransaction;
+          let req: ReturnType<typeof fn>;
+          try {
+            tx = d.transaction(store, mode);
+            req = fn(tx);
+          } catch (e) {
+            return reject(e);
+          }
+          tx.oncomplete = () => resolve(typeof req === 'function' ? req() : req ? (req.result as T) : (undefined as T));
+          tx.onerror = () => reject(tx.error ?? new Error('transaction failed'));
+          tx.onabort = () => reject(tx.error ?? new DOMException('aborted', 'QuotaExceededError'));
+        }),
+    )
+    .catch((e) => {
+      throw toStorageError(e);
+    });
 }
 
 /** Blobs stored during this session; never collected while it lasts (undo may bring them back). */

@@ -1,6 +1,6 @@
 import type { Asset, MediaKind } from './types';
 import { IMAGE_MAX } from './model';
-import { putBlob } from './db';
+import { putBlob, toStorageError } from './db';
 import { uid, useStore } from './store';
 import { codecName, convertToMp4, inspectVideo } from './convertVideo';
 
@@ -113,7 +113,7 @@ export async function importFiles(files: FileList | File[]): Promise<{ ok: Asset
   const ok: Asset[] = [];
   const failed: string[] = [];
   const urls: Record<string, string> = {};
-  let saveFailed = false;
+  let saveFailed: string | null = null;
 
   for (const file of Array.from(files)) {
     let kind = detectKind(file);
@@ -145,8 +145,10 @@ export async function importFiles(files: FileList | File[]): Promise<{ ok: Asset
       if (kind !== 'image' && info.duration <= 0) throw new Error('empty');
       try {
         await putBlob(id, stored);
-      } catch {
-        saveFailed = true;
+      } catch (e) {
+        saveFailed = toStorageError(e).kind === 'full'
+          ? 'No hay espacio para guardar el archivo: podrás editarlo, pero no se guardará al cerrar. Libera espacio en tu dispositivo.'
+          : 'No se pudo guardar el archivo en este dispositivo: podrás editarlo, pero no se guardará al cerrar.';
       }
       urls[id] = url;
       ok.push({ id, kind, name: file.name, ...info });
@@ -156,6 +158,6 @@ export async function importFiles(files: FileList | File[]): Promise<{ ok: Asset
     }
   }
   useStore.getState().addUrls(urls);
-  if (saveFailed) useStore.getState().notify('No hay espacio para guardar el archivo: podrás editarlo, pero no se guardará al cerrar.');
+  if (saveFailed) useStore.getState().notify(saveFailed);
   return { ok, failed };
 }

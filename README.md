@@ -56,8 +56,6 @@ y políticas de las tiendas) está en [PUBLICAR.md](PUBLICAR.md).
   WebM.
 - Los archivos HEVC/.mov de iPhone solo se reproducen en navegadores que los
   admitan (Safari, y Chrome/Edge en equipos con soporte HEVC).
-- El ícono es SVG; para que se vea perfecto en la pantalla de inicio del
-  iPhone, agrega un PNG de 180×180 como `apple-touch-icon`.
 
 ## App de escritorio (Windows)
 

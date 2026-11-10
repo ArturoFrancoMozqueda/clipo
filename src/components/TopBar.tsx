@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, CircleHelp, Ellipsis, LayoutTemplate, PanelLeftOpen, Redo2, Undo2, Upload } from 'lucide-react';
+import { Check, ChevronLeft, CircleAlert, CircleHelp, Ellipsis, Keyboard, LayoutTemplate, PanelLeftOpen, Redo2, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store';
 import { engine } from '../engine';
-import { saveProject } from '../db';
+import { discardProject, isUntouched, saveNow, useSaveState } from '../saveState';
+import { openShortcuts } from './Shortcuts';
 import { SaveTemplateButton, openSaveTemplate } from '../templates/SaveTemplateButton';
 
 /** "⋯" menu that holds the secondary actions on narrow phones (CSS shows it only there). */
@@ -62,31 +63,53 @@ function MoreMenu() {
   );
 }
 
+/** "Guardando…" / "Guardado": the user always knows the work is safe. */
+function SaveBadge() {
+  const status = useSaveState((s) => s.status);
+  const text = status === 'saved' ? 'Guardado' : status === 'error' ? 'Sin guardar' : 'Guardando…';
+  return (
+    <span className={`save-badge ${status}`} role="status" title={status === 'error' ? 'No se pudo guardar en este dispositivo. Puede que falte espacio.' : 'Tu proyecto se guarda solo en este dispositivo.'}>
+      {status === 'saved' ? <Check size={14} aria-hidden /> : status === 'error' ? <CircleAlert size={14} aria-hidden /> : <span className="dot" aria-hidden />}
+      <span>{text}</span>
+    </span>
+  );
+}
+
 export function TopBar({ libraryOpen, onToggleLibrary }: { libraryOpen: boolean; onToggleLibrary: () => void }) {
   const name = useStore((s) => s.project!.name);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const s = useStore.getState;
 
+  const [leaving, setLeaving] = useState(false);
   const back = async () => {
+    if (leaving) return;
+    setLeaving(true);
     engine.pause();
     const p = s().project;
-    if (p) await saveProject(p).catch(() => {});
+    // Opened and left empty: don't leave a blank "Mi video" in the list.
+    if (p && isUntouched(p)) await discardProject(p);
+    else await saveNow();
     s().close();
   };
 
   return (
     <header className="topbar">
-      <button className="icon-btn" onClick={back} aria-label="Volver a mis proyectos" title="Mis proyectos">
+      <button className="icon-btn" onClick={back} disabled={leaving} aria-label="Volver a mis proyectos" title="Mis proyectos">
         <ChevronLeft />
       </button>
       <input
         className="title-input"
         value={name}
         aria-label="Nombre del proyecto"
+        maxLength={80}
+        placeholder="Nombre del proyecto"
         onFocus={() => s().checkpoint()}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        onBlur={(e) => !e.target.value.trim() && s().live((p) => void (p.name = 'Mi video'))}
         onChange={(e) => s().live((p) => void (p.name = e.target.value))}
       />
+      <SaveBadge />
       <div className="spacer" />
       {!libraryOpen && (
         <button className="icon-btn labeled topbar-library" onClick={onToggleLibrary} title="Ver tus archivos" aria-label="Ver tus archivos">
@@ -103,6 +126,9 @@ export function TopBar({ libraryOpen, onToggleLibrary }: { libraryOpen: boolean;
         <span>Rehacer</span>
       </button>
       <SaveTemplateButton />
+      <button className="icon-btn topbar-keys" onClick={openShortcuts} aria-label="Atajos de teclado" title="Atajos de teclado (?)">
+        <Keyboard size={20} />
+      </button>
       <button className="icon-btn topbar-help" onClick={() => s().setPanel('help')} aria-label="Ayuda" title="Ayuda">
         <CircleHelp size={20} />
       </button>

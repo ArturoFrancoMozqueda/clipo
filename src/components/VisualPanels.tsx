@@ -1,14 +1,15 @@
 import { useRef, useState } from 'react';
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Ban, Blend, Cloud, Droplets, FileUp, FlipHorizontal2, FlipVertical2,
-  HeartPulse, ImageUp, Keyboard, Minimize2, Play, Plus, RotateCw, Sparkle, Trash2, Type, Vibrate, Waves, Zap, type LucideIcon,
+  HeartPulse, ImageUp, Keyboard, Search, Minimize2, Play, Plus, RotateCw, Sparkle, Trash2, Type, Vibrate, Waves, Zap, type LucideIcon,
 } from 'lucide-react';
 import type { Clip, Direction, EffectId, StickerItem, TextAnim, TextItem, Transition, TransitionId } from '../types';
 import { useStore } from '../store';
 import { engine } from '../engine';
 import { clipDur, layout } from '../model';
 import { importFiles } from '../media';
-import { STICKER_GROUPS, stickerUrl } from '../stickers';
+import { STICKER_ART, STICKER_GROUPS, searchStickers, stickerUrl, type StickerArt } from '../stickers';
+import { addRecent, usePicks } from '../favorites';
 import { addImageStickers, addSticker, editPose, poseNow } from '../ops';
 import {
   DIRECTIONS, EFFECTS, EFFECT_DEFAULT_INTENSITY, NO_ANIM, TEXT_IN, TEXT_LOOP, TEXT_OUT, TRANSITIONS, TRANSITION_DEFAULT,
@@ -20,6 +21,7 @@ import { EFFECT_ICONS, TRANSITION_ICONS } from './fxIcons';
 import { EffectThumb, LutThumb, TransitionThumb, useFrame } from './FxPreview';
 import { addGenerated, playPreview, renderSfx, sfxById } from '../sound';
 import { TRANSITION_SFX } from '../soundPremium';
+import './text.css';
 import { Hint, NeedsSelection, Slider, checkpoint, editSelected, usePoseTime, useSelected } from './Panels';
 
 /** Play a short stretch of the video so the user sees what they just picked. */
@@ -128,7 +130,7 @@ export function TransitionPanel() {
                 <Play size={18} />
               </button>
               <div className="sound-text">
-                <strong>{sound.name} <span className="pro-tag">Premium</span></strong>
+                <strong>{sound.name}</strong>
                 <small>Sonido para esta transición, justo en el corte</small>
               </div>
               <button className="btn-ghost small-btn" disabled={adding} onClick={addSound}>
@@ -155,9 +157,9 @@ export function TransitionPanel() {
   );
 }
 
-/** Marks the premium, studio-style looks on the tiles of the pickers. */
+/** Marks the newest, studio-style looks on the tiles of the pickers (all of them are free). */
 function ProBadge() {
-  return <span className="fx-trend fx-pro">Premium</span>;
+  return <span className="fx-trend">Nuevo</span>;
 }
 
 /** Marks what is in fashion right now on the tiles of the pickers. */
@@ -464,12 +466,36 @@ export function TextAnimSection({ text }: { text: TextItem }) {
 
 const deg = (r: number) => Math.round((r * 180) / Math.PI);
 
+/** Spanish name of a sticker: our own art has one, emoji are named by the emoji itself. */
+const label = (e: StickerArt) => (e.file.includes('/') ? e.name : e.glyph);
+
+function StickerGrid({ list, onPick }: { list: StickerArt[]; onPick: (s: StickerArt) => void }) {
+  return (
+    <div className="emoji-grid">
+      {list.map((e) => (
+        <button key={e.file} className="emoji" onClick={() => onPick(e)} aria-label={`Agregar ${label(e)}`} title={label(e)}>
+          <img src={stickerUrl(e)} alt="" loading="lazy" draggable={false} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function StickersPanel() {
   const sticker = useSelected<StickerItem>('sticker');
   usePoseTime(sticker); // size and turn follow keyframes at the playhead (not re-rendered while playing)
   const pose = sticker ? poseNow('sticker', sticker.id) ?? sticker : null;
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [q, setQ] = useState('');
+  const recentIds = usePicks('stickers.recent');
+  const recent = recentIds.map((f) => STICKER_ART.find((s) => s.file === f)).filter((s): s is StickerArt => !!s);
+  const searching = q.trim().length > 0;
+  const found = searching ? searchStickers(q) : [];
+  const pick = (e: StickerArt) => {
+    addRecent('stickers.recent', e.file, 16);
+    addSticker({ emoji: e.glyph });
+  };
 
   const importImages = async (files: FileList) => {
     setBusy(true);
@@ -524,20 +550,26 @@ export function StickersPanel() {
           if (e.target.files?.length) importImages(e.target.files).finally(() => (e.target.value = ''));
         }}
       />
-      <p className="muted small">{sticker ? 'Toca un emoji para agregar otro:' : 'Toca un emoji para ponerlo en tu video:'}</p>
-      {STICKER_GROUPS.map((g) => (
-        <div key={g.name}>
-          <p className="label">{g.name}</p>
-          <div className="emoji-grid">
-            {g.list.map((e) => (
-              <button key={e.file} className="emoji" onClick={() => addSticker({ emoji: e.glyph })} aria-label={`Agregar ${e.glyph}`} title={e.glyph}>
-                <img src={stickerUrl(e)} alt="" loading="lazy" draggable={false} />
-              </button>
-            ))}
-          </div>
+      <label className="tx-search">
+        <Search size={18} />
+        <input type="search" value={q} placeholder="Buscar: fuego, flecha, oferta, gato…" onChange={(e) => setQ(e.target.value)} />
+      </label>
+      <p className="muted small">{sticker ? 'Toca uno para agregar otro:' : 'Toca uno para ponerlo en tu video:'}</p>
+      {searching && !found.length && <Hint>No encontramos ese sticker. Prueba con otra palabra, como “corazón” o “flecha”.</Hint>}
+      {searching && found.length > 0 && <StickerGrid list={found} onPick={pick} />}
+      {!searching && recent.length > 0 && (
+        <div>
+          <p className="label">Usados hace poco</p>
+          <StickerGrid list={recent} onPick={pick} />
         </div>
-      ))}
-      <p className="muted small">Stickers: Fluent Emoji de Microsoft (licencia MIT).</p>
+      )}
+      {!searching &&
+        STICKER_GROUPS.map((g) => (
+          <div key={g.name}>
+            <p className="label">{g.name}</p>
+            <StickerGrid list={g.list} onPick={pick} />
+          </div>
+        ))}
     </>
   );
 }

@@ -6,7 +6,7 @@ import type {
 import { clamp, clipDur, type Placed } from './model';
 import { supportsCanvasFilter } from './filters';
 import {
-  beatPulse, coverScale, grainValues, hash, heartPulse, irisRadius, letterboxBar, peak, pixelBlock, pushOffsets, recTimecode, smoothNoise,
+  beatPulse, coverScale, hitPulse, grainValues, hash, heartPulse, irisRadius, letterboxBar, peak, pixelBlock, pushOffsets, recTimecode, smoothNoise,
 } from './fxmath';
 import { emojiImage } from './stickers';
 import { redrawWhenLoaded } from './redraw';
@@ -508,6 +508,8 @@ export const EFFECTS: { id: EffectId; name: string; /** No intensity slider. */ 
   { id: 'tiltShift', name: 'Miniatura', pro: true },
   { id: 'handheld', name: 'Cámara en mano', pro: true },
   { id: 'heartbeat', name: 'Latido', pro: true },
+  { id: 'punch', name: 'Golpe de zoom', trend: true },
+  { id: 'rgbHit', name: 'Golpe de color', trend: true },
   { id: 'beatzoom', name: 'Zoom al ritmo', trend: true },
   { id: 'cinematic', name: 'Cine panorámico', trend: true },
   { id: 'camcorder', name: 'Cámara REC', trend: true },
@@ -556,6 +558,17 @@ export function applyEffectTransform(ctx: CanvasRenderingContext2D, clip: Clip, 
   } else if (e.id === 'beatzoom') {
     // A quick zoom punch on every beat.
     const s = 1 + (0.03 + 0.1 * amt) * beatPulse(local);
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(s, s);
+    ctx.translate(-W / 2, -H / 2);
+  } else if (e.id === 'punch') {
+    // A sharp zoom-in on the first frame and every two seconds, easing back out.
+    const s = 1 + (0.06 + 0.16 * amt) * hitPulse(local);
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(s, s);
+    ctx.translate(-W / 2, -H / 2);
+  } else if (e.id === 'rgbHit') {
+    const s = 1.02 + 0.03 * amt;
     ctx.translate(W / 2, H / 2);
     ctx.scale(s, s);
     ctx.translate(-W / 2, -H / 2);
@@ -749,6 +762,11 @@ export function applyEffectOverlay(ctx: CanvasRenderingContext2D, clip: Clip, lo
     ctx.globalAlpha = 0.12 + 0.43 * amt;
     fillTiled(ctx, grainTile(step % 4), W, H, Math.max(1, short / 720), hash(step) * GRAIN_SIZE, hash(step + 1) * GRAIN_SIZE);
     ctx.restore();
+  } else if (e.id === 'rgbHit') {
+    // Color channels fly apart on each hit and snap back together.
+    const p = hitPulse(local);
+    if (p < 0.02) return;
+    drawRgbSplit(ctx, canvas, W, H, short * (0.006 + 0.03 * amt) * p, short * 0.004 * p);
   } else if (e.id === 'rgb') {
     const f = local * 1.5;
     const d = short * (0.004 + 0.016 * amt) * (0.75 + smoothNoise(f, 5) * 0.7);

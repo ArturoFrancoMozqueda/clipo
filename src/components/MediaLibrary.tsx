@@ -105,6 +105,11 @@ export function MediaLibrary({ only }: { only?: 'audio' }) {
         <span>{only === 'audio' ? 'Elegir música del dispositivo' : 'Elegir del dispositivo'}</span>
         <small>{only === 'audio' ? 'MP3, M4A, WAV…' : 'Videos, fotos o música'}</small>
       </ImportButton>
+      {assets.length === 0 && (
+        <p className="muted small library-empty">
+          {only === 'audio' ? 'Aún no agregaste música propia.' : 'Aquí verás tus fotos, videos y música para usarlos otra vez.'}
+        </p>
+      )}
       {assets.length > 0 && (
         <>
           <p className="muted small">Toca un archivo para agregarlo otra vez, o el ojo para verlo completo.</p>

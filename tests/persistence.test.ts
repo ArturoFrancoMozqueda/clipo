@@ -104,3 +104,13 @@ test('garbage collection keeps used, in-memory and non-media blobs', () => {
   const gone = blobsToDelete(stored, new Set(['v1abcdef']), new Set(['undo1234ab']));
   assert.deepEqual(gone, ['orphan12ab']);
 });
+
+test('storage failures become friendly Spanish messages', async () => {
+  const { toStorageError } = await import('../src/db.ts');
+  const full = toStorageError(new DOMException('x', 'QuotaExceededError'));
+  assert.equal(full.kind, 'full');
+  assert.match(full.message, /espacio/);
+  assert.equal(toStorageError(new DOMException('x', 'SecurityError')).kind, 'unavailable');
+  assert.equal(toStorageError(new Error('boom')).kind, 'other');
+  assert.doesNotMatch(toStorageError(new Error('boom')).message, /boom/);
+});

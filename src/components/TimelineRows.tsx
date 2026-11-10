@@ -1,6 +1,7 @@
 // Rows of the timeline as memoized components: a drag or a selection change re-renders only the
 // items it touches, and items (plus ruler ticks, filmstrip frames and waveform bars) far from the
 // playhead aren't rendered at all.
+import { emojiImage } from '../stickers';
 import { memo, useMemo } from 'react';
 import { ArrowLeftRight, Blend, Image as ImageIcon, Layers, Music, Plus, Smile, Snowflake, Sparkles, Type } from 'lucide-react';
 import type { Asset, AudioItem, Clip, Keyframe, OverlayItem, PanelId, SelectionKind, StickerItem, TextItem, TransitionId } from '../types';
@@ -346,7 +347,7 @@ export const StickerRow = memo(function StickerRow({ stickers, assets, pps, pad,
       {stickers.map((st) => {
         const sel = st.id === selId;
         if (!sel && !inWindow(win, st.start, st.start + st.duration)) return null;
-        const thumb = st.assetId ? assets[st.assetId]?.thumb : undefined;
+        const thumb = st.assetId ? assets[st.assetId]?.thumb : emojiImage(st.emoji)?.src;
         return <StickerView key={st.id} st={st} thumb={thumb} top={(ln.map[st.id] ?? 0) * rowH} h={rowH - 4} pps={pps} pad={pad} sel={sel} from={win.from} to={win.to} drag={drag} />;
       })}
     </div>

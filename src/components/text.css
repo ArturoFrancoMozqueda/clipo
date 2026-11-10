@@ -23,3 +23,10 @@
 .tx-kara { min-width: 96px; }
 .tx-kara-sample { font-size: 13px; color: #fff; font-weight: 700; }
 .tx-kara-sample b { font-weight: 800; }
+.preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; padding-top: 9px; margin-bottom: 4px; }
+.preset-grid .preset { width: 100%; }
+.preset-wrap { position: relative; display: flex; }
+.preset-wrap .preset { flex: 1; }
+.preset-fav { position: absolute; bottom: 4px; right: 4px; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: rgba(0,0,0,.4); }
+.preset-fav.on { color: #ffd60a; }
+@media (hover: hover) { .preset-fav:hover { background: rgba(0,0,0,.65); } }

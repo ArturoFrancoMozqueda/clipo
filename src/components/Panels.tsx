@@ -405,7 +405,7 @@ function ExportPanel() {
       </button>
       <Hint>Sin marca de agua. Se procesa en tu dispositivo: nada se sube a internet.</Hint>
       <button className="btn-ghost" onClick={() => useStore.getState().setPanel('publish')}>
-        <Send size={18} /> Publicar en redes y ver publicaciones
+        <Send size={18} /> Ver mis publicaciones
       </button>
     </>
   );

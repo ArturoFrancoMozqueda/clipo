@@ -12,11 +12,13 @@ import { MediaLibrary } from './MediaLibrary';
 import { Onboarding } from './Onboarding';
 import { importAndAdd } from './ImportButton';
 import { useKeyboardInset } from './useKeyboardInset';
+import { Shortcuts } from './Shortcuts';
 
 const LIBRARY_KEY = 'clipo.library';
 
 export function Editor() {
   const [dragging, setDragging] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
   // The "Tus archivos" column (wide screens only) can be hidden to give the preview more room.
   const [libraryOpen, setLibraryOpen] = useState(() => {
     try {
@@ -48,13 +50,23 @@ export function Editor() {
   }, []);
 
   useEffect(() => {
+    const h = () => setKeysOpen(true);
+    window.addEventListener('clipo:shortcuts', h);
+    return () => window.removeEventListener('clipo:shortcuts', h);
+  }, []);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest('input, textarea, select')) return;
+      if ((e.target as HTMLElement).closest('input, textarea, select, button[role="menuitem"], dialog')) return;
+      if (e.altKey) return;
       const s = useStore.getState();
       if (s.exporting) return;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
-      if (e.code === 'Space') {
+      if (e.key === '?') {
+        e.preventDefault();
+        setKeysOpen(true);
+      } else if (e.code === 'Space') {
         e.preventDefault();
         (document.activeElement as HTMLElement | null)?.blur();
         engine.toggle();
@@ -65,9 +77,9 @@ export function Editor() {
       } else if (mod && key === 'y') {
         e.preventDefault();
         s.redo();
-      } else if (!mod && key === 's') {
+      } else if (!mod && !e.shiftKey && key === 's') {
         splitAtPlayhead();
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && s.selection) {
+      } else if (!mod && (e.key === 'Delete' || e.key === 'Backspace') && s.selection) {
         e.preventDefault();
         deleteSelected();
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -122,7 +134,8 @@ export function Editor() {
       <Toolbar />
       <Sheet />
       <Onboarding />
-      {dragging && <div className="drop-overlay">Suelta tus archivos aquí</div>}
+      {keysOpen && <Shortcuts onClose={() => setKeysOpen(false)} />}
+      {dragging && <div className="drop-overlay" aria-hidden="true">Suelta tus fotos, videos o música aquí</div>}
     </div>
   );
 }

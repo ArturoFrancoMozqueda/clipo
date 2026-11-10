@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createVerifier, challengeS256, createState, buildAuthUrl, startLoopback } = require('./oauth.cjs');
 const { CHUNK_SIZE, chunkRange, nextOffset, isRetryableStatus, backoffMs, explainApiError } = require('./resumable.cjs');
-const { fail } = require('./errors.cjs');
+const { fail, reconnect, fromExplained } = require('./errors.cjs');
 const { bad, toBuffer, bufferSource, fileSource, tempFiles } = require('./files.cjs');
 
 const GOOGLE = {
@@ -121,11 +121,11 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     switch (body.error) {
       case 'invalid_client':
       case 'unauthorized_client':
-        return fail('Google rechazó el ID de cliente. Revisa que sea de tipo “App de escritorio”, que esté bien copiado y, si Google te dio un secreto, que también esté pegado.', false);
+        return fail('Google no aceptó la conexión de Clipo. Si usas tu propio proyecto de Google (Opciones avanzadas), revisa los datos; si no, actualiza Clipo.', false);
       case 'invalid_grant':
-        return fail('La conexión con este canal venció o se revocó. Ve a Cuentas, desconéctalo y vuelve a conectarlo. (Con la app de Google “en prueba”, Google corta la conexión cada 7 días.)', false);
+        return reconnect('La conexión con tu canal de YouTube venció o se canceló. Vuelve a conectarlo y pulsa “Reintentar”.');
       default:
-        return fail(`Google no aceptó la conexión${body.error_description ? `: ${body.error_description}` : '.'}`, false);
+        return fail('Google no aceptó la conexión. Inténtalo de nuevo en un momento.', false);
     }
   }
 
@@ -133,19 +133,19 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
   async function accessToken(accountId, force = false) {
     const data = load();
     const acc = data.accounts.find((a) => a.id === accountId);
-    if (!acc) throw fail('Ese canal ya no está conectado. Conéctalo de nuevo en Cuentas.', false);
+    if (!acc) throw reconnect('Ese canal ya no está conectado. Conéctalo otra vez y pulsa “Reintentar”.');
     const tok = dec(acc.token);
     if (!force && tok.access_token && tok.expires_at - 60_000 > Date.now()) return tok.access_token;
-    if (!tok.refresh_token) throw fail('Falta el permiso permanente de Google. Desconecta el canal y conéctalo otra vez.', false);
+    if (!tok.refresh_token) throw reconnect('Falta el permiso permanente de Google. Vuelve a conectar tu canal y pulsa “Reintentar”.');
     const client = clientFor(data, acc);
-    if (!client) throw fail('Cambió la configuración de Google. Desconecta el canal y conéctalo otra vez.', false);
+    if (!client) throw reconnect('Cambió la conexión con Google. Vuelve a conectar tu canal y pulsa “Reintentar”.');
     const params = { client_id: client.id, grant_type: 'refresh_token', refresh_token: tok.refresh_token };
     if (client.secret) params.client_secret = client.secret;
     let r;
     try {
       r = await tokenRequest(params);
     } catch {
-      throw fail('No hay conexión con Google. Revisa tu internet.');
+      throw fail('No hay conexión con Google. Revisa tu internet y pulsa “Reintentar”.');
     }
     if (!r.ok) throw tokenError(r.body);
     tok.access_token = r.body.access_token;
@@ -166,8 +166,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
   }
 
   async function apiFail(res) {
-    const { message, retryable } = explainApiError(res.status, await res.json().catch(() => null));
-    return fail(message, retryable);
+    return fromExplained(explainApiError(res.status, await res.json().catch(() => null)));
   }
 
   // ---------- connect ----------
@@ -177,7 +176,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     if (!canEncrypt()) throw fail('Este equipo no permite guardar la sesión de forma cifrada, así que Clipo no conecta cuentas.', false);
     const data = load();
     const client = activeClient(data);
-    if (!client) throw fail('Primero pega tu ID de cliente de Google.', false);
+    if (!client) throw fail('Conectar con Google no está disponible en esta copia de Clipo. Puedes publicar con la página de YouTube.', false);
     connecting?.cancel();
     const verifier = createVerifier();
     const state = createState();
@@ -205,12 +204,12 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
       const win = BrowserWindow?.fromWebContents(sender);
       if (win) (win.isMinimized() && win.restore(), win.focus());
       if (got.error) {
-        throw fail(got.error === 'access_denied' ? 'No diste permiso en Google, así que no se conectó el canal.' : `Google no permitió conectar (${got.error}).`, false);
+        throw fail(got.error === 'access_denied' ? 'No diste permiso en Google, así que no se conectó el canal.' : 'Google no permitió conectar la cuenta. Inténtalo otra vez.', false);
       }
       const params = { client_id: client.id, code: got.code, code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: loop.redirectUri };
       if (client.secret) params.client_secret = client.secret;
       const r = await tokenRequest(params).catch(() => {
-        throw fail('No hay conexión con Google. Revisa tu internet.', false);
+        throw fail('No hay conexión con Google. Revisa tu internet y vuelve a intentarlo.', false);
       });
       if (!r.ok) throw tokenError(r.body);
       const granted = String(r.body.scope || '').split(' ');
@@ -276,7 +275,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
     });
     if (!res.ok) throw await apiFail(res);
     const uri = res.headers.get('location');
-    if (!uri) throw fail('YouTube no devolvió la dirección de subida. Intenta otra vez.');
+    if (!uri) throw fail('YouTube no pudo empezar la subida. Pulsa “Reintentar”.');
     return uri;
   }
 
@@ -322,7 +321,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
         });
       } catch (e) {
         if (signal.aborted) throw fail('Subida cancelada.');
-        if (e.message?.startsWith('F|')) throw e;
+        if (/^[FA]\|/.test(e.message || '')) throw e;
       }
       if (res && (res.status === 200 || res.status === 201)) return res.json();
       if (res && res.status === 308) {
@@ -359,7 +358,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
       });
       if (res.ok) return undefined;
       if (res.status === 403) return 'El video se subió, pero YouTube no dejó poner la portada: tu canal tiene que estar verificado (youtube.com/verify).';
-      return `El video se subió, pero la portada no: ${explainApiError(res.status, await res.json().catch(() => null)).message}`;
+      return 'El video se subió, pero YouTube no aceptó la portada. Puedes ponerla en YouTube Studio.';
     } catch {
       return 'El video se subió, pero la portada no se pudo enviar. Puedes ponerla en YouTube Studio.';
     }
@@ -399,7 +398,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
       else {
         const buf = toBuffer(req.bytes);
         if (!buf) throw bad('video');
-        if (buf.length > MAX_SINGLE_SHOT_BYTES) throw fail('El video es muy grande para enviarlo de una vez. Actualiza Clipo y vuelve a intentarlo.', false);
+        if (buf.length > MAX_SINGLE_SHOT_BYTES) throw fail('El video es muy grande para enviarlo así. Actualiza Clipo e inténtalo otra vez.', false);
         src = bufferSource(buf);
       }
       if (!src.size) throw fail('El video está vacío.', false);
@@ -407,13 +406,13 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
       const video = await sendAll({ jobId, accountId, src, mime, metadata, signal: ac.signal, report });
       sessions.delete(jobId);
       report(src.size, src.size);
-      if (!video?.id) throw fail('YouTube terminó la subida pero no devolvió el video. Revisa YouTube Studio antes de reintentar.', false);
+      if (!video?.id) throw fail('YouTube terminó la subida pero no confirmó el video. Revisa YouTube Studio antes de reintentar, para no publicarlo dos veces.', false);
       // Done: the temp copy is no longer needed. (After a failure it is kept so "Reintentar" resumes.)
       if (file) await files.discard(req.fileId);
       const note = thumbnail ? await setThumbnail(accountId, video.id, thumbnail) : undefined;
       return { videoId: video.id, note };
     } catch (e) {
-      if (e.message?.match(/^[RF]\|/)) throw e;
+      if (e.message?.match(/^[RFA]\|/)) throw e;
       throw fail('No hay conexión con YouTube. Revisa tu internet y pulsa “Reintentar”.');
     } finally {
       await src?.close().catch(() => {});
@@ -435,13 +434,13 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
       case 'uploaded':
         return { state: 'processing', detail: `YouTube lo está procesando · ${vis}${when}` };
       case 'failed':
-        return { state: 'failed', detail: `YouTube no pudo procesarlo (${v.status.failureReason || 'motivo desconocido'}).` };
+        return { state: 'failed', detail: 'YouTube no pudo procesar el video. Guárdalo otra vez con Clipo y publícalo de nuevo.' };
       case 'rejected':
-        return { state: 'failed', detail: `YouTube lo rechazó (${v.status.rejectionReason || 'motivo desconocido'}).` };
+        return { state: 'failed', detail: 'YouTube rechazó el video (puede ser por derechos de autor o por sus normas). Revisa YouTube Studio.' };
       case 'deleted':
         return { state: 'failed', detail: 'El video fue borrado de YouTube.' };
       default:
-        return { state: 'unknown', detail: `Estado: ${v.status?.uploadStatus || 'desconocido'}` };
+        return { state: 'unknown', detail: 'Todavía no hay información del estado. Consulta de nuevo en un momento.' };
     }
   }
 
@@ -459,7 +458,7 @@ function register({ app, ipcMain, shell, safeStorage, BrowserWindow, endpoints =
   handle('yt:setConfig', async (_e, cfg) => {
     const { clientId, clientSecret: secret } = cfg && typeof cfg === 'object' ? cfg : {};
     const id = String(clientId || '').trim();
-    if (id && !CLIENT_ID_RE.test(id)) throw fail('Eso no parece un ID de cliente de Google: termina en “.apps.googleusercontent.com”.', false);
+    if (id && !CLIENT_ID_RE.test(id)) throw fail('Ese ID de cliente no es válido: termina en “.apps.googleusercontent.com”.', false);
     if (secret !== undefined && secret !== null && (typeof secret !== 'string' || secret.length > 256)) throw bad('secreto');
     if (!canEncrypt()) throw fail('Este equipo no permite guardar datos cifrados.', false);
     const d = load();

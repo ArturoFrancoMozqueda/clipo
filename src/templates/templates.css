@@ -54,6 +54,7 @@
   .tpl-fill-body { flex-direction: row; align-items: flex-start; }
   .tpl-fill-preview { position: sticky; top: 56px; width: 340px; flex: none; }
 }
-.project-card .icon-btn.tpl-card-save { top: 14px; right: 14px; bottom: auto; background: rgba(0,0,0,.6); color: #fff; }
 /* The editor top bar is too narrow on small phones; there the option lives on the project card. */
 @media (max-width: 480px) { .icon-btn.tpl-topbar-btn { display: none; } }
+.tx-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin: 4px 0 10px; scrollbar-width: thin; }
+.tx-tabs .chip { flex: 0 0 auto; }

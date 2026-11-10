@@ -41,6 +41,8 @@ export interface Platform {
   hasTitle?: boolean;
   /** Longest title, in characters. */
   titleMax?: number;
+  /** Most hashtags the network takes into account (more = ignored or rejected). */
+  hashtagsMax?: number;
   /** Safe zone for the recommended format. Other formats use GENERIC_SAFE. */
   safe: Insets;
   /** Extra note about the limits (e.g. what depends on the account). */
@@ -69,7 +71,7 @@ export const PLATFORMS: Record<PlatformId, Platform> = {
     captionMax: 2200,
     // Top: "Siguiendo / Para ti". Right: like, comments, share. Bottom: name, text and music.
     safe: { top: 0.08, right: 0.13, bottom: 0.2, left: 0.05 },
-    note: 'Hasta 60 min al subir desde el teléfono o la PC; algunas cuentas tienen menos.',
+    note: 'Algunas cuentas tienen un límite de duración menor al subir desde la computadora.',
   },
   instagram_reels: {
     id: 'instagram_reels',
@@ -82,9 +84,10 @@ export const PLATFORMS: Record<PlatformId, Platform> = {
     minSeconds: 3,
     maxBytes: 300 * MB,
     captionMax: 2200,
+    hashtagsMax: 30,
     // Top: camera and title. Right: buttons. Bottom: profile, text and audio (the tallest of all).
     safe: { top: 0.13, right: 0.11, bottom: 0.22, left: 0.05 },
-    note: 'Los Reels más largos de 3 min se muestran como video normal y pueden no recomendarse.',
+    note: 'Los Reels de más de 3 min pueden no llegar a tanta gente.',
   },
   youtube_shorts: {
     id: 'youtube_shorts',
@@ -99,6 +102,7 @@ export const PLATFORMS: Record<PlatformId, Platform> = {
     captionMax: 5000,
     hasTitle: true,
     titleMax: 100,
+    hashtagsMax: 15,
     safe: { top: 0.08, right: 0.13, bottom: 0.2, left: 0.05 },
   },
   youtube: {
@@ -114,6 +118,7 @@ export const PLATFORMS: Record<PlatformId, Platform> = {
     captionMax: 5000,
     hasTitle: true,
     titleMax: 100,
+    hashtagsMax: 15,
     // Bottom: progress bar and controls. Top: title while paused.
     safe: { top: 0.08, right: 0.04, bottom: 0.12, left: 0.04 },
     note: 'Más de 15 min requiere verificar la cuenta (hasta 12 h).',
@@ -262,6 +267,8 @@ export interface Issue {
   text: string;
   /** What to do. */
   fix?: string;
+  /** One-tap fix: switch this network's version to this format. */
+  fixAspect?: AspectId;
 }
 
 /** Below this average level the video sounds too quiet next to others in the feed. */
@@ -330,12 +337,14 @@ export function checkVersion(c: CheckInput): Issue[] {
       level: 'error',
       text: `${p.name} no usa el formato ${c.aspect}.`,
       fix: `Elige ${p.formats.join(' o ')} para esta red.`,
+      fixAspect: p.formats[0],
     });
   } else if (c.aspect !== p.formats[0]) {
     out.push({
       level: 'warn',
       text: `${p.name} acepta ${c.aspect}, pero se ve mejor en ${p.formats[0]}.`,
       fix: `Si puedes, guarda esta versión en ${p.formats[0]} para ocupar toda la pantalla.`,
+      fixAspect: p.formats[0],
     });
   }
 
@@ -410,6 +419,10 @@ export function checkVersion(c: CheckInput): Issue[] {
       text: `La descripción con hashtags tiene ${caption.length} caracteres y ${p.name} admite ${p.captionMax}.`,
       fix: `Quita ${caption.length - p.captionMax} caracteres.`,
     });
+  }
+  const tagCount = parseHashtags(c.hashtags ?? '').length;
+  if (p.hashtagsMax && tagCount > p.hashtagsMax) {
+    out.push({ level: 'warn', text: `Tienes ${tagCount} hashtags y ${p.name} solo toma en cuenta ${p.hashtagsMax}.`, fix: `Deja los ${p.hashtagsMax} más importantes.` });
   }
   if (p.hasTitle && p.titleMax && (c.title ?? '').length > p.titleMax) {
     out.push({ level: 'error', text: `El título es muy largo (máximo ${p.titleMax} caracteres).`, fix: 'Acórtalo.' });

@@ -169,7 +169,7 @@ function DuckingSection() {
     if (duck <= 0) return setCurve(null);
     let alive = true;
     const ids = voiceAssets(project).filter((id) => urls[id]);
-    Promise.all(ids.map((id) => analyzeAsset(id, urls[id]!).then((a) => [id, a?.activity] as const))).then((list) => {
+    Promise.all(ids.map((id) => analyzeAsset(id, urls[id]!).then((a) => [id, a?.activity] as const, () => [id, undefined] as const))).then((list) => {
       if (alive) setCurve(projectDuckCurve(project, Object.fromEntries(list), totalDuration(project)));
     });
     return () => void (alive = false);

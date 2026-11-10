@@ -194,3 +194,11 @@ test('sample times cover the whole clip', () => {
   assert.equal(sampleTimes(0, 1000, 0.1, 50).length, 51);
   assert.deepEqual(sampleTimes(5, 5), [5, 5]);
 });
+
+test('wrong format offers a one-tap fix; too many hashtags warn', () => {
+  const issues = checkVersion(base({ platform: 'youtube', aspect: '9:16' }));
+  assert.equal(issues.find((i) => /no usa el formato/.test(i.text))?.fixAspect, '16:9');
+  const many = Array.from({ length: 20 }, (_, i) => `#t${i}`).join(' ');
+  assert.ok(checkVersion(base({ platform: 'youtube_shorts', hashtags: many })).some((i) => i.level === 'warn' && /solo toma en cuenta 15/.test(i.text)));
+  assert.ok(!checkVersion(base({ platform: 'tiktok', hashtags: many })).some((i) => /hashtags/.test(i.text)));
+});

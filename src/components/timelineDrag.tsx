@@ -7,6 +7,7 @@ import { engine } from '../engine';
 import { IMAGE_MAX, audioDur, clamp, fmtTime, layout, overlayDur } from '../model';
 import { SNAP_PX, dropIndex, snapDrag, snapPoints, type Edge } from '../timelineSnap';
 import { moveClipTo } from '../ops';
+import { followClips } from '../ripple';
 import './timelineDrag.css';
 
 export type Mode = 'l' | 'r' | 'body';
@@ -223,7 +224,11 @@ export function startDrag(e: React.PointerEvent, kind: SelectionKind, id: string
     const sn = st.snap && !last.alt ? snapDrag(ds, edges, snapPoints(p, st.time, { kind, id }), SNAP_PX / pps) : { ds, at: null };
     if (sn.at != null && sn.at !== snapped) buzz();
     snapped = sn.at;
-    st.live((q) => applyDrag(q, kind, id, mode, sn.ds, orig));
+    st.live((q) => {
+      applyDrag(q, kind, id, mode, sn.ds, orig);
+      // Trimming a main clip shifts everything after it: what sat on those clips goes with them.
+      if (kind === 'clip') followClips(p, q);
+    });
     const sp = mode === 'body' ? null : span(useStore.getState().project!, kind, id);
     const at = sp && (kind === 'clip' || mode === 'r' ? sp[1] : sp[0]);
     setGuides({ snap: sn.at, trim: sp && at != null ? { at, text: fmtTime(sp[1] - sp[0], true) } : null });

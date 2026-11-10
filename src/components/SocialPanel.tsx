@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2, CircleAlert, ClipboardCopy, Crosshair, Download, Eye, EyeOff, ImageIcon, ListChecks, Send, Share2, TriangleAlert, Undo2,
 } from 'lucide-react';
-import type { AspectId, PlatformId, Project, PublishInfo, PublishTarget } from '../types';
+import type { AspectId, PlatformId, PostText, Project, PublishInfo, PublishTarget } from '../types';
 import { useStore } from '../store';
 import { ASPECTS, canvasSize, totalDuration } from '../model';
 import {
-  PLATFORMS, PLATFORM_IDS, checkVersion, postCaption, worstLevel, type AudioLevels, type Issue, type ItemBox,
+  PLATFORMS, PLATFORM_IDS, checkVersion, parseHashtags, postCaption, worstLevel, type AudioLevels, type Issue, type ItemBox,
 } from '../platforms';
 import type { ExportProgress } from '../exporter';
 import { canExport, canFastExport, UnsupportedAspectError } from '../exportSupport';
@@ -235,7 +235,7 @@ async function itemBoxes(p: Project, aspect: AspectId): Promise<ItemBox[]> {
 
 const ICONS = { error: CircleAlert, warn: TriangleAlert, ok: CheckCircle2 } as const;
 
-function IssueList({ issues }: { issues: Issue[] }) {
+function IssueList({ issues, onFixAspect }: { issues: Issue[]; onFixAspect?: (a: AspectId) => void }) {
   return (
     <ul className="issues">
       {issues.map((i, n) => {
@@ -246,6 +246,9 @@ function IssueList({ issues }: { issues: Issue[] }) {
             <span>
               {i.text}
               {i.fix && <small>{i.fix}</small>}
+              {i.fixAspect && onFixAspect && (
+                <button className="chip small" onClick={() => onFixAspect(i.fixAspect!)}>Cambiar a {i.fixAspect}</button>
+              )}
             </span>
           </li>
         );
@@ -306,7 +309,7 @@ function CheckSection({ targets }: { targets: PublishTarget[] }) {
       <h4><ListChecks size={18} /> Revisar antes de publicar</h4>
       {state.kind === 'running' ? (
         <div className="export-running">
-          <p>Revisando duración, peso, sonido y textos…</p>
+          <p>Revisando duración, peso, sonido y textos… puede tardar unos segundos.</p>
           <button className="btn-ghost" onClick={() => abort.current?.abort()}>Cancelar</button>
         </div>
       ) : (
@@ -324,7 +327,16 @@ function CheckSection({ targets }: { targets: PublishTarget[] }) {
                 <Icon size={16} /> {PLATFORMS[t.platform].name} ({t.aspect}):{' '}
                 {worst === 'ok' ? 'todo bien' : worst === 'warn' ? 'revisa los avisos' : 'hay que corregir algo'}
               </summary>
-              <IssueList issues={issues} />
+              <IssueList
+                issues={issues}
+                onFixAspect={(a) => {
+                  useStore.getState().commit((p) => {
+                    const tg = (p.publish?.targets ?? []).find((x) => x.platform === t.platform);
+                    if (tg) tg.aspect = a;
+                  });
+                  useStore.getState().notify(`Ahora ${PLATFORMS[t.platform].name} usa ${a}. Vuelve a revisar.`);
+                }}
+              />
             </details>
           );
         })}
@@ -391,7 +403,7 @@ function VersionsSection({ targets }: { targets: PublishTarget[] }) {
         setError(`${why} solo se puede guardar el formato que ves ahora (${project.aspect}). Para ${rest}, cambia el formato en “Formato” y vuelve a guardar.`);
       } else if (m !== 'cancelled') {
         const { ExportError } = await import('../exporter');
-        setError(e instanceof BgError || e instanceof ExportError ? m : 'Algo salió mal al guardar. Intenta otra vez con calidad 720p.');
+        setError(e instanceof BgError || e instanceof ExportError ? m : 'No se pudo guardar. Prueba con calidad 720p y revisa que haya espacio en tu equipo.');
       }
     } finally {
       setRunning(null);
@@ -507,6 +519,25 @@ async function snapshotPreview(): Promise<string | null> {
   return c.toDataURL('image/jpeg', 0.8);
 }
 
+const lastKey = (id: PlatformId) => `clipo.social.last.${id}`;
+function loadLast(id: PlatformId): PostText | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(lastKey(id)) ?? 'null');
+    if (v && typeof v === 'object' && (v.description || v.hashtags)) return { title: String(v.title ?? ''), description: String(v.description ?? ''), hashtags: String(v.hashtags ?? '') };
+  } catch {
+    /* storage blocked */
+  }
+  return null;
+}
+function saveLast(id: PlatformId, post: PostText | undefined) {
+  if (!post || (!post.description.trim() && !post.hashtags.trim())) return;
+  try {
+    localStorage.setItem(lastKey(id), JSON.stringify(post));
+  } catch {
+    /* ignore */
+  }
+}
+
 function PostSection({ targets }: { targets: PublishTarget[] }) {
   const info = useStore((s) => pub(s.project!));
   // Shown with one decimal: re-render 10 times per second at most, not on every frame of playback.
@@ -517,6 +548,7 @@ function PostSection({ targets }: { targets: PublishTarget[] }) {
     editInfo((i) => {
       const posts = (i.posts ??= {});
       fn((posts[id] ??= { description: '', hashtags: '' }));
+      saveLast(id, posts[id]);
     });
 
   const pickCover = async () => {
@@ -548,6 +580,7 @@ function PostSection({ targets }: { targets: PublishTarget[] }) {
     try {
       await navigator.clipboard.writeText(text);
       useStore.getState().notify('Texto copiado. Pégalo al publicar.');
+      saveLast(id, post);
     } catch {
       useStore.getState().notify('No se pudo copiar. Selecciona el texto y cópialo a mano.');
     }
@@ -572,7 +605,9 @@ function PostSection({ targets }: { targets: PublishTarget[] }) {
       {targets.map((t, n) => {
         const p = PLATFORMS[t.platform];
         const post = info.posts?.[t.platform];
-        const len = postCaption(post?.description ?? '', post?.hashtags ?? '').length;
+        const len = [...postCaption(post?.description ?? '', post?.hashtags ?? '')].length;
+        const tagCount = parseHashtags(post?.hashtags ?? '').length;
+        const last = !post?.description && !post?.hashtags ? loadLast(t.platform) : null;
         return (
           <details key={t.platform} open={n === 0}>
             <summary>Texto para {p.name}</summary>
@@ -605,9 +640,20 @@ function PostSection({ targets }: { targets: PublishTarget[] }) {
               onChange={(e) => editPost(t.platform, (x) => void (x.hashtags = e.target.value))}
             />
             <p className={`count ${len > p.captionMax ? 'over' : ''}`}>
-              {len} / {p.captionMax} caracteres
+              {len} / {p.captionMax} caracteres · {tagCount} {tagCount === 1 ? 'hashtag' : 'hashtags'}
+              {p.hashtagsMax && tagCount > p.hashtagsMax ? ` (${p.name} usa solo ${p.hashtagsMax})` : ''}
             </p>
             <div className="row">
+              {last && (
+                <button className="btn-ghost" onClick={() => editPost(t.platform, (x) => void ((x.description = last.description), (x.hashtags = last.hashtags), last.title && p.hasTitle && (x.title = last.title)))}>
+                  Usar el último texto de {p.name}
+                </button>
+              )}
+              {post?.hashtags?.trim() && (
+                <button className="btn-ghost" onClick={() => editPost(t.platform, (x) => void (x.hashtags = parseHashtags(x.hashtags).join(' ')))}>
+                  Ordenar hashtags
+                </button>
+              )}
               <button className="btn-ghost" onClick={() => copyText(t.platform)}>
                 <ClipboardCopy size={18} /> Copiar texto
               </button>
@@ -620,7 +666,7 @@ function PostSection({ targets }: { targets: PublishTarget[] }) {
           </details>
         );
       })}
-      <Hint>Se guarda con el proyecto.</Hint>
+      <Hint>Se guarda con el proyecto, y Clipo recuerda el último texto de cada red para la próxima vez.</Hint>
     </>
   );
 }

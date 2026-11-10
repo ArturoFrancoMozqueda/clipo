@@ -15,12 +15,12 @@ conseguir más.
 | Recurso | Cantidad | Origen | Licencia |
 | --- | --- | --- | --- |
 | Tipografías | 99 | [Fontsource](https://fontsource.org) (Google Fonts, alojadas en la app, se descargan al usarlas y quedan guardadas) | SIL Open Font License 1.1 / Apache 2.0 |
-| Estilos rápidos de texto | 12 | Combinaciones propias de fuente + color + animación | Propias |
-| Stickers | 152 | [Microsoft Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (estilo plano) | MIT. Aviso en `public/stickers/fluent/LICENSE.txt` |
-| Filtros | 22 | Valores propios | Propios |
-| Efectos de sonido | 154 en 12 categorías | 39 Premium diseñados en capas por Clipo (`src/soundPremium.ts`) + 47 sintetizados (`src/sound.ts`) + 68 grabaciones de [Kenney](https://kenney.nl/assets/category:Audio) | Propios + CC0 (dominio público) |
+| Estilos rápidos de texto | 58 | Combinaciones propias de fuente + color + animación | Propias |
+| Stickers | 188 | 152 de [Microsoft Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (estilo plano) + 36 dibujados por Clipo (`public/stickers/clipo/`) | MIT (aviso en `public/stickers/fluent/LICENSE.txt`) + propios |
+| Filtros | 33 | Valores propios | Propios |
+| Efectos de sonido | 214 en 12 categorías | 60 de **Tendencia** y 39 Premium diseñados en capas por Clipo (`src/soundTrending.ts`, `src/soundPremium.ts`) + 47 sintetizados (`src/sound.ts`) + 68 grabaciones de [Kenney](https://kenney.nl/assets/category:Audio) | Propios + CC0 (dominio público) |
 | Voces de texto a voz | 6 naturales + 2 de estudio | [Piper](https://github.com/rhasspy/piper) (`rhasspy/piper-voices`), se descargan la primera vez | Ver abajo |
-| Música | 9 estilos, versiones ilimitadas | Compuesta por Clipo en el dispositivo, del largo del video | Propia: sin atribución |
+| Música | 19 estilos (10 del momento), versiones ilimitadas | Compuesta por Clipo en el dispositivo, del largo del video | Propia: sin atribución |
 
 ### Tipografías incluidas
 
@@ -53,9 +53,35 @@ masteriza al mismo pico, así todos suenan llenos y parejos. Las herramientas pa
 tiene su sonido Premium sugerido (`TRANSITION_SFX`), que se coloca para que su momento fuerte
 caiga justo en el corte.
 
+**Tendencia** (`src/soundTrending.ts`) reúne 60 sonidos originales en los estilos que usan hoy
+los creadores de videos cortos: golpes de remate, disco rayado, subidas de tensión, cowbell
+phonk, 808 que se desliza, glitch, efectos de caricatura, dinero, notificaciones, ASMR y
+aplausos. Son creaciones propias hechas desde cero: **no** incluyen ni imitan nota por nota
+grabaciones con derechos (canciones virales, audios de memes, sonidos de otras apps).
+Cada uno tiene etiquetas en español para que la búsqueda los encuentre (por ejemplo "plata"
+encuentra "Ka-ching") y se pueden marcar con ★ o volver a encontrar en "Recientes".
+
+Cómo se revisan: `tests/trending.test.ts` renderiza cada sonido sin conexión y comprueba que
+no esté en silencio, no sature, dure lo que dice, termine suave y tenga un espectro razonable.
+
 No hay risas, voces ni sonidos de animales: no se pueden sintetizar con buena
-calidad y los paquetes CC0 no los traen. Para eso, importa un archivo propio
+calidad y los paquetes CC0 de Kenney no los traen. Para eso, importa un archivo propio
 (ver "Para importar tú").
+
+### Música
+
+Clipo compone la música en el dispositivo, del largo exacto de tu video, con versiones
+distintas de la melodía (botón de las flechas). Cada estilo tiene su ritmo, instrumentos,
+relleno cada 4 compases, una intro que va creciendo y "bombeo" (el acompañamiento baja un
+poco con cada golpe de bombo, como en un estudio). Todos quedan al mismo volumen.
+
+- Del momento (`src/musicStyles.ts`): Phonk, Lo-fi hip hop, Reggaetón, Afrobeats, Amapiano,
+  House, Drill, Synthwave, Corrido tumbado y Acústico.
+- Clásicas (`src/sound.ts`): Alegre, Relajado, Épico, Negocio, Romántico, Energía, Urbano,
+  Cinemático y Ambiental.
+
+Son composiciones propias, no copian ninguna canción. Los ritmos (dembow, four-on-the-floor,
+etc.) son patrones de uso libre.
 
 ### Voces de texto a voz
 

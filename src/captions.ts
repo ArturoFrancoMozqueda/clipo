@@ -1,10 +1,12 @@
 // Automatic captions: pull the speech out of the main-track videos and
 // turn it into timed text items, all on the device.
-import type { KaraokeMode, Project, TextItem } from './types';
+import type { KaraokeMode, Project, TextAnim, TextItem } from './types';
 import { layout, type Placed } from './model';
 import { uid, useStore } from './store';
 import type { CaptionWindow, WorkerIn, WorkerOut } from './captionsWorker';
-import { decodeSubtitleBytes, groupWords, parseSubtitles, relativeWords, textsToCues, toSRT, toVTT, type Cue, type TimedWord } from './subtitles';
+import {
+  decodeSubtitleBytes, groupWords, parseSubtitles, relativeWords, textsToCues, toSRT, toVTT, type Cue, type GroupOptions, type TimedWord,
+} from './subtitles';
 import { getBrand } from './brand';
 import { warmFont } from './fonts';
 
@@ -168,8 +170,11 @@ let abortRun: (() => void) | null = null;
 export function cancelCaptions() {
   worker?.terminate();
   worker = null;
+  cancelFlag = true;
   abortRun?.();
 }
+/** Set by cancelCaptions(); checked between the slow steps that have nothing to abort. */
+let cancelFlag = false;
 
 /**
  * Transcribe the main-track videos and add one caption per phrase as a single undoable step.
@@ -190,12 +195,14 @@ export async function generateCaptions(opts: {
   const startTiming = timingOf(placed);
   const originalIds = new Set(placed.map((l) => l.clip.id));
 
+  cancelFlag = false;
   // 1. Audio of each clip, only its in/out.
   opts.onProgress({ phase: 'audio', pct: 0 });
   const windows: CaptionWindow[] = [];
   const metas: WindowMeta[] = [];
   for (const [k, { clip }] of placed.entries()) {
     const slice = await decodeClipMono(s.urls[clip.assetId], clip.in, clip.out);
+    if (cancelFlag) throw new Error('cancelled');
     opts.onProgress({ phase: 'audio', pct: ((k + 1) / placed.length) * 100 });
     if (!slice) continue;
     for (const [a, b] of splitWindows(slice)) {
@@ -209,13 +216,19 @@ export async function generateCaptions(opts: {
   // 2. Whisper in a worker so the editor stays responsive.
   worker ??= new Worker(new URL('./captionsWorker.ts', import.meta.url), { type: 'module' });
   const w = worker;
+  if (cancelFlag) throw new Error('cancelled');
   // Times stay in source time until the end, when they're placed on the timeline as it is then.
   const found: { text: string; start: SrcTime; end: SrcTime }[] = [];
   const spoken: { text: string; start: SrcTime; end: SrcTime }[] = [];
   await new Promise<void>((resolve, reject) => {
     let done = 0;
     abortRun = () => reject(new Error('cancelled'));
-    w.onerror = (e) => reject(new Error(e.message || 'worker'));
+    w.onerror = (e) => {
+      // A worker that crashed is no good for the next try.
+      w.terminate();
+      if (worker === w) worker = null;
+      reject(new Error(e.message || 'worker'));
+    };
     w.onmessage = (e: MessageEvent<WorkerOut>) => {
       const m = e.data;
       if (m.type === 'download') {
@@ -276,7 +289,7 @@ export async function generateCaptions(opts: {
 
   // Words become short captions; drop the ones that are only a known Whisper invention.
   words.sort((a, b) => a.start - b.start);
-  for (const c of groupWords(words)) if (cleanChunk(c.text)) cues.push(c);
+  for (const c of groupWords(words, CHUNK_OPTIONS[opts.look.chunk ?? 'frase'])) if (cleanChunk(c.text)) cues.push(c);
 
   // 4. Tidy timing: no overlaps, each line visible long enough to read.
   const items = cuesToItems(cues, opts.look);
@@ -349,7 +362,26 @@ export interface CaptionStyleDef {
   size: number;
   /** In fashion right now: shown with a badge. */
   trend?: true;
+  /** Highlight that goes with this look; picking the look sets it (the user can still change it). */
+  karaoke?: { mode: KaraokeMode; color: string };
+  /** How each caption comes in; missing = it just appears, which reads best for long phrases. */
+  anim?: TextAnim;
 }
+
+const POP: TextAnim = { in: 'pop', out: 'none', loop: 'none' };
+
+/** How many words each caption shows. Short captions are the punchy look of viral clips. */
+export type CaptionChunk = 'frase' | 'corto' | 'palabra';
+export const CAPTION_CHUNKS: { id: CaptionChunk; name: string; hint: string }[] = [
+  { id: 'frase', name: 'Frases', hint: 'Fácil de leer' },
+  { id: 'corto', name: 'Pocas palabras', hint: 'Rápido, estilo viral' },
+  { id: 'palabra', name: 'Una palabra', hint: 'Máximo impacto' },
+];
+export const CHUNK_OPTIONS: Record<CaptionChunk, Partial<GroupOptions>> = {
+  frase: {},
+  corto: { maxChars: 16, maxDur: 1.8, maxWords: 3 },
+  palabra: { maxChars: 40, maxDur: 1.5, maxWords: 1 },
+};
 
 /** Ready-made caption looks. "marca" (the brand kit) is added by the panel when there is one. */
 export const CAPTION_STYLES: CaptionStyleDef[] = [
@@ -362,7 +394,24 @@ export const CAPTION_STYLES: CaptionStyleDef[] = [
   { id: 'burbuja', name: 'Burbuja', styleId: 'burbuja', font: 'bagel-fat-one', size: 0.065, trend: true },
   { id: 'editorial', name: 'Editorial', styleId: 'elegante', font: 'instrument-serif', size: 0.075, trend: true },
   { id: 'glitch', name: 'Glitch', styleId: 'glitch', font: 'unbounded', size: 0.05, trend: true },
+  // Complete looks: letters, highlight and entrance chosen together.
+  { id: 'viral', name: 'Viral', styleId: 'clasico', font: 'anton', size: 0.075, trend: true, karaoke: { mode: 'color', color: '#ffe500' }, anim: POP },
+  { id: 'cajaViva', name: 'Caja viva', styleId: 'clasico', font: 'poppins', size: 0.062, trend: true, karaoke: { mode: 'box', color: '#7c5cff' } },
+  { id: 'rebote', name: 'Rebote', styleId: 'meme', font: 'montserrat', size: 0.068, trend: true, karaoke: { mode: 'scale', color: '#2bff6b' }, anim: POP },
+  { id: 'popRosa', name: 'Sombra pop', styleId: 'popRosa', font: 'archivo-black', size: 0.062, trend: true, karaoke: { mode: 'color', color: '#ff2d95' } },
+  { id: 'minimal', name: 'minimal', styleId: 'minimal', font: 'space-grotesk', size: 0.05, karaoke: { mode: 'color', color: '#ffe500' } },
+  { id: 'celeste', name: 'Celeste', styleId: 'celeste', font: 'montserrat', size: 0.062 },
+  { id: 'rosa', name: 'Rosa', styleId: 'rosa', font: 'montserrat', size: 0.062 },
+  { id: 'noticiero', name: 'Noticiero', styleId: 'noticia', font: 'oswald', size: 0.055 },
+  { id: 'pastel', name: 'Pastel', styleId: 'pastel', font: 'comfortaa', size: 0.052 },
+  { id: 'fuego', name: 'Fuego', styleId: 'fuego', font: 'anton', size: 0.075, anim: POP },
 ];
+
+/** The look after picking a ready-made style: styles that come with a highlight bring it along. */
+export function lookWithStyle(look: CaptionLook, styleId: string): CaptionLook {
+  const def = CAPTION_STYLES.find((c) => c.id === styleId);
+  return { ...look, style: styleId, ...(def?.karaoke ? { karaoke: def.karaoke.mode, color: def.karaoke.color } : {}) };
+}
 
 export interface CaptionLook {
   /** CAPTION_STYLES id, or 'marca'. */
@@ -370,6 +419,8 @@ export interface CaptionLook {
   karaoke: KaraokeMode | 'none';
   /** Color of the highlighted word. */
   color: string;
+  /** Words per caption for captions made by listening. Missing in looks saved before: 'frase'. */
+  chunk?: CaptionChunk;
 }
 
 const LOOK_KEY = 'clipo.captionLook';
@@ -378,7 +429,11 @@ export const DEFAULT_LOOK: CaptionLook = { style: 'clasico', karaoke: 'color', c
 export function loadCaptionLook(): CaptionLook {
   try {
     const v = JSON.parse(localStorage.getItem(LOOK_KEY) ?? 'null') as CaptionLook | null;
-    if (v && typeof v.style === 'string') return { ...DEFAULT_LOOK, ...v };
+    if (v && typeof v.style === 'string') {
+      const look = { ...DEFAULT_LOOK, ...v };
+      if (!CAPTION_CHUNKS.some((c) => c.id === look.chunk)) delete look.chunk;
+      return look;
+    }
   } catch {
     // ignore: the default look is fine
   }
@@ -407,6 +462,8 @@ export function styleCaption(t: TextItem, look: CaptionLook): TextItem {
     t.font = def.font;
     t.size = def.size;
     delete t.fill;
+    if (def.anim) t.anim = { ...def.anim };
+    else delete t.anim;
   }
   if (t.font) warmFont(t.font);
   if (look.karaoke === 'none') delete t.karaoke;

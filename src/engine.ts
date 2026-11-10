@@ -10,6 +10,7 @@ import type { VoiceFxId } from './types';
 import type { Box } from './textStyles';
 import { bgClip, bgClipId, bgTime, renderFrame, type FrameImage, type MediaRef } from './render';
 import { onRedraw } from './redraw';
+import { ExportError } from './exportSupport';
 import { setBgRemovalInUse, usesBgRemoval } from './segmentation';
 
 // The drawing pipeline lives in render.ts; these re-exports keep the old import paths working.
@@ -199,6 +200,10 @@ class Engine {
         if (document.visibilityState === 'visible') {
           this.resumeAudio();
           this.markDirty();
+        } else if (!this.exporting && useStore.getState().playing) {
+          // A hidden tab stops drawing frames, but its media elements would keep sounding on their
+          // own (past their trims, out of step with everything else): stop until the user is back.
+          this.pause();
         }
       });
     }
@@ -588,6 +593,8 @@ class Engine {
       this.lastT = t;
     }
     const playing = useStore.getState().playing;
+    // Paused past the end (the video just got shorter): show its last frame, not a black one.
+    if (!playing) t = Math.min(t, totalDuration(p));
     this.fitResolution(playing, p);
     const t0 = performance.now();
     this.updateMedia(p, t, playing, placed, now);
@@ -992,7 +999,7 @@ class Engine {
     const p = s.project;
     const canvas = this.canvas;
     const mime = Engine.pickMime();
-    if (!p || !canvas) throw new Error('No hay proyecto abierto');
+    if (!p || !canvas) throw new ExportError('Abre un proyecto para guardarlo como video.');
     if (mime === null || !('captureStream' in canvas)) throw new Error('unsupported');
     if (signal?.aborted) throw new Error('cancelled');
 
@@ -1014,7 +1021,7 @@ class Engine {
     // A background tab stops drawing frames, so the recording would hang or come out frozen.
     const onHidden = () => {
       if (document.visibilityState === 'hidden') {
-        stop(new Error('La exportación se detuvo porque la app pasó a segundo plano. Mantén Clipo abierto en pantalla mientras exporta.'));
+        stop(new ExportError('La exportación se detuvo porque la app pasó a segundo plano. Mantén Clipo abierto en pantalla mientras exporta.'));
       }
     };
     document.addEventListener('visibilitychange', onHidden);
@@ -1028,7 +1035,7 @@ class Engine {
         lastT = st.time;
         lastMove = performance.now();
       } else if (performance.now() - lastMove > EXPORT_STALL_MS) {
-        stop(new Error('La exportación se quedó detenida (el video no avanzaba). Vuelve a intentarlo.'));
+        stop(new ExportError('La exportación se quedó detenida (el video no avanzaba). Vuelve a intentarlo.'));
       }
     }, 1000);
 

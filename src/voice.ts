@@ -195,7 +195,7 @@ export interface Voice {
 const SUPERTONIC = 'onnx-community/Supertonic-TTS-2-ONNX';
 /** Fixed commit of the Supertonic repo (Hugging Face API `sha`, 2026-10-15), so a change upstream can't swap the files. */
 export const SUPERTONIC_REVISION = '68d4d9420d0e0e51d14656e1ec5c9b091490b49e';
-// TODO: ttsWorker.ts loads the model with pipeline(); pass `revision: SUPERTONIC_REVISION` there too.
+// ttsWorker.ts pins the same revision in its REVISIONS table (it can't import this file); keep both in sync.
 const voiceUrl = (v: string) => `https://huggingface.co/${SUPERTONIC}/resolve/${SUPERTONIC_REVISION}/voices/${v}.bin`;
 
 // Piper voices first: natural sounding, light, and each one an actual Spanish speaker.
@@ -209,7 +209,7 @@ export const VOICES: [Voice, ...Voice[]] = [
   piper('davefx', 'David', 'España · natural', 'es/es_ES/davefx/medium/es_ES-davefx-medium', 63),
   piper('sharvard-f', 'Lucía', 'España · natural', 'es/es_ES/sharvard/medium/es_ES-sharvard-medium', 77, 'F'),
   piper('sharvard-m', 'Martín', 'España · natural', 'es/es_ES/sharvard/medium/es_ES-sharvard-medium', 77, 'M'),
-  { id: 'F1', name: 'Sofía', desc: 'Estudio · expresiva, pesada', mb: 260, model: SUPERTONIC, voice: voiceUrl('F1'), lang: 'es' },
+  { id: 'F1', name: 'Sofía', desc: 'Estudio · muy expresiva', mb: 260, model: SUPERTONIC, voice: voiceUrl('F1'), lang: 'es' },
   { id: 'M1', name: 'Mateo', desc: 'Estudio · expresiva, pesada', mb: 260, model: SUPERTONIC, voice: voiceUrl('M1'), lang: 'es' },
 ];
 

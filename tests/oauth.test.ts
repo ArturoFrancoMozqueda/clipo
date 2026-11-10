@@ -93,9 +93,12 @@ test('only 500/502/503/504 are retried, with growing backoff', () => {
 
 test('API errors become plain Spanish with a retry hint', () => {
   const quota = explainApiError(403, { error: { errors: [{ reason: 'quotaExceeded' }] } });
-  assert.match(quota.message, /cupo diario/);
+  assert.match(quota.message, /por hoy/);
   assert.equal(quota.retryable, true);
   assert.equal(explainApiError(400, { error: { errors: [{ reason: 'invalidTitle' }] } }).retryable, false);
   assert.equal(explainApiError(503, null).retryable, true);
   assert.equal(explainApiError(401, null).retryable, false);
+  assert.equal(explainApiError(401, null).reconnect, true, 'an ended session asks to connect again');
+  assert.equal(explainApiError(503, null).reconnect, false);
+  assert.doesNotMatch(explainApiError(403, { error: { message: 'raw API text' } }).message, /raw API text/);
 });

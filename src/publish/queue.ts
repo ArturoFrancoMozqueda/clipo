@@ -6,10 +6,13 @@ import type { ConnectedAccount, JobStatus, NetworkId, PostOptions, PostText, Pub
 /** An upload failure with a reason the user can read. */
 export class PublishError extends Error {
   retryable: boolean;
-  constructor(message: string, retryable = true) {
+  /** The account has to be connected again before retrying. */
+  reconnect: boolean;
+  constructor(message: string, retryable = true, reconnect = false) {
     super(message);
     this.name = 'PublishError';
     this.retryable = retryable;
+    this.reconnect = reconnect;
   }
 }
 
@@ -68,6 +71,8 @@ export const isFinal = (j: PublishJob) => j.status.kind === 'published' || j.sta
 export const isActive = (j: PublishJob) => j.status.kind === 'uploading';
 export const canRetry = (j: PublishJob) =>
   (j.status.kind === 'error' && j.status.retryable) || j.status.kind === 'missed';
+/** Failed because the account's session ended: show "Volver a conectar". */
+export const needsReconnect = (j: PublishJob) => j.status.kind === 'error' && !!j.status.reconnect;
 export const canCancel = (j: PublishJob) =>
   j.status.kind === 'scheduled' || j.status.kind === 'pending' || j.status.kind === 'uploading' || j.status.kind === 'missed' || j.status.kind === 'error';
 
@@ -88,8 +93,8 @@ export function published(job: PublishJob, r: { url: string; remoteId: string; n
 
 export function failed(job: PublishJob, err: unknown, now: number): PublishJob {
   const pe = err instanceof PublishError ? err : null;
-  const reason = pe?.message || 'Algo salió mal al subir el video. Revisa tu conexión a internet e intenta otra vez.';
-  return set(job, { kind: 'error', reason, retryable: pe ? pe.retryable : true, at: now });
+  const reason = pe?.message || 'Algo salió mal al subir el video. Revisa tu conexión a internet y pulsa “Reintentar”.';
+  return set(job, { kind: 'error', reason, retryable: pe ? pe.retryable : true, at: now, ...(pe?.reconnect ? { reconnect: true } : {}) });
 }
 
 /** "Reintentar" or "Publicar ahora" on a missed one: back to the queue, right away. */
@@ -116,7 +121,7 @@ export function recoverOnLoad(jobs: PublishJob[], now: number): PublishJob[] {
   return jobs.map((j) => {
     switch (j.status.kind) {
       case 'uploading':
-        return set(j, { kind: 'error', reason: 'La subida se cortó porque Clipo se cerró. Puedes reintentarla.', retryable: true, at: now });
+        return set(j, { kind: 'error', reason: 'La subida se cortó porque Clipo se cerró. Antes de reintentar, mira en tu cuenta que no se haya publicado ya.', retryable: true, at: now });
       case 'pending':
         return set(j, { kind: 'missed', reason: 'Clipo se cerró antes de empezar a subirlo.' });
       case 'scheduled':
@@ -226,9 +231,9 @@ export class PublishQueue {
     try {
       await this.update(job.id, startUpload);
       const publisher = this.deps.publisherFor(job.network);
-      if (!publisher) throw new PublishError('Esta red todavía no se puede usar desde Clipo.', false);
+      if (!publisher) throw new PublishError('Publicar directo en esta red no está disponible en este equipo. Usa “Publicar en…” desde Redes: copia el texto y abre su página.', false);
       const video = await this.deps.storage.getBlob(job.videoId);
-      if (!video) throw new PublishError('No se encontró el video guardado. Vuelve a guardarlo y publícalo otra vez.', false);
+      if (!video) throw new PublishError('No se encontró el video guardado. Guárdalo otra vez y vuelve a publicarlo.', false);
       const thumbnail = job.thumbnailId ? await this.deps.storage.getBlob(job.thumbnailId) : undefined;
       const result = await publisher.upload(
         { jobId: job.id, accountId: job.accountId, network: job.network, video, videoInfo: job.video, thumbnail, post: job.post, options: job.options },

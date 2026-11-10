@@ -8,11 +8,11 @@ export function FormatPicker({ value, onPick }: { value?: AspectId; onPick: (a: 
         const a = ASPECTS[id];
         const scale = 56 / Math.max(a.w, a.h);
         return (
-          <button key={id} className={`format-card ${value === id ? 'active' : ''}`} onClick={() => onPick(id)}>
+          <button key={id} className={`format-card ${value === id ? 'active' : ''}`} aria-pressed={value === undefined ? undefined : value === id} onClick={() => onPick(id)}>
             <span className="format-shape" style={{ width: a.w * scale, height: a.h * scale }} />
             <strong>{a.label}</strong>
             <small>{a.hint}</small>
-            <em>{id}</em>
+            <em aria-label={`Proporción ${id}`}>{id}</em>
           </button>
         );
       })}

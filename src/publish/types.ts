@@ -54,7 +54,8 @@ export type JobStatus =
   | { kind: 'pending' }
   | { kind: 'uploading'; pct: number }
   | { kind: 'published'; url: string; remoteId: string; at: number; note?: string }
-  | { kind: 'error'; reason: string; retryable: boolean; at: number }
+  /** `reconnect`: the saved session stopped working; connect the account again, then retry. */
+  | { kind: 'error'; reason: string; retryable: boolean; at: number; reconnect?: boolean }
   /** Clipo was closed when it should have run. Never sent on its own: the user decides. */
   | { kind: 'missed'; reason: string }
   | { kind: 'cancelled' };

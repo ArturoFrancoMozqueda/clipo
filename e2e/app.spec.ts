@@ -97,3 +97,21 @@ test('crear un video desde plantilla, reproducirlo y ver Exportar en pantalla', 
   expect(drawn).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test('un proyecto se guarda, se renombra y se elimina con diálogos de la app', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/');
+  await page.addLocatorHandler(page.getByRole('button', { name: 'Saltar' }), async (skip) => {
+    await skip.click();
+  });
+  await page.getByRole('button', { name: 'Nuevo video' }).click();
+  await page.getByRole('button', { name: /Vertical/ }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Prueba de borrado');
+  // The top bar says when the work is safe.
+  await expect(page.getByText('Guardado', { exact: true })).toBeVisible({ timeout: 5000 });
+  // Nothing was added, so leaving drops the empty project instead of listing it.
+  await page.getByRole('button', { name: 'Volver a mis proyectos' }).click();
+  await expect(page.getByRole('heading', { name: /Crea videos geniales/ })).toBeVisible();
+  await expect(page.getByText('Prueba de borrado')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

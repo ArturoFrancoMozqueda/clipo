@@ -215,7 +215,7 @@ test('Meta: sign in, Pages + Instagram, Page video with schedule, Reel, status a
     // Configuration: App ID and App Secret, validated and the secret stored encrypted.
     await assert.rejects(call('meta:setConfig', { appId: 'abc' }), /App ID/);
     await assert.rejects(call('meta:setConfig', { appId: APP_ID, appSecret: 'short' }), /App Secret/);
-    await assert.rejects(call('meta:connect'), /Primero pega/);
+    await assert.rejects(call('meta:connect'), /no está disponible en esta copia/);
     await call('meta:setConfig', { appId: APP_ID, appSecret: SECRET });
     const cfg = (await call('meta:getConfig')) as Record<string, unknown>;
     assert.equal(cfg.appId, APP_ID);
@@ -276,7 +276,7 @@ test('Meta: sign in, Pages + Instagram, Page video with schedule, Reel, status a
     );
     await assert.rejects(
       call('meta:upload', { jobId: 'j3', accountId: '178414', network: 'instagram_reels', fileId: await handOver(call, video), mime: 'video/mp4', text: { caption: '' }, publishAt }),
-      /Instagram no permite programar/,
+      /Instagram no deja programar/,
     );
     await assert.rejects(
       call('meta:upload', { jobId: 'j4', accountId: '178414', network: 'facebook', fileId: await handOver(call, video), mime: 'video/mp4', text: { caption: '' } }),
@@ -308,12 +308,12 @@ test('Meta: sign in, Pages + Instagram, Page video with schedule, Reel, status a
 
     // Errors: rate limit is retryable, an expired session is not and says how to fix it.
     g.st.rateLimited = true;
-    await assert.rejects(call('meta:status', '111', '555'), /^Error: R\|.*límite de uso/);
+    await assert.rejects(call('meta:status', '111', '555'), /^Error: R\|.*esperar un poco/);
     g.st.rateLimited = false;
     g.st.expired = true;
     await assert.rejects(
       call('meta:upload', { jobId: 'j6', accountId: '111', network: 'facebook', fileId: await handOver(call, video), mime: 'video/mp4', text: { caption: '' } }),
-      /^Error: F\|La conexión con Facebook venció o se revocó/,
+      /^Error: A|La conexión con Facebook venció/,
     );
     g.st.expired = false;
 
@@ -335,9 +335,9 @@ test('Meta: a wrong App Secret and a denied login give clear, final errors', asy
   const denied = harness(g.base, g.st, 'deny');
   try {
     await wrong.call('meta:setConfig', { appId: APP_ID, appSecret: 'c'.repeat(32) });
-    await assert.rejects(wrong.call('meta:connect'), /^Error: F\|Meta rechazó la clave secreta/);
+    await assert.rejects(wrong.call('meta:connect'), /^Error: F|Facebook no aceptó la configuración/);
     await denied.call('meta:setConfig', { appId: APP_ID, appSecret: SECRET });
-    await assert.rejects(denied.call('meta:connect'), /^Error: F\|No diste permiso en Facebook/);
+    await assert.rejects(denied.call('meta:connect'), /^Error: F|No diste permiso en Facebook/);
     assert.deepEqual(await denied.call('meta:accounts'), []);
   } finally {
     g.close();
@@ -356,7 +356,9 @@ test('Graph errors become plain Spanish with the right retry flag', () => {
   assert.equal(explainGraphError({ code: 100, error_subcode: 2207042 }, 400).retryable, true);
   assert.match(explainGraphError({ code: 100, error_subcode: 2207026 }, 400).message, /MP4/);
   assert.equal(explainGraphError({ code: 1, is_transient: true }, 500).retryable, true);
-  assert.match(explainGraphError({ code: 100, message: 'Invalid parameter' }, 400).message, /Invalid parameter/);
+  assert.equal(explainGraphError({ code: 190 }, 400).reconnect, true);
+  assert.equal(explainGraphError({ code: 4 }, 400).reconnect, false);
+  assert.match(explainGraphError({ code: 100, message: 'Invalid parameter' }, 400).message, /código 100/);
 });
 
 test('built-in Meta App ID: read from the build file, ignored when malformed', async () => {

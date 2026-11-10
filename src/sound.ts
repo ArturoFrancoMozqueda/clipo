@@ -8,6 +8,8 @@ import { encodeWav } from './voice';
 import kenneyCatalog from './sfxCatalog.json';
 import { SR, hiss, hz, master, pulsed, render, reverb, tone, vibrato, type Build } from './synth';
 import { PREMIUM_SFX } from './soundPremium';
+import { TRENDING_SFX } from './soundTrending';
+import { buildStyleSong, type StyleId } from './musicStyles';
 
 // ---------- sound effects ----------
 
@@ -31,6 +33,10 @@ export interface Sfx {
   file?: string;
   /** Studio-designed (layered, with reverb and mastering): listed first, with a badge. */
   premium?: true;
+  /** Part of the "Tendencia" pack: original sounds in the styles creators use right now. */
+  trending?: true;
+  /** Extra words people may search for (Spanish, no accents needed). */
+  tags?: string;
   /** Seconds into the sound where its main moment lands (a whoosh's peak), to line it up with a cut. */
   hit?: number;
 }
@@ -219,7 +225,7 @@ const KENNEY: Sfx[] = (kenneyCatalog as { id: string; name: string; use: string;
 }));
 
 /** Every sound effect, grouped by category in the picker. */
-export const SFX: Sfx[] = [...PREMIUM_SFX, ...SYNTH, ...KENNEY].sort(
+export const SFX: Sfx[] = [...TRENDING_SFX, ...PREMIUM_SFX, ...SYNTH, ...KENNEY].sort(
   (a, b) => SFX_CATEGORIES.indexOf(a.category) - SFX_CATEGORIES.indexOf(b.category) || Number(!!b.premium) - Number(!!a.premium),
 );
 
@@ -237,11 +243,20 @@ function limit(d: Float32Array, max = 0.95) {
 
 /** Mono samples at Clipo's sample rate, for a synthesized or a bundled sound. */
 export function renderSfx(s: Sfx): Promise<Float32Array> {
-  if (s.build) return render(s.seconds ?? 1, s.build, 7).then((d) => (s.premium ? master(d) : limit(d)));
   let p = decoded.get(s.id);
+  if (!p && s.build) {
+    // Kept after the first render, so the second tap on a sound plays instantly. Callers only read the samples.
+    p = render(s.seconds ?? 1, s.build, 7).then((d) => (s.premium ? master(d) : limit(d)));
+    p.catch(() => decoded.delete(s.id));
+    decoded.set(s.id, p);
+    if (decoded.size > 60) decoded.delete(decoded.keys().next().value!);
+  }
   if (!p) {
     p = fetch(`./sfx/kenney/${s.file}`)
-      .then((r) => r.arrayBuffer())
+      .then((r) => {
+        if (!r.ok) throw new Error(`sound ${s.id} not found`);
+        return r.arrayBuffer();
+      })
       .then((buf) => new OfflineAudioContext(1, 1, SR).decodeAudioData(buf))
       .then((ab) => {
         const out = new Float32Array(ab.length);
@@ -266,11 +281,15 @@ export interface Mood {
   name: string;
   hint: string;
   bpm: number;
-  /** One chord per bar, as MIDI notes. */
-  chords: number[][];
-  drums: DrumKit;
-  pad: OscillatorType;
-  lead: OscillatorType | null;
+  /** One chord per bar, as MIDI notes (basic moods; the newer styles have their own composer in musicStyles.ts). */
+  chords?: number[][];
+  drums?: DrumKit;
+  pad?: OscillatorType;
+  lead?: OscillatorType | null;
+  /** Composed by musicStyles.ts instead of the basic engine. */
+  style?: StyleId;
+  /** In the "Tendencia" group of the picker. */
+  trending?: true;
   lofi?: boolean;
   /** Size of the room (reverb seconds) and how much of it is heard. */
   space?: number;
@@ -278,6 +297,16 @@ export interface Mood {
 }
 
 export const MOODS: Mood[] = [
+  { id: 'phonk', name: 'Phonk', hint: 'Autos, edits oscuros, actitud', bpm: 132, style: 'phonk', trending: true },
+  { id: 'lofihop', name: 'Lo-fi hip hop', hint: 'Estudio, recetas, relajarse', bpm: 78, style: 'lofihop', trending: true },
+  { id: 'dembow', name: 'Reggaetón', hint: 'Fiestas, baile, verano', bpm: 94, style: 'dembow', trending: true },
+  { id: 'afrobeats', name: 'Afrobeats', hint: 'Viajes, outfits, buena vibra', bpm: 104, style: 'afrobeats', trending: true },
+  { id: 'amapiano', name: 'Amapiano', hint: 'Bailes, atardeceres, estilo', bpm: 112, style: 'amapiano', trending: true },
+  { id: 'house', name: 'House', hint: 'Fiestas, gym, antes y después', bpm: 124, style: 'house', trending: true },
+  { id: 'drill', name: 'Drill', hint: 'Actitud, calle, videos serios', bpm: 142, style: 'drill', trending: true },
+  { id: 'synthwave', name: 'Synthwave', hint: 'Retro, tecnología, noche', bpm: 100, style: 'synthwave', trending: true },
+  { id: 'corrido', name: 'Corrido tumbado', hint: 'Historias, rancho, sentimiento', bpm: 98, style: 'corrido', trending: true },
+  { id: 'acustico', name: 'Acústico', hint: 'Vlogs tranquilos, naturaleza', bpm: 88, style: 'acoustic', trending: true },
   { id: 'alegre', name: 'Alegre', hint: 'Vlogs, familia, buenas noticias', bpm: 118, chords: [[60, 64, 67], [55, 59, 62], [57, 60, 64], [53, 57, 60]], drums: 'pop', pad: 'triangle', lead: 'triangle' },
   { id: 'lofi', name: 'Relajado', hint: 'Recetas, estudio, día a día', bpm: 78, chords: [[62, 65, 69, 72], [55, 59, 62, 65], [60, 64, 67, 71], [57, 60, 64, 67]], drums: 'soft', pad: 'sine', lead: 'sine', lofi: true },
   { id: 'epico', name: 'Épico', hint: 'Deportes, logros, tráiler', bpm: 96, chords: [[57, 60, 64], [53, 57, 60], [60, 64, 67], [55, 59, 62]], drums: 'epic', pad: 'sawtooth', lead: null },
@@ -324,6 +353,9 @@ function playChord(c: BaseAudioContext, o: AudioNode, t: number, dur: number, no
 }
 
 function buildSong(m: Mood, seconds: number): Build {
+  if (m.style) return buildStyleSong(m.style, seconds);
+  const { chords, drums: kit, pad, lead } = m;
+  if (!chords || !kit || !pad) throw new Error(`Mood ${m.id} has no composition`);
   return (c, o, r) => {
     const beat = 60 / m.bpm;
     const bar = beat * 4;
@@ -354,28 +386,28 @@ function buildSong(m: Mood, seconds: number): Build {
     const rests = Array.from({ length: 8 }, () => r() < 0.25);
     for (let b = 0; b < bars; b++) {
       const t0 = b * bar;
-      const chord = m.chords[b % m.chords.length]!;
-      playChord(c, out, t0, bar, chord, m.pad);
+      const chord = chords[b % chords.length]!;
+      playChord(c, out, t0, bar, chord, pad);
       // Bass on the root, an octave down.
       const root = chord[0]! - 24;
-      if (m.drums === 'trap') {
+      if (kit === 'trap') {
         // Long 808 bass under the whole bar.
         tone(c, out, t0, 'sine', hz(root), hz(root), bar * 0.85, 0.5, 0.01);
       } else {
-        const bassHits = m.drums === 'four' || m.drums === 'epic' ? [0, 1, 2, 3] : [0, 2];
+        const bassHits = kit === 'four' || kit === 'epic' ? [0, 1, 2, 3] : [0, 2];
         for (const k of bassHits) tone(c, out, t0 + k * beat, 'triangle', hz(root), hz(root), beat * 0.9, 0.35, 0.01);
       }
       // Melody/arpeggio: skip the first bars so the song builds up.
-      if (m.lead && b >= 2) {
+      if (lead && b >= 2) {
         for (let i = 0; i < 8; i++) {
           if (rests[i]) continue;
           const n = chord[pattern[i]! % chord.length]! + 12;
-          tone(c, out, t0 + i * (beat / 2), m.lead, hz(n), hz(n), beat * 0.4, m.lead === 'square' ? 0.07 : 0.16, 0.005);
+          tone(c, out, t0 + i * (beat / 2), lead, hz(n), hz(n), beat * 0.4, lead === 'square' ? 0.07 : 0.16, 0.005);
         }
       }
       // Drums.
-      if (m.drums === 'none') continue;
-      if (m.drums === 'trap') {
+      if (kit === 'none') continue;
+      if (kit === 'trap') {
         // Half-time beat: kicks off the grid, snare on the third beat, fast hi-hats with a roll every other bar.
         for (const kb of [0, 1.5, 2.75]) kick(c, out, t0 + kb * beat, 1.1);
         snare(c, out, t0 + 2 * beat, 1.1);
@@ -385,13 +417,13 @@ function buildSong(m: Mood, seconds: number): Build {
       }
       for (let k = 0; k < 4; k++) {
         const t = t0 + k * beat;
-        if (m.drums === 'four') kick(c, out, t);
-        else if (m.drums === 'epic') kick(c, out, t, k % 2 ? 0.6 : 1.1);
-        else if (k === 0 || k === 2) kick(c, out, t, m.drums === 'soft' ? 0.6 : 1);
-        if (k === 1 || k === 3) snare(c, out, t, m.drums === 'soft' ? 0.5 : 1);
-        if (m.drums !== 'epic') {
+        if (kit === 'four') kick(c, out, t);
+        else if (kit === 'epic') kick(c, out, t, k % 2 ? 0.6 : 1.1);
+        else if (k === 0 || k === 2) kick(c, out, t, kit === 'soft' ? 0.6 : 1);
+        if (k === 1 || k === 3) snare(c, out, t, kit === 'soft' ? 0.5 : 1);
+        if (kit !== 'epic') {
           hat(c, out, t, 0.8);
-          hat(c, out, t + beat / 2, m.drums === 'soft' ? 0.4 : 0.6);
+          hat(c, out, t + beat / 2, kit === 'soft' ? 0.4 : 0.6);
         }
       }
     }
@@ -400,26 +432,71 @@ function buildSong(m: Mood, seconds: number): Build {
 
 /** Render a piece of music in a mood. A different `version` gives a different melody. */
 export const renderSong = (m: Mood, seconds: number, version = 1) =>
-  render(seconds, buildSong(m, seconds), version * 7919 + m.bpm).then((d) => limit(d));
+  render(seconds, buildSong(m, seconds), version * 7919 + m.bpm).then((d) => levelSong(d));
+
+/**
+ * Bring a song to the same average loudness as every other song (so switching styles never jumps in
+ * volume) without ever going over the peak limit.
+ */
+export function levelSong(d: Float32Array, targetRms = 0.16, maxPeak = 0.92) {
+  let sum = 0;
+  let peak = 0;
+  for (let i = 0; i < d.length; i++) {
+    sum += d[i]! * d[i]!;
+    peak = Math.max(peak, Math.abs(d[i]!));
+  }
+  const rms = Math.sqrt(sum / Math.max(1, d.length));
+  if (rms < 1e-5) return d;
+  const g = Math.min(targetRms / rms, maxPeak / peak, 4);
+  for (let i = 0; i < d.length; i++) d[i]! *= g;
+  return d;
+}
 
 // ---------- preview and adding to the project ----------
 
 let previewEl: HTMLAudioElement | null = null;
 let previewUrl = '';
+/** Bumped by every preview request and every stop, so a slow render can't start playing after a newer tap. */
+let previewTicket = 0;
+const previewListeners = new Set<() => void>();
+/** Be told when the preview ends by itself (to reset a play button). */
+export function onPreviewEnd(fn: () => void) {
+  previewListeners.add(fn);
+  return () => void previewListeners.delete(fn);
+}
 
 /** Play rendered samples through the speakers (for "listen before adding"). */
 export function playPreview(samples: Float32Array) {
   stopPreview();
-  previewUrl = URL.createObjectURL(encodeWav(samples, SR));
-  previewEl = new Audio(previewUrl);
-  previewEl.play().catch(() => {});
+  const el = new Audio((previewUrl = URL.createObjectURL(encodeWav(samples, SR))));
+  previewEl = el;
+  const done = () => {
+    if (previewEl === el) stopPreview();
+    previewListeners.forEach((f) => f());
+  };
+  el.onended = done;
+  el.play().catch(done);
 }
 
 export function stopPreview() {
-  previewEl?.pause();
+  previewTicket++;
+  if (previewEl) {
+    previewEl.onended = null;
+    previewEl.pause();
+  }
   previewEl = null;
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   previewUrl = '';
+}
+
+/** Render something and play it, unless the person tapped something else (or stopped) while it rendered. */
+export async function previewAsync(make: () => Promise<Float32Array>) {
+  stopPreview();
+  const ticket = previewTicket;
+  const samples = await make();
+  if (ticket !== previewTicket) return false;
+  playPreview(samples);
+  return true;
 }
 
 /** Save generated audio on the device and put it on the audio track, as one undoable step. */

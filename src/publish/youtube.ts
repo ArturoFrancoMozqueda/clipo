@@ -11,10 +11,10 @@ export const youtubePublisher: Publisher = {
 
   async availability(): Promise<Availability> {
     const d = desktop();
-    if (!d) return { ok: false, reason: 'Publicar directo funciona solo en la app de Clipo para computadora.' };
+    if (!d) return { ok: false, reason: 'Publicar directo está en la app de Clipo para computadora.' };
     const c = await d.youtube.getConfig();
-    if (!c.encryption) return { ok: false, reason: 'Este equipo no permite guardar la sesión de forma cifrada, así que Clipo no conecta cuentas.' };
-    if (!c.clientId && !c.usingBuiltIn) return { ok: false, reason: 'Falta configurar YouTube: pega tu “ID de cliente” de Google en Cuentas.' };
+    if (!c.encryption) return { ok: false, reason: 'Este equipo no puede guardar tus cuentas de forma segura, así que Clipo no las conecta. Usa “Publicar en…” desde Redes.' };
+    if (!c.clientId && !c.usingBuiltIn) return { ok: false, reason: 'Conectar cuentas no está disponible en este equipo. Usa “Publicar en…” desde Redes: copia el texto y abre la página de cada red.' };
     return { ok: true };
   },
 
@@ -24,11 +24,12 @@ export const youtubePublisher: Publisher = {
 
   async connect() {
     const d = desktop();
-    if (!d) throw new PublishError('Conectar cuentas funciona solo en la app de Clipo para computadora.', false);
+    if (!d) throw new PublishError('Conectar cuentas está en la app de Clipo para computadora.', false);
     try {
       return await d.youtube.connect();
     } catch (e) {
-      throw new PublishError(bridgeError(e).message, false);
+      const b = bridgeError(e);
+      throw new PublishError(b.message, false);
     }
   },
 
@@ -44,7 +45,7 @@ export const youtubePublisher: Publisher = {
 
   async upload(input: UploadInput, onProgress, signal) {
     const d = desktop();
-    if (!d) throw new PublishError('Publicar directo funciona solo en la app de Clipo para computadora.', false);
+    if (!d) throw new PublishError('Publicar directo está en la app de Clipo para computadora.', false);
     const issues = checkYouTube(input.network, input.videoInfo, input.post);
     if (issues.length) throw new PublishError(issues.join(' '), false);
     const off = d.youtube.onProgress((p) => p.jobId === input.jobId && p.total > 0 && onProgress((p.sent / p.total) * 100));
@@ -79,8 +80,8 @@ export const youtubePublisher: Publisher = {
     } catch (e) {
       // A retry sends the video again, so the half-used copy is not needed.
       if (fileId) void yt.uploadDiscard?.(fileId).catch(() => {});
-      const { message, retryable } = bridgeError(e);
-      throw new PublishError(message, retryable);
+      const { message, retryable, reconnect } = bridgeError(e);
+      throw new PublishError(message, retryable, reconnect);
     } finally {
       off();
       signal.removeEventListener('abort', abort);
@@ -89,11 +90,11 @@ export const youtubePublisher: Publisher = {
 
   async status(accountId, remoteId) {
     const d = desktop();
-    if (!d) return { state: 'unknown', detail: 'Solo se puede consultar desde la app de computadora.' };
+    if (!d) return { state: 'unknown', detail: 'El estado solo se puede consultar desde la app de Clipo para computadora.' };
     try {
       return await d.youtube.status(accountId, remoteId);
     } catch (e) {
-      return { state: 'unknown', detail: bridgeError(e).message };
+      return { state: 'unknown', detail: 'No se pudo consultar el estado ahora. Inténtalo en un momento.' };
     }
   },
 };

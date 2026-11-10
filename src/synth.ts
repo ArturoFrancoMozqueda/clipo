@@ -27,16 +27,25 @@ export async function render(seconds: number, build: Build, seed = 1): Promise<F
   return buf.getChannelData(0);
 }
 
-const noiseCache = new WeakMap<BaseAudioContext, AudioBuffer>();
+const noiseCache = new WeakMap<BaseAudioContext, { buf: AudioBuffer; n: number }>();
+/** Two seconds of white noise, the same on every render so a sound can be rebuilt exactly. */
 export function noise(ctx: BaseAudioContext) {
-  let b = noiseCache.get(ctx);
-  if (!b) {
-    b = ctx.createBuffer(1, SR * 2, SR);
-    const d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    noiseCache.set(ctx, b);
+  let e = noiseCache.get(ctx);
+  if (!e) {
+    const buf = ctx.createBuffer(1, SR * 2, SR);
+    const d = buf.getChannelData(0);
+    const r = rng(0x5eed);
+    for (let i = 0; i < d.length; i++) d[i] = r() * 2 - 1;
+    e = { buf, n: 0 };
+    noiseCache.set(ctx, e);
   }
-  return b;
+  return e.buf;
+}
+/** Where in the noise loop the next layer starts: different for each layer (stacked layers must not be copies), same on every render. */
+function noiseOffset(ctx: BaseAudioContext) {
+  const e = noiseCache.get(ctx)!;
+  e.n++;
+  return ((e.n * 0.6180339887) % 1) * 1.9;
 }
 
 /** A gain node with an attack/decay envelope starting at t. */
@@ -69,7 +78,7 @@ export function hiss(ctx: BaseAudioContext, dest: AudioNode, t: number, dur: num
   bq.frequency.setValueAtTime(f0, t);
   if (f1 !== f0) bq.frequency.exponentialRampToValueAtTime(f1, t + attack + dur);
   src.connect(bq).connect(env(ctx, t, peak, attack, dur, dest));
-  src.start(t, Math.random());
+  src.start(t, noiseOffset(ctx));
   src.stop(t + attack + dur + 0.05);
 }
 
@@ -143,40 +152,104 @@ export function noiseLayer(
   automate(g.gain, t, gain, false);
   src.connect(bq).connect(g).connect(dest);
   const end = t + Math.max(lastTime(gain), lastTime(filter.freq)) + 0.05;
-  src.start(t, Math.random());
+  src.start(t, noiseOffset(ctx));
   src.stop(end);
+}
+
+/** A filter to route several layers through. `freq` can be a fixed value or a curve starting at `t`. */
+export function filt(ctx: BaseAudioContext, dest: AudioNode, type: BiquadFilterType, freq: number | Pts, q = 1, t = 0): BiquadFilterNode {
+  const f = ctx.createBiquadFilter();
+  f.type = type;
+  f.Q.value = q;
+  if (typeof freq === 'number') f.frequency.value = freq;
+  else automate(f.frequency, t, freq, true);
+  f.connect(dest);
+  return f;
+}
+
+/** A gate: what goes in is only heard during each [start, length] (seconds after t). For stutters and chops. */
+export function gate(ctx: BaseAudioContext, dest: AudioNode, t: number, segs: [number, number][]): GainNode {
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, 0);
+  for (const [s, len] of segs) {
+    // 2 ms edges: a hard on/off would click.
+    g.gain.setValueAtTime(0, t + s);
+    g.gain.linearRampToValueAtTime(1, t + s + 0.002);
+    g.gain.setValueAtTime(1, t + s + Math.max(0.003, len - 0.002));
+    g.gain.linearRampToValueAtTime(0, t + s + Math.max(0.005, len));
+  }
+  g.connect(dest);
+  return g;
+}
+
+export interface OscOpts {
+  voices?: number;
+  spread?: number;
+  lowpass?: Pts;
+  q?: number;
+  /** Any other filter instead of the lowpass. */
+  filter?: { type: BiquadFilterType; freq: Pts; q?: number };
+  /** Pitch wobble: `rate` times a second, `depth` in Hz over time. */
+  vib?: { rate: number; depth: Pts };
 }
 
 /** An oscillator with its own pitch and volume curves; `voices` detuned copies make it wide and rich. */
 export function oscLayer(
   ctx: BaseAudioContext, dest: AudioNode, t: number, type: OscillatorType, freq: Pts, gain: Pts,
-  opts: { voices?: number; spread?: number; lowpass?: Pts; q?: number } = {},
+  opts: OscOpts = {},
 ) {
   const g = ctx.createGain();
   automate(g.gain, t, gain, false);
   let into: AudioNode = g;
-  if (opts.lowpass) {
+  const flt = opts.filter ?? (opts.lowpass ? { type: 'lowpass' as const, freq: opts.lowpass, q: opts.q ?? 0.7 } : null);
+  if (flt) {
     const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.Q.value = opts.q ?? 0.7;
-    automate(lp.frequency, t, opts.lowpass, true);
+    lp.type = flt.type;
+    lp.Q.value = flt.q ?? 0.7;
+    automate(lp.frequency, t, flt.freq, true);
     lp.connect(g);
     into = lp;
   }
   g.connect(dest);
   const n = Math.max(1, opts.voices ?? 1);
   const end = t + Math.max(lastTime(gain), lastTime(freq)) + 0.05;
+  let wobble: GainNode | null = null;
+  if (opts.vib) {
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = opts.vib.rate;
+    wobble = ctx.createGain();
+    automate(wobble.gain, t, opts.vib.depth, false);
+    lfo.connect(wobble);
+    lfo.start(t);
+    lfo.stop(end);
+  }
   for (let i = 0; i < n; i++) {
     const o = ctx.createOscillator();
     o.type = type;
     automate(o.frequency, t, freq, true);
     o.detune.value = n > 1 ? ((i / (n - 1)) * 2 - 1) * (opts.spread ?? 12) : 0;
+    wobble?.connect(o.frequency);
     const vg = ctx.createGain();
     vg.gain.value = 1 / Math.sqrt(n);
     o.connect(vg).connect(into);
     o.start(t);
     o.stop(end);
   }
+}
+
+/** A plucked string (guitar, pizzicato, harp): bright at the attack, then it mellows as it rings. */
+export function pluck(ctx: BaseAudioContext, dest: AudioNode, t: number, f: number, dur: number, peak: number, bright = 1) {
+  oscLayer(ctx, dest, t, 'sawtooth', [[0, f], [dur, f]], [[0, 0], [0.003, peak], [dur * 0.25, peak * 0.4], [dur, 0]], {
+    lowpass: [[0, Math.min(12000, f * 7 * bright)], [dur * 0.4, Math.min(8000, f * 2.2)], [dur, f * 1.2]], q: 1.2,
+  });
+  oscLayer(ctx, dest, t, 'triangle', [[0, f], [dur, f]], [[0, 0], [0.003, peak * 0.5], [dur, 0]]);
+}
+
+/** A hand clap: a few quick bursts of mid noise, then a short tail. */
+export function clap(ctx: BaseAudioContext, dest: AudioNode, t: number, peak = 0.6, f = 1300) {
+  noiseLayer(ctx, dest, t, [[0, 0], [0.001, peak], [0.009, peak * 0.15], [0.011, peak * 0.9], [0.02, peak * 0.15], [0.022, peak * 0.85], [0.032, peak * 0.2], [0.034, peak], [0.07, peak * 0.3], [0.2, 0]], {
+    type: 'bandpass', freq: [[0, f], [0.2, f * 0.85]], q: 1.6,
+  });
 }
 
 /** Partials of a struck bell or glass (inharmonic, the higher ones fade faster). */

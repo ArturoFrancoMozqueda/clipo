@@ -271,6 +271,14 @@ Hoy no hay dónde publicar las versiones, así que no se activa. Pasos cuando lo
 4. Publica con `electron-builder --win --publish always` (con `GH_TOKEN` en el entorno para GitHub).
    Las actualizaciones **tienen que ir firmadas** con el mismo certificado (`verifyUpdateCodeSignature`).
 
+### Publicar en redes desde la app (cuentas y errores)
+- **Por defecto no se pide nada técnico.** Si la copia de Clipo trae su conexión con Google (`google-client.json`) o el App ID de Meta (`meta-client.json`), el usuario solo pulsa "Conectar". Si no la trae, Cuentas no muestra botones muertos: explica que se puede publicar con "Publicar en…" (guarda el video, copia el texto y abre la página de la red), que funciona en celular, navegador y escritorio.
+- **Opciones avanzadas** (cerradas por defecto, en cada tarjeta de Cuentas): para quien instala Clipo por su cuenta y usa su propio proyecto de Google o su propia app de Meta (ID, secreto, configuración).
+- **TikTok, X y LinkedIn** siempre se publican con "Publicar en…": no hay conexión directa.
+- **Errores:** cada error del proceso principal viaja con un prefijo (`R|` reintentar, `F|` no sirve reintentar, `A|` la sesión terminó: hay que volver a conectar). La página muestra "Volver a conectar y reintentar" en ese último caso. Los textos nunca incluyen el mensaje crudo de la API.
+- **Texto recordado:** Clipo recuerda el último texto usado en Publicar y, por red, en Redes (guardado en el dispositivo).
+- Límites por red en `src/platforms.ts` (revisados a mano; verifícalos antes de cada versión: duración de TikTok e Instagram, LinkedIn y límite de hashtags de Instagram cambian seguido).
+
 ## 3c. Builds y publicación automáticos en GitHub (sin instalar nada)
 
 `.github/workflows/build.yml` hace todo en las máquinas de GitHub.

@@ -36,6 +36,14 @@ export interface TemplateText {
 /** Generic decoration drawn in the gallery preview (solid colors and simple shapes only). */
 export type Motif = 'confetti' | 'stripes' | 'waves' | 'grid' | 'bubbles' | 'split' | 'stars' | 'bars';
 
+export type TemplateCategory = 'redes' | 'negocio' | 'personal' | 'viajes';
+export const TEMPLATE_CATEGORIES: { id: TemplateCategory; name: string }[] = [
+  { id: 'redes', name: 'Redes' },
+  { id: 'negocio', name: 'Negocio' },
+  { id: 'personal', name: 'Personal' },
+  { id: 'viajes', name: 'Viajes y comida' },
+];
+
 export interface Template {
   version: 1;
   id: string;
@@ -46,6 +54,8 @@ export interface Template {
   fields: TemplateField[];
   texts: TemplateText[];
   look: { colors: string[]; motif: Motif };
+  /** Group in the gallery; missing for the user's own templates. */
+  category?: TemplateCategory;
   /** Made by the user with "Guardar como plantilla". */
   custom?: boolean;
   createdAt?: number;

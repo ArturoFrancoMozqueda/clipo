@@ -3,12 +3,15 @@ import { CalendarClock, CheckCircle2, ExternalLink, ImagePlus, Link2, RotateCcw,
 import { fmtTime } from '../model';
 import { useStore } from '../store';
 import { canShareFile, saveFile, shareFile } from '../nativeShare';
+import { PLATFORMS, postCaption } from '../platforms';
+import { confirmDialog } from './confirm';
+import { publishWithApp } from '../publish/handoff';
 import { bridgeError, desktop, type MetaConfig, type YouTubeConfig } from '../publish/desktop';
 import { PUBLISH_FLAGS } from '../publish/flags';
 import { NETWORK_ORDER, NETWORKS } from '../publish/networks';
-import { canCancel, canRetry, PublishError } from '../publish/queue';
+import { canCancel, canRetry, needsReconnect, PublishError } from '../publish/queue';
 import { cancelJob, forgetBatch, publisherFor, PUBLISHERS, queuePublish, refreshAccounts, retryJob, usePublish } from '../publish/store';
-import { FB_SCHEDULE_MAX_MS, mergePost } from '../publish/text';
+import { FB_SCHEDULE_MAX_MS, mergePost, parseHashtags } from '../publish/text';
 import type { ConnectedAccount, NetworkId, Privacy, PostText, PublishJob, RemoteStatus, VideoInfo } from '../publish/types';
 import { metaPublisher } from '../publish/meta';
 import { youtubePublisher } from '../publish/youtube';
@@ -46,25 +49,67 @@ export function PublishPanel() {
 function WebPublish() {
   const file = usePublish((s) => s.handoff);
   const canShare = !!file && canShareFile(file);
+  const [text, setText] = useState<PostText>(() => loadLastText());
+  const setAndRemember = (t: PostText) => {
+    setText(t);
+    saveLastText(t);
+  };
+  if (!file) {
+    return (
+      <div className="publish">
+        <div className="pub-callout">
+          <b>Primero guarda tu video.</b>
+          <p className="small">Cuando esté listo, toca “Publicar en redes” para elegir dónde subirlo.</p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="publish">
-      <p className="pub-callout">
-        Publicar directo en YouTube, Facebook e Instagram funciona en la <b>app de Clipo para computadora</b>, porque ahí tus cuentas se conectan de forma segura en tu propio equipo.
-      </p>
-      <Note>Desde aquí puedes usar “Compartir” para mandar el video a la app de cada red, o descargarlo y subirlo tú. En <b>Redes</b>, “Publicar en…” además copia el texto de cada red.</Note>
-      {file && (
-        <div className="row">
-          {canShare && (
-            <button className="btn-primary" onClick={() => void shareFile(file, file.name)}>
-              <Share2 size={18} /> Compartir
-            </button>
-          )}
-          <button className="btn-primary alt" onClick={() => void saveFile(file)}>Descargar</button>
-        </div>
-      )}
-      {!file && <Note>Primero guarda tu video con “Guardar video”.</Note>}
+      <p className="label">Texto de la publicación</p>
+      <PostFields value={text} onChange={setAndRemember} />
+      <p className="label">Elige dónde publicarlo</p>
+      <Note>
+        {canShare
+          ? 'Se abre la lista de apps de tu teléfono con el video, y el texto queda copiado para pegarlo.'
+          : 'Se abre la página de la red, tu video se descarga y el texto queda copiado: solo arrastras el video, pegas y publicas.'}
+      </Note>
+      <div className="pub-nets">
+        {NETWORK_ORDER.map((n) => (
+          <button key={n} className="btn-primary alt" onClick={() => void publishWithApp(n, file, text)}>
+            <Share2 size={16} /> {NETWORKS[n].name}
+          </button>
+        ))}
+      </div>
+      <div className="row">
+        {canShare && (
+          <button className="btn-ghost" onClick={() => void shareFile(file, file.name)}>
+            <Share2 size={18} /> Compartir con otra app
+          </button>
+        )}
+        <button className="btn-ghost" onClick={() => void saveFile(file)}>Descargar el video</button>
+      </div>
     </div>
   );
+}
+
+const LAST_TEXT_KEY = 'clipo.publish.lastText';
+/** The text of the last publication, so the next one starts from it. */
+function loadLastText(): PostText {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAST_TEXT_KEY) ?? 'null');
+    if (v && typeof v === 'object') return { title: String(v.title ?? ''), description: String(v.description ?? ''), hashtags: String(v.hashtags ?? '') };
+  } catch {
+    /* private window or blocked storage */
+  }
+  return { title: '', description: '', hashtags: '' };
+}
+function saveLastText(t: PostText) {
+  try {
+    localStorage.setItem(LAST_TEXT_KEY, JSON.stringify(t));
+  } catch {
+    /* ignore */
+  }
 }
 
 // ---------- new post ----------
@@ -115,7 +160,11 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
   );
 
   const [targets, setTargets] = useState<Set<string>>(new Set());
-  const [common, setCommon] = useState<PostText>({ title: '', description: '', hashtags: '' });
+  const [common, setCommonState] = useState<PostText>(() => loadLastText());
+  const setCommon = (t: PostText) => {
+    setCommonState(t);
+    saveLastText(t);
+  };
   const [own, setOwn] = useState<Partial<Record<NetworkId, PostText>>>({});
   const [privacy, setPrivacy] = useState<Privacy>('public');
   const [kids, setKids] = useState(false);
@@ -154,10 +203,10 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
   if (!file) issues.push('Elige el video que quieres publicar.');
   else if (!info) issues.push('Leyendo el video…');
   if (!chosen.length) issues.push('Marca al menos un destino.');
-  if (when === 'later' && (!scheduledAt || scheduledAt < Date.now() + 60_000)) issues.push('Elige una fecha y hora en el futuro.');
+  if (when === 'later' && (!scheduledAt || scheduledAt < Date.now() + 60_000)) issues.push('Elige una fecha y hora que todavía no hayan pasado.');
   if (native && nativeNets.length && scheduledAt && scheduledAt < Date.now() + 15 * 60_000) issues.push(`Para que ${names(nativeNets)} lo ${verb(nativeNets, 'programe', 'programen')}, elige una hora al menos 15 minutos más adelante.`);
   if (native && networks.includes('facebook') && scheduledAt && scheduledAt > Date.now() + FB_SCHEDULE_MAX_MS) issues.push('Facebook programa como máximo 6 meses más adelante.');
-  if (!native && privacy !== 'public' && networks.includes('instagram_reels')) issues.push('Instagram no tiene publicaciones privadas ni no listadas: elige “Público” o quita Instagram.');
+  if (!native && privacy !== 'public' && networks.includes('instagram_reels')) issues.push('Instagram no tiene publicaciones privadas: elige “Público” o quita Instagram.');
   if (info) for (const n of networks) for (const i of publisherFor(n)?.check(n, info, postFor(n)) ?? []) issues.push(`${NETWORKS[n].name}: ${i}`);
   const uniqueIssues = [...new Set(issues)];
 
@@ -189,7 +238,7 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
       setConfirming(false);
       onQueued();
     } catch (e) {
-      setError(e instanceof PublishError ? e.message : 'No se pudo preparar la publicación. Intenta otra vez.');
+      setError(e instanceof PublishError ? e.message : 'No se pudo preparar la publicación. Revisa que haya espacio en tu equipo e inténtalo otra vez.');
     } finally {
       setSending(false);
     }
@@ -217,17 +266,17 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
         </div>
       ) : (
         <>
-          <Note>Guarda tu video con “Guardar video” y pulsa “Publicar en redes”, o elige uno de tu computadora.</Note>
+          <Note>Guarda tu video y toca “Publicar en redes”, o elige uno de tu computadora.</Note>
           <button className="btn-ghost" onClick={() => pickFile('video/mp4,video/*', setFile)}>Elegir un video</button>
         </>
       )}
 
       <p className="label">2. Dónde publicar</p>
-      {availability && (
-        <p className="warn"><TriangleAlert size={18} /> {availability}</p>
-      )}
       {!accounts.length && (
-        <Note>Todavía no conectaste ninguna cuenta. <button className="link" onClick={onAccounts}>Conectar en Cuentas</button></Note>
+        <Note>
+          {availability ?? 'Todavía no conectaste ninguna cuenta.'}{' '}
+          <button className="link" onClick={onAccounts}>Ir a Cuentas</button>
+        </Note>
       )}
       <div className="pub-targets">
         {accounts.map((a) =>
@@ -248,18 +297,24 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
           }),
         )}
       </div>
-      {PUBLISH_FLAGS.upcomingNetworks && (
-        <Note>
-          {NETWORK_ORDER.filter((n) => NETWORKS[n].state === 'needs-setup')
-            .map((n) => NETWORKS[n].name)
-            .join(', ')
-            .replace(/, ([^,]+)$/, ' y $1')}{' '}
-          se publican con su app. <button className="link" onClick={onAccounts}>Ver cómo</button>
-        </Note>
+      {file && (
+        <>
+          <Note>
+            {accounts.length ? 'Otras formas de publicar: ' : 'Sin conectar nada, también puedes publicar así: '}
+            Clipo guarda el video, copia el texto y abre la página de la red.
+          </Note>
+          <div className="pub-nets">
+            {NETWORK_ORDER.map((n) => (
+              <button key={n} className="btn-ghost" onClick={() => void publishWithApp(n, file, postFor(n))}>
+                <Share2 size={16} /> {NETWORKS[n].name}
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       <p className="label">3. Texto</p>
-      <PostFields value={common} onChange={setCommon} />
+      <PostFields value={common} onChange={setCommon} networks={networks} />
       {networks.map((n) => (
         <details key={n} className="pub-own" open={!!own[n]}>
           <summary
@@ -275,7 +330,7 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
           >
             {own[n] ? `Usar el texto común en ${NETWORKS[n].name}` : `Escribir un texto distinto para ${NETWORKS[n].name}`}
           </summary>
-          {own[n] && <PostFields value={own[n]!} onChange={(v) => setOwn((o) => ({ ...o, [n]: v }))} />}
+          {own[n] && <PostFields value={own[n]!} onChange={(v) => setOwn((o) => ({ ...o, [n]: v }))} networks={[n]} />}
         </details>
       ))}
 
@@ -293,8 +348,7 @@ function NewPost({ onQueued, onAccounts }: { onQueued: () => void; onAccounts: (
         {cover && <button className="btn-ghost" onClick={() => setCover(null)}>Quitar</button>}
       </div>
       <Note>
-        Si no eliges ninguna, cada red usa un cuadro del video. Para portadas propias YouTube pide tener el canal verificado. Instagram siempre usa un cuadro del video
-        (no deja enviar una portada desde la computadora).
+        Si no eliges ninguna, cada red usa un cuadro del video. YouTube pide tener el canal verificado para portadas propias, e Instagram siempre usa un cuadro del video.
       </Note>
 
       <p className="label">5. Cuándo</p>
@@ -409,12 +463,24 @@ function grabFrame(): Promise<Blob | null> {
   return new Promise((res) => c.toBlob(res, 'image/jpeg', 0.9));
 }
 
-function PostFields({ value, onChange }: { value: PostText; onChange: (v: PostText) => void }) {
+function PostFields({ value, onChange, networks = [] }: { value: PostText; onChange: (v: PostText) => void; networks?: NetworkId[] }) {
+  const caption = postCaption(value.description, value.hashtags);
+  const tags = parseHashtags(value.hashtags).length;
+  // The tightest limit among the chosen networks (all of them when none is chosen yet).
+  const limits = (networks.length ? networks : (['x', 'instagram_reels'] as NetworkId[])).map((n) => PLATFORMS[n]);
+  const tight = limits.reduce((a, b) => (b.captionMax < a.captionMax ? b : a));
+  const over = [...caption].length > tight.captionMax;
   return (
     <div className="pub-fields">
-      <input className="text-input" placeholder="Título (YouTube lo pide, máx. 100 letras)" maxLength={100} value={value.title ?? ''} onChange={(e) => onChange({ ...value, title: e.target.value })} />
-      <textarea className="text-input" rows={3} placeholder="Descripción" value={value.description} onChange={(e) => onChange({ ...value, description: e.target.value })} />
-      <input className="text-input" placeholder="Hashtags, por ejemplo: #viaje #playa" value={value.hashtags} onChange={(e) => onChange({ ...value, hashtags: e.target.value })} />
+      <input className="text-input" aria-label="Título" placeholder="Título (YouTube lo pide, hasta 100 letras)" maxLength={100} value={value.title ?? ''} onChange={(e) => onChange({ ...value, title: e.target.value })} />
+      <textarea className="text-input" aria-label="Descripción" rows={3} placeholder="Descripción" value={value.description} onChange={(e) => onChange({ ...value, description: e.target.value })} />
+      <input className="text-input" aria-label="Hashtags" placeholder="Hashtags, por ejemplo: #viaje #playa" value={value.hashtags} onChange={(e) => onChange({ ...value, hashtags: e.target.value })} />
+      <p className={`small ${over ? 'pub-over' : 'muted'}`}>
+        {[...caption].length} de {tight.captionMax} letras{networks.length ? ` (límite de ${tight.name})` : ''} · {tags} {tags === 1 ? 'hashtag' : 'hashtags'}
+        {value.hashtags.trim() && tags > 0 && (
+          <> · <button type="button" className="link" onClick={() => onChange({ ...value, hashtags: parseHashtags(value.hashtags).join(' ') })}>Ordenar hashtags</button></>
+        )}
+      </p>
     </div>
   );
 }
@@ -425,11 +491,11 @@ function statusText(j: PublishJob): string {
   const s = j.status;
   switch (s.kind) {
     case 'scheduled':
-      return `Programado para el ${new Date(j.scheduledAt!).toLocaleString('es')} · Clipo debe estar abierto`;
+      return j.scheduledAt ? `Programado para el ${new Date(j.scheduledAt).toLocaleString('es')} · Clipo debe estar abierto` : 'Programado';
     case 'pending':
       return 'En espera';
     case 'uploading':
-      return `Subiendo… ${Math.floor(s.pct)} %`;
+      return s.pct >= 99 ? 'Terminando… la red está revisando el video' : `Subiendo… ${Math.floor(s.pct)} %`;
     case 'published':
       return 'Publicado';
     case 'error':
@@ -450,7 +516,7 @@ function History() {
     return [...m.values()];
   }, [jobs]);
   if (!loaded) return <Note>Cargando…</Note>;
-  if (!batches.length) return <Note>Aquí verás cada publicación y su estado en cada red.</Note>;
+  if (!batches.length) return <Note>Todavía no has publicado nada. Aquí verás cada publicación y si salió bien.</Note>;
   return (
     <div className="pub-history">
       {batches.map((list) => {
@@ -474,14 +540,44 @@ function History() {
   );
 }
 
+async function copyLink(url: string) {
+  try {
+    await navigator.clipboard.writeText(url);
+    useStore.getState().notify('Enlace copiado.');
+  } catch {
+    useStore.getState().notify('No se pudo copiar el enlace.');
+  }
+}
+
 function JobRow({ job }: { job: PublishJob }) {
+  const [reconnecting, setReconnecting] = useState(false);
+  const [reconnectMsg, setReconnectMsg] = useState('');
+  const reconnect = async () => {
+    const p = publisherFor(job.network);
+    if (!p) return;
+    setReconnecting(true);
+    setReconnectMsg('');
+    try {
+      await p.connect();
+      await refreshAccounts();
+      await retryJob(job.id);
+    } catch (e) {
+      setReconnectMsg(e instanceof Error ? e.message : 'No se pudo conectar. Inténtalo otra vez.');
+    } finally {
+      setReconnecting(false);
+    }
+  };
   const [remote, setRemote] = useState<RemoteStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const s = job.status;
   const check = async () => {
     if (s.kind !== 'published') return;
     setChecking(true);
-    setRemote((await publisherFor(job.network)?.status(job.accountId, s.remoteId)) ?? null);
+    try {
+      setRemote((await publisherFor(job.network)?.status(job.accountId, s.remoteId)) ?? null);
+    } catch {
+      setRemote({ state: 'unknown', detail: 'No se pudo consultar el estado ahora. Inténtalo en un momento.' });
+    }
     setChecking(false);
   };
   return (
@@ -498,19 +594,25 @@ function JobRow({ job }: { job: PublishJob }) {
       <p className="small">{statusText(job)}</p>
       {s.kind === 'published' && s.note && <p className="small muted">{s.note}</p>}
       {remote && <p className="small muted">{remote.detail}</p>}
+      {reconnectMsg && <p className="warn small"><TriangleAlert size={16} /> {reconnectMsg}</p>}
       <div className="row">
         {s.kind === 'published' && (
           <>
             <a className="btn-ghost" href={s.url} target="_blank" rel="noreferrer">
               <ExternalLink size={16} /> Abrir
             </a>
-            <button className="btn-ghost" onClick={() => navigator.clipboard?.writeText(s.url)}>
+            <button className="btn-ghost" onClick={() => void copyLink(s.url)}>
               <Link2 size={16} /> Copiar enlace
             </button>
             <button className="btn-ghost" disabled={checking} onClick={check}>{checking ? 'Consultando…' : 'Consultar estado'}</button>
           </>
         )}
-        {canRetry(job) && (
+        {needsReconnect(job) && (
+          <button className="btn-primary" disabled={reconnecting} onClick={reconnect}>
+            {reconnecting ? 'Conectando…' : 'Volver a conectar y reintentar'}
+          </button>
+        )}
+        {canRetry(job) && !needsReconnect(job) && (
           <button className="btn-ghost" onClick={() => retryJob(job.id)}>
             <RotateCcw size={16} /> {s.kind === 'missed' ? 'Publicar ahora' : 'Reintentar'}
           </button>
@@ -527,6 +629,14 @@ function JobRow({ job }: { job: PublishJob }) {
 
 // ---------- accounts ----------
 
+const NO_ENCRYPTION = 'Este equipo no puede guardar tus cuentas de forma segura, así que Clipo no las conecta. Puedes publicar con “Publicar en…” desde Redes.';
+const HOW_WITHOUT = (
+  <>
+    Sin conectar nada también puedes publicar: en <b>Redes → Guardar una versión para cada formato</b>, toca <b>“Publicar en…”</b> y Clipo guarda el video, copia el texto y abre la
+    página de la red.
+  </>
+);
+
 function Accounts() {
   const all = usePublish((s) => s.accounts);
   const accounts = useMemo(() => all.filter((a) => a.provider === 'google'), [all]);
@@ -537,15 +647,26 @@ function Accounts() {
   const [connecting, setConnecting] = useState(false);
 
   const reload = () =>
-    desktop()?.youtube.getConfig().then((c) => {
-      setCfg(c);
-      setClientId(c.clientId);
-    });
+    desktop()
+      ?.youtube.getConfig()
+      .then((c) => {
+        setCfg(c);
+        setClientId(c.clientId);
+      })
+      .catch(() => setCfg(null));
   useEffect(() => void reload(), []);
+
+  const available = !!cfg && cfg.encryption && !!(cfg.clientId || cfg.usingBuiltIn);
 
   const saveCfg = async () => {
     setMsg(null);
-    if (cfg?.clientId && clientId.trim() !== cfg.clientId && accounts.length && !confirm('Con otro ID de cliente tendrás que volver a conectar tus canales. ¿Continuar?')) return;
+    if (
+      cfg?.clientId &&
+      clientId.trim() !== cfg.clientId &&
+      accounts.length &&
+      !(await confirmDialog({ title: '¿Cambiar la configuración de Google?', message: 'Tendrás que volver a conectar tus canales.', confirmLabel: 'Cambiar' }))
+    )
+      return;
     try {
       await desktop()!.youtube.setConfig({ clientId, clientSecret: secret || undefined });
       setSecret('');
@@ -557,9 +678,9 @@ function Accounts() {
     }
   };
 
-  // Forget the user's own Google project and go back to the client built into this copy of Clipo.
+  // Forget the user's own Google project and go back to the connection built into this copy of Clipo.
   const backToClipoClient = async () => {
-    if (accounts.length && !confirm('Tendrás que volver a conectar tus canales. ¿Continuar?')) return;
+    if (accounts.length && !(await confirmDialog({ title: '¿Volver a la conexión de Clipo?', message: 'Tendrás que volver a conectar tus canales.', confirmLabel: 'Continuar' }))) return;
     setMsg(null);
     try {
       await desktop()!.youtube.setConfig({ clientId: '', clientSecret: '' });
@@ -580,14 +701,14 @@ function Accounts() {
       await refreshAccounts();
       setMsg({ ok: true, text: `Conectado: ${a.name}` });
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : 'No se pudo conectar.' });
+      setMsg({ ok: false, text: e instanceof Error ? e.message : 'No se pudo conectar. Inténtalo otra vez.' });
     } finally {
       setConnecting(false);
     }
   };
 
   const disconnect = async (a: ConnectedAccount) => {
-    if (!confirm(`¿Desconectar “${a.name}”? Clipo borrará su acceso guardado en este equipo.`)) return;
+    if (!(await confirmDialog({ title: `¿Desconectar “${a.name}”?`, message: 'Clipo borrará su acceso guardado en este equipo.', confirmLabel: 'Desconectar', danger: true }))) return;
     await youtubePublisher.disconnect(a.id);
     await refreshAccounts();
   };
@@ -596,9 +717,7 @@ function Accounts() {
     <>
       <section className="pub-card">
         <header><b>YouTube y YouTube Shorts</b></header>
-        {cfg && !cfg.encryption && (
-          <p className="warn"><TriangleAlert size={18} /> Este equipo no permite guardar la sesión cifrada, así que Clipo no conecta cuentas.</p>
-        )}
+        {cfg && !cfg.encryption && <p className="warn"><TriangleAlert size={18} /> {NO_ENCRYPTION}</p>}
         {accounts.map((a) => (
           <div key={a.id} className="pub-account">
             {a.avatar && <img src={a.avatar} alt="" referrerPolicy="no-referrer" />}
@@ -612,77 +731,61 @@ function Accounts() {
             <div className="row"><button className="btn-ghost" onClick={() => youtubePublisher.cancelConnect()}>Cancelar</button></div>
           </div>
         ) : (
-          <button className="btn-primary" disabled={!(cfg?.clientId || cfg?.usingBuiltIn) || !cfg?.encryption} onClick={connect}>
-            {accounts.length ? 'Conectar otro canal' : 'Conectar con Google'}
-          </button>
+          available && (
+            <button className="btn-primary" onClick={connect}>
+              {accounts.length ? 'Conectar otro canal' : 'Conectar con Google'}
+            </button>
+          )
         )}
         {msg && <p className={msg.ok ? 'pub-ok' : 'warn'}>{msg.text}</p>}
-
-        {cfg && !cfg.clientId && !cfg.usingBuiltIn && !accounts.length && (
-          <Note>
-            ¿Sin ganas de configurar Google? En <b>Redes → Guardar una versión para cada formato</b>, “Publicar en YouTube” copia el texto y abre YouTube Studio, donde ya tienes tu sesión.
-          </Note>
-        )}
-        {cfg?.usingBuiltIn && !accounts.length && (
+        {available && !accounts.length && !connecting && (
           <Note>Se abrirá tu navegador para que entres con tu cuenta de Google y elijas el canal. Tu sesión se guarda cifrada en este equipo.</Note>
         )}
-        <details className="pub-own" open={!cfg?.clientId && !cfg?.builtIn}>
-          <summary>{cfg?.builtIn ? 'Usar mi propio proyecto de Google (avanzado)' : 'Configuración de Google (se hace una sola vez)'}</summary>
+        {cfg && cfg.encryption && !available && <Note>{HOW_WITHOUT}</Note>}
+
+        <details className="pub-own">
+          <summary>Opciones avanzadas</summary>
+          <Note>
+            Para quien instala Clipo por su cuenta o quiere usar su propia cuota de YouTube. Si tu Clipo ya conecta con un clic, no necesitas nada de aquí.
+          </Note>
           <ol className="pub-steps small">
             <li>Entra a <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">Google Cloud Console</a> y crea un proyecto.</li>
-            <li>Activa la “YouTube Data API v3”.</li>
-            <li>Configura la pantalla de consentimiento (tipo Externo) y agrega tu correo como usuario de prueba.</li>
+            <li>Activa “YouTube Data API v3”.</li>
+            <li>Configura la pantalla de consentimiento (tipo Externo) y agrega tu correo como usuario autorizado.</li>
             <li>En Credenciales crea un “ID de cliente de OAuth” de tipo <b>App de escritorio</b>.</li>
-            <li>Pega aquí el ID de cliente y el secreto que te muestra Google.</li>
+            <li>Pega aquí el ID de cliente y, si Google te lo da, el secreto.</li>
           </ol>
           <div className="pub-fields">
-            <input className="text-input" placeholder="ID de cliente (termina en .apps.googleusercontent.com)" value={clientId} onChange={(e) => setClientId(e.target.value)} spellCheck={false} />
-            <input className="text-input" type="password" placeholder={cfg?.hasSecret ? 'Secreto del cliente: guardado (escribe para cambiarlo)' : 'Secreto del cliente'} value={secret} onChange={(e) => setSecret(e.target.value)} spellCheck={false} />
+            <input className="text-input" aria-label="ID de cliente de Google" placeholder="ID de cliente (termina en .apps.googleusercontent.com)" value={clientId} onChange={(e) => setClientId(e.target.value)} spellCheck={false} />
+            <input className="text-input" aria-label="Secreto del cliente" type="password" placeholder={cfg?.hasSecret ? 'Secreto: guardado (escribe para cambiarlo)' : 'Secreto (si Google te dio uno)'} value={secret} onChange={(e) => setSecret(e.target.value)} spellCheck={false} />
           </div>
           <div className="row">
             <button className="btn-ghost" onClick={saveCfg}>Guardar</button>
-            {cfg?.builtIn && cfg.clientId && (
-              <button className="btn-ghost" onClick={backToClipoClient}>
-                Volver a la conexión de Clipo
-              </button>
-            )}
+            {cfg?.builtIn && cfg.clientId && <button className="btn-ghost" onClick={backToClipoClient}>Volver a la conexión de Clipo</button>}
           </div>
           <Note>
-            Todo se guarda cifrado en este equipo. Con apps de escritorio Google entrega un “secreto” que no es realmente secreto, pero igual lo pide al conectar.
-{' '}
-            {cfg?.builtIn ? 'Solo hace falta si quieres usar tu propia cuota de YouTube. ' : ''}
-            Tu proyecto puede subir hasta 100 videos por día. Mientras la app de Google esté “en prueba”, Google corta la conexión cada 7 días: publícala (“En producción”) para que no caduque.
+            Todo se guarda cifrado en este equipo. Tu proyecto puede subir hasta 100 videos por día. Si Google pide volver a conectar cada 7 días, publica tu app de Google
+            (“En producción”) para que no caduque.
           </Note>
         </details>
       </section>
 
       <MetaCard />
 
-      {PUBLISH_FLAGS.upcomingNetworks &&
-        NETWORK_ORDER.filter((n) => NETWORKS[n].state === 'needs-setup').map((n) => (
-          <section key={n} className="pub-card pending">
-            <header>
-              <b>{NETWORKS[n].name}</b>
-              <span className="pub-badge">Con su app</span>
-            </header>
-            <p className="small">
-              En <b>Redes → Guardar una versión para cada formato</b>, toca <b>“Publicar en {NETWORKS[n].name}”</b>: Clipo guarda el video, copia el texto y abre {NETWORKS[n].name},
-              donde ya tienes tu sesión. Solo pegas y publicas.
-            </p>
-            <details className="small">
-              <summary>¿Por qué no se publica solo?</summary>
-              <ul>
-                {NETWORKS[n].needs.map((x) => <li key={x}>{x}</li>)}
-              </ul>
-              <a href={NETWORKS[n].docs} target="_blank" rel="noreferrer">Ver la documentación oficial</a>
-            </details>
-          </section>
-        ))}
+      {PUBLISH_FLAGS.upcomingNetworks && (
+        <section className="pub-card">
+          <header><b>TikTok, X y LinkedIn</b></header>
+          <p className="small">
+            Estas redes no dejan que Clipo publique por ti, pero es igual de fácil: toca <b>“Publicar en…”</b> junto a tu video (en <b>Redes</b> o al terminar de guardarlo). Clipo
+            guarda el video, copia el texto y abre la red, donde ya tienes tu sesión. Solo pegas y publicas.
+          </p>
+        </section>
+      )}
     </>
   );
 }
 
-/** "Facebook e Instagram": the owner's own Meta app, sign-in in the browser, Pages and Instagram accounts. */
+/** "Facebook e Instagram": sign-in in the browser, Pages and Instagram accounts. */
 function MetaCard() {
   const all = usePublish((s) => s.accounts);
   const accounts = useMemo(() => all.filter((a) => a.provider === 'meta'), [all]);
@@ -695,29 +798,38 @@ function MetaCard() {
   const [connecting, setConnecting] = useState(false);
 
   const reload = () =>
-    bridge?.getConfig().then((c) => {
-      setCfg(c);
-      setAppId(c.appId);
-      setConfigId(c.configId);
-    });
+    bridge
+      ?.getConfig()
+      .then((c) => {
+        setCfg(c);
+        setAppId(c.appId);
+        setConfigId(c.configId);
+      })
+      .catch(() => setCfg(null));
   useEffect(() => void reload(), []);
 
   if (!bridge) {
     return (
       <section className="pub-card">
         <header><b>Facebook e Instagram</b></header>
-        <Note>Actualiza la app de Clipo para publicar en Facebook e Instagram.</Note>
+        <Note>Actualiza Clipo para publicar directo en Facebook e Instagram. Mientras tanto, usa “Publicar en…” desde Redes.</Note>
       </section>
     );
   }
 
   const configured = !!cfg && (!!cfg.appId || cfg.usingBuiltIn) && cfg.hasSecret;
+  const available = configured && !!cfg?.encryption;
 
   const saveCfg = async () => {
     setMsg(null);
     const nextId = appId.trim() || cfg?.builtInAppId || '';
     const prevId = cfg?.appId || cfg?.builtInAppId || '';
-    if (accounts.length && nextId !== prevId && !confirm('Con otra app de Meta tendrás que volver a conectar tus páginas y cuentas de Instagram. ¿Continuar?')) return;
+    if (
+      accounts.length &&
+      nextId !== prevId &&
+      !(await confirmDialog({ title: '¿Cambiar la configuración de Meta?', message: 'Tendrás que volver a conectar tus páginas y cuentas de Instagram.', confirmLabel: 'Cambiar' }))
+    )
+      return;
     try {
       await bridge.setConfig({ appId, appSecret: secret || undefined, configId });
       setSecret('');
@@ -744,7 +856,7 @@ function MetaCard() {
   };
 
   const disconnect = async (a: ConnectedAccount) => {
-    if (!confirm(`¿Desconectar “${a.name}”? Clipo borrará su acceso guardado en este equipo.`)) return;
+    if (!(await confirmDialog({ title: `¿Desconectar “${a.name}”?`, message: 'Clipo borrará su acceso guardado en este equipo.', confirmLabel: 'Desconectar', danger: true }))) return;
     await metaPublisher.disconnect(a.id);
     await refreshAccounts();
   };
@@ -752,9 +864,7 @@ function MetaCard() {
   return (
     <section className="pub-card">
       <header><b>Facebook e Instagram</b></header>
-      {cfg && !cfg.encryption && (
-        <p className="warn"><TriangleAlert size={18} /> Este equipo no permite guardar la sesión cifrada, así que Clipo no conecta cuentas.</p>
-      )}
+      {cfg && !cfg.encryption && <p className="warn"><TriangleAlert size={18} /> {NO_ENCRYPTION}</p>}
       {accounts.map((a) => (
         <div key={a.id} className="pub-account">
           {a.avatar && <img src={a.avatar} alt="" referrerPolicy="no-referrer" />}
@@ -771,68 +881,48 @@ function MetaCard() {
           <div className="row"><button className="btn-ghost" onClick={() => metaPublisher.cancelConnect()}>Cancelar</button></div>
         </div>
       ) : (
-        <button className="btn-primary" disabled={!configured || !cfg?.encryption} onClick={connect}>
-          {accounts.length ? 'Conectar de nuevo (agregar páginas)' : 'Conectar con Facebook'}
-        </button>
+        available && (
+          <button className="btn-primary" onClick={connect}>
+            {accounts.length ? 'Conectar de nuevo (agregar páginas)' : 'Conectar con Facebook'}
+          </button>
+        )
       )}
       {msg && <p className={msg.ok ? 'pub-ok' : 'warn'}>{msg.text}</p>}
-      <Note>
-        Se publica en <b>páginas</b> de Facebook (no en perfiles personales) y en cuentas de Instagram <b>profesionales</b> (Empresa o Creador) vinculadas a una de tus
-        páginas. Instagram no deja programar por API: si programas un Reel, Clipo debe estar abierto a esa hora.
-      </Note>
+      {available && (
+        <Note>
+          Se publica en <b>páginas</b> de Facebook (no en perfiles personales) y en cuentas de Instagram <b>profesionales</b> (Empresa o Creador) vinculadas a una de tus páginas.
+          Instagram no deja programar desde otras apps: si programas un Reel, Clipo debe estar abierto a esa hora.
+        </Note>
+      )}
+      {cfg && cfg.encryption && !available && <Note>{HOW_WITHOUT}</Note>}
 
-      <details className="pub-own" open={!configured}>
-        <summary>Configuración de Meta (se hace una sola vez)</summary>
+      <details className="pub-own">
+        <summary>Opciones avanzadas</summary>
+        <Note>Para quien instala Clipo por su cuenta y quiere usar su propia app de Meta. Si tu Clipo ya conecta con un clic, no necesitas nada de aquí.</Note>
         <ol className="pub-steps small">
           <li>
-            Entra a <a href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer">developers.facebook.com</a> → <b>Crear app</b>. Ponle de nombre “Clipo”.
+            Entra a <a href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer">developers.facebook.com</a> → <b>Crear app</b>.
           </li>
           <li>
-            En <b>Casos de uso</b> elige <b>“Administrar todo en tu página”</b> (<i>Manage everything on your Page</i>) y <b>“Administrar mensajes y contenido en
-            Instagram”</b> (<i>Manage messaging &amp; content on Instagram</i>), con inicio de sesión con Facebook. Agrega los permisos pages_show_list,
-            pages_read_engagement, pages_manage_posts, instagram_basic e instagram_content_publish (y business_management si tus páginas están en un portfolio comercial).
+            En <b>Casos de uso</b> elige <b>“Administrar todo en tu página”</b> y <b>“Administrar mensajes y contenido en Instagram”</b>, con inicio de sesión con Facebook.
+            Agrega los permisos pages_show_list, pages_read_engagement, pages_manage_posts, instagram_basic e instagram_content_publish (y business_management si tus páginas
+            están en un portfolio comercial).
           </li>
-          <li>Deja la app en <b>modo de desarrollo</b>: como tú eres su administrador, puedes usar todos los permisos sin la revisión de Meta.</li>
-          <li>
-            En <b>Configuración de la app → Básica</b> copia el <b>identificador de la app</b> y la <b>clave secreta</b> (botón “Mostrar”) y pégalos aquí.
-          </li>
-          <li>
-            Si tu app usa “Inicio de sesión con Facebook para empresas”, crea una <b>configuración</b> con token de acceso de usuario y esos permisos, y pega su ID (opcional).
-          </li>
+          <li>Deja la app en <b>modo de desarrollo</b>: como eres su administrador, puedes usar los permisos sin la revisión de Meta.</li>
+          <li>En <b>Configuración de la app → Básica</b> copia el <b>identificador de la app</b> y la <b>clave secreta</b> y pégalos aquí.</li>
+          <li>Si usas “Inicio de sesión con Facebook para empresas”, crea una configuración con esos permisos y pega su ID (opcional).</li>
         </ol>
         <div className="pub-fields">
-          <input
-            className="text-input"
-            inputMode="numeric"
-            placeholder={cfg?.builtInAppId ? `Identificador de la app (App ID): integrado, ${cfg.builtInAppId}` : 'Identificador de la app (App ID), solo números'}
-            value={appId}
-            onChange={(e) => setAppId(e.target.value)}
-            spellCheck={false}
-          />
-          <input
-            className="text-input"
-            type="password"
-            placeholder={cfg?.hasSecret ? 'Clave secreta (App Secret): guardada (escribe para cambiarla)' : 'Clave secreta de la app (App Secret)'}
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            spellCheck={false}
-          />
-          <input
-            className="text-input"
-            inputMode="numeric"
-            placeholder="ID de configuración (opcional, inicio de sesión para empresas)"
-            value={configId}
-            onChange={(e) => setConfigId(e.target.value)}
-            spellCheck={false}
-          />
+          <input className="text-input" aria-label="Identificador de la app" inputMode="numeric" placeholder={cfg?.builtInAppId ? 'Identificador de la app: el de Clipo (déjalo vacío para usarlo)' : 'Identificador de la app (solo números)'} value={appId} onChange={(e) => setAppId(e.target.value)} spellCheck={false} />
+          <input className="text-input" aria-label="Clave secreta de la app" type="password" placeholder={cfg?.hasSecret ? 'Clave secreta: guardada (escribe para cambiarla)' : 'Clave secreta de la app'} value={secret} onChange={(e) => setSecret(e.target.value)} spellCheck={false} />
+          <input className="text-input" aria-label="ID de configuración" inputMode="numeric" placeholder="ID de configuración (opcional)" value={configId} onChange={(e) => setConfigId(e.target.value)} spellCheck={false} />
         </div>
         <div className="row">
           <button className="btn-ghost" onClick={saveCfg}>Guardar</button>
         </div>
         <Note>
-          La clave secreta queda cifrada solo en esta computadora. No viene dentro de Clipo porque con ella cualquiera podría actuar como tu app. Si al conectar Facebook dice
-          que la URL está bloqueada, agrega <code>{cfg?.redirectUri ?? 'http://localhost:47615/'}</code> en <b>Inicio de sesión con Facebook → Configuración → URI de
-          redireccionamiento de OAuth válidos</b>.{' '}
+          La clave secreta queda cifrada solo en esta computadora. Si Facebook dice que la dirección está bloqueada, agrega <code>{cfg?.redirectUri ?? 'http://localhost:47615/'}</code> en{' '}
+          <b>Inicio de sesión con Facebook → Configuración → URI de redireccionamiento de OAuth válidos</b>.{' '}
           <a href="https://developers.facebook.com/docs/instagram-platform/content-publishing" target="_blank" rel="noreferrer">Documentación de Meta</a>
         </Note>
       </details>

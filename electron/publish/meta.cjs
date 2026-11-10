@@ -16,7 +16,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createState, startLoopback } = require('./oauth.cjs');
 const { backoffMs } = require('./resumable.cjs');
-const { fail } = require('./errors.cjs');
+const { fail, reconnect, isFail, isRetry, fromExplained } = require('./errors.cjs');
 const { bad, toBuffer, fileSource, tempFiles } = require('./files.cjs');
 const { explainGraphError } = require('./meta-errors.cjs');
 const { builtInMetaApp, APP_ID_RE, APP_SECRET_RE, CONFIG_ID_RE } = require('./meta-client.cjs');
@@ -60,8 +60,6 @@ const isId = (v) => typeof v === 'string' && ID_RE.test(v);
 const isNumericId = (v) => typeof v === 'string' && /^\d{1,32}$/.test(v);
 const chars = (s) => Array.from(s).length;
 const hmac = (key, text) => crypto.createHmac('sha256', key).update(text).digest('hex');
-const isRetry = (e) => typeof e?.message === 'string' && e.message.startsWith('R|');
-const isFail = (e) => typeof e?.message === 'string' && /^[RF]\|/.test(e.message);
 /** An https image URL from Meta's CDN for the avatar, or undefined. */
 const imageUrl = (u) => (typeof u === 'string' && u.length < 2048 && /^https:\/\//.test(u) ? u : undefined);
 
@@ -155,8 +153,7 @@ function register({
   }
 
   function graphFail(err, status, net) {
-    const { message, retryable } = explainGraphError(err, status, net);
-    const e = fail(message, retryable);
+    const e = fromExplained(explainGraphError(err, status, net));
     e.graph = { code: Number(err?.code) || 0, subcode: Number(err?.error_subcode) || 0, status };
     return e;
   }
@@ -198,15 +195,15 @@ function register({
     try {
       res = await fetch(u);
     } catch {
-      throw fail('No hay conexión con Facebook. Revisa tu internet.', false);
+      throw fail('No hay conexión con Facebook. Revisa tu internet y vuelve a intentarlo.', false);
     }
     const json = await res.json().catch(() => ({}));
     if (res.ok && json.access_token) return json;
     const msg = String(json?.error?.message || '');
     if (/client secret|client_secret/i.test(msg))
-      throw fail('Meta rechazó la clave secreta de la app. Cópiala otra vez desde developers.facebook.com (Configuración de la app → Básica → Clave secreta) y pégala en Cuentas.', false);
+      throw fail('Facebook no aceptó la configuración de la app. Revisa la clave secreta en Cuentas → Opciones avanzadas.', false);
     if (/redirect_uri/i.test(msg))
-      throw fail('Meta no aceptó la dirección de regreso. En tu app de Meta, Inicio de sesión con Facebook → Configuración, agrega http://localhost:47615/ en “URI de redireccionamiento de OAuth válidos”.', false);
+      throw fail('Facebook no aceptó la dirección de regreso. Revisa Cuentas → Opciones avanzadas.', false);
     if (/verification code|authorization code|code has (expired|been used)/i.test(msg)) throw fail('El inicio de sesión venció. Vuelve a pulsar “Conectar con Facebook”.', false);
     throw graphFail(json?.error, res.status, 'Facebook');
   }
@@ -237,8 +234,8 @@ function register({
     const data = load();
     const appId = appIdOf(data);
     const secret = secretOf(data);
-    if (!appId) throw fail('Primero pega el identificador de tu app de Meta (App ID) en Cuentas.', false);
-    if (!secret) throw fail('Falta la clave secreta de tu app de Meta (App Secret). Pégala en Cuentas → Facebook e Instagram.', false);
+    if (!appId) throw fail('Conectar con Facebook no está disponible en esta copia de Clipo. Puedes publicar con la página de cada red.', false);
+    if (!secret) throw fail('Falta terminar la configuración de Facebook e Instagram (Cuentas → Opciones avanzadas).', false);
     connecting?.cancel();
     const state = createState();
     let loop;
@@ -269,7 +266,7 @@ function register({
       const win = BrowserWindow?.fromWebContents(sender);
       if (win) (win.isMinimized() && win.restore(), win.focus());
       if (got.error) {
-        throw fail(got.error === 'access_denied' ? 'No diste permiso en Facebook, así que no se conectó nada.' : `Facebook no permitió conectar (${got.error}).`, false);
+        throw fail(got.error === 'access_denied' ? 'No diste permiso en Facebook, así que no se conectó nada.' : 'Facebook no permitió conectar la cuenta. Inténtalo otra vez.', false);
       }
       const short = await exchange({ client_id: appId, client_secret: secret, redirect_uri: loop.redirectUri, code: got.code });
       // 60-day user token; Page tokens read with it have no expiry.
@@ -286,7 +283,7 @@ function register({
       const pages = await listPages(userToken);
       if (!pages.length) {
         throw fail(
-          'Facebook no devolvió ninguna página. Al conectar, en “Editar acceso” elige tus páginas (y su cuenta de Instagram). Recuerda: los perfiles personales no se pueden usar, solo páginas.',
+          'Facebook no devolvió ninguna página. Al conectar, elige tus páginas (y su cuenta de Instagram). Los perfiles personales no se pueden usar, solo páginas.',
           false,
         );
       }
@@ -429,7 +426,7 @@ function register({
         form.set('source', new Blob([thumbnail.bytes], { type: thumbnail.mime }), thumbnail.mime === 'image/png' ? 'cover.png' : 'cover.jpg');
         await graph('POST', `${GRAPH}/${videoId}/thumbnails`, { token, params: { is_preferred: 'true' }, form });
       } catch (e) {
-        notes.push(`El video se subió, pero Facebook no aceptó la portada${isFail(e) ? ` (${e.message.slice(2)})` : ''}.`);
+        notes.push('El video se subió, pero Facebook no aceptó la portada. Puedes cambiarla en Facebook.');
       }
     }
     let url = `https://www.facebook.com/${acc.pageId}/videos/${videoId}/`;
@@ -506,8 +503,7 @@ function register({
     const json = await res.json().catch(() => ({}));
     if (res.ok && json.success !== false) return;
     const dbg = json.debug_info || {};
-    const msg = typeof dbg.message === 'string' ? `: ${dbg.message.slice(0, 200)}` : '.';
-    throw fail(`Instagram no recibió el video${msg} Pulsa “Reintentar”.`, dbg.retriable !== false && (res.status >= 500 || res.status === 429 || dbg.retriable === true));
+    throw fail('Instagram no recibió el video. Pulsa “Reintentar”.', dbg.retriable !== false && (res.status >= 500 || res.status === 429 || dbg.retriable === true));
   }
 
   /** Wait until Instagram has processed the video. Returns 'finished' or 'published'. */
@@ -528,7 +524,7 @@ function register({
         if (r.status_code === 'EXPIRED') throw fail('La subida a Instagram venció (pasaron 24 horas sin publicarse). Pulsa “Reintentar”.');
         const sub = /\b(2207\d{3})\b/.exec(String(r.status || ''))?.[1];
         const { message, retryable } = sub ? explainGraphError({ code: 100, error_subcode: Number(sub) }, 400, 'Instagram') : { message: '', retryable: false };
-        throw fail(message || `Instagram no pudo procesar el video${r.status ? ` (${String(r.status).slice(0, 200)})` : ''}. Revisa que sea MP4, de 3 s a 15 min.`, retryable);
+        throw fail(message || 'Instagram no pudo procesar el video. Revisa que sea MP4 y dure de 3 segundos a 15 minutos.', retryable);
       }
       if (Date.now() - started > pollLimitMs) {
         throw fail('Instagram sigue procesando el video. Pulsa “Reintentar” en unos minutos: Clipo no lo vuelve a subir, solo lo publica cuando esté listo.');
@@ -546,7 +542,7 @@ function register({
       const d = Array.isArray(q.data) ? q.data[0] : undefined;
       const max = Number(d?.config?.quota_total);
       if (max > 0 && Number(d?.quota_usage) >= max) {
-        throw fail(`Esta cuenta llegó al límite de ${max} publicaciones por API de Instagram en 24 horas. Pulsa “Reintentar” más tarde o publícalo desde la app de Instagram.`);
+        throw fail(`Esta cuenta llegó al límite de ${max} publicaciones de Instagram por día. Pulsa “Reintentar” mañana o publícalo desde la app de Instagram.`);
       }
     } catch (e) {
       if (signal.aborted || /límite de \d+ publicaciones/.test(e.message)) throw e;
@@ -614,7 +610,7 @@ function register({
     const text = buildText(network, req.text);
     let publishAt;
     if (req.publishAt !== undefined) {
-      if (ig) throw fail('Instagram no permite programar por API: Clipo lo sube a la hora elegida (con Clipo abierto).', false);
+      if (ig) throw fail('Instagram no deja programar desde otras apps: Clipo lo sube a la hora elegida, con Clipo abierto.', false);
       const t = req.publishAt;
       if (!Number.isSafeInteger(t) || t < Date.now() + SCHEDULE_MIN_MS - 60_000 || t > Date.now() + SCHEDULE_MAX_MS) {
         throw fail('Facebook programa entre 10 minutos y 6 meses más adelante. Elige otra hora.', false);
@@ -632,7 +628,7 @@ function register({
     if (ig && f.total > IG_MAX_BYTES) throw fail('Instagram acepta Reels de hasta 300 MB. Exporta el video más corto o en menor calidad.', false);
     if (ig && !IG_MIMES.has(f.mime)) throw fail('Instagram solo acepta videos MP4 o MOV.', false);
     const acc = load().accounts.find((a) => a.id === accountId);
-    if (!acc || !acc.networks.includes(network)) throw fail('Esa cuenta ya no está conectada. Conéctala de nuevo en Cuentas.', false);
+    if (!acc || !acc.networks.includes(network)) throw reconnect('Esa cuenta ya no está conectada. Conéctala otra vez y pulsa “Reintentar”.');
     if (running.has(jobId)) throw fail('Ese video ya se está subiendo.', false);
 
     const ac = new AbortController();
@@ -672,7 +668,7 @@ function register({
   async function status(accountId, remoteId) {
     if (!isId(accountId) || !isId(remoteId)) throw bad('ids');
     const acc = load().accounts.find((a) => a.id === accountId);
-    if (!acc) throw fail('Esa cuenta ya no está conectada. Conéctala de nuevo en Cuentas.', false);
+    if (!acc) throw reconnect('Esa cuenta ya no está conectada. Conéctala otra vez y pulsa “Reintentar”.');
     const token = dec(acc.token);
     if (acc.kind === 'instagram') {
       try {

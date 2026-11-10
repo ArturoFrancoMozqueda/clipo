@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { stub } from './helpers/hooks.ts';
 import { sampleProject } from './fixtures/project.ts';
+import { totalDuration } from '../src/model.ts';
 import type { SelectionKind } from '../src/types.ts';
 
 // The preview engine needs a browser; editing only asks it to pause.
@@ -111,4 +112,33 @@ test('moveClipTo reorders main clips in one undo step and keeps the playhead on 
   st().undo();
   assert.deepEqual(st().project!.clips.map((c) => c.id), ['c1', 'c2']);
   assert.equal(moveClipTo('c1', 5), false);
+});
+
+test('deleting a main clip moves what sat on later clips and removes its own captions', () => {
+  st().open(sampleProject(), {});
+  st().commit((p) => {
+    p.texts.push({ id: 'cap1', text: 'uno', start: 1, duration: 1, x: 0.5, y: 0.5, size: 0.1, styleId: 'clasico', caption: true });
+    p.texts.push({ id: 'cap2', text: 'dos', start: 10.5, duration: 1, x: 0.5, y: 0.5, size: 0.1, styleId: 'clasico', caption: true });
+    p.stickers!.push({ id: 's2', start: 11, duration: 0.5, x: 0.5, y: 0.5, size: 0.2, rotation: 0, emoji: '1' });
+  });
+  st().select({ kind: 'clip', id: 'c1' });
+  deleteSelected();
+  const p = st().project!;
+  assert.equal(p.clips.length, 1);
+  assert.equal(p.texts.find((t) => t.id === 'cap1'), undefined);
+  assert.equal(p.texts.find((t) => t.id === 'cap2')!.start, 0.5);
+  assert.equal(p.stickers!.find((s) => s.id === 's2')!.start, 1);
+  st().undo();
+  assert.equal(st().project!.texts.find((t) => t.id === 'cap2')!.start, 10.5);
+});
+
+test('the playhead never stays past the end after an edit shortens the video', () => {
+  st().open(sampleProject(), {});
+  st().setTime(19.5);
+  st().commit((p) => { p.audios = []; p.texts = []; p.stickers = []; p.overlays = []; });
+  const end = totalDuration(st().project!);
+  assert.equal(end, 12);
+  assert.equal(st().time, end);
+  st().undo();
+  assert.equal(st().time, end); // undo does not move it back out
 });

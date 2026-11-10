@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { AudioItem, Clip, OverlayItem, PanelId, Project, Selection, SelectionKind, StickerItem, TextItem } from './types';
-import { clamp } from './model';
+import { clamp, totalDuration } from './model';
 import { produce } from './draft';
 import { normalizeProject } from './normalize';
 
@@ -133,6 +133,9 @@ function mutate(p: Project, fn: (p: Project) => void) {
   });
 }
 
+/** The playhead kept inside the project: an edit that shortens the video must not leave it past the end. */
+const timeIn = (p: Project, t: number) => Math.min(t, totalDuration(p));
+
 const pushPast = (past: Project[], p: Project) => (past[past.length - 1] === p ? past : [...past.slice(-HISTORY_LIMIT + 1), p]);
 
 let toastId = 0;
@@ -174,7 +177,7 @@ export const useStore = create<State>()((set, get) => ({
     const { project, past } = get();
     if (!project) return;
     const next = mutate(project, fn);
-    set({ project: next, past: pushPast(past, project), future: [], selection: selectionExists(next, get().selection) });
+    set({ project: next, past: pushPast(past, project), future: [], selection: selectionExists(next, get().selection), time: timeIn(next, get().time) });
   },
   live: (fn) => {
     const { project } = get();
@@ -193,13 +196,13 @@ export const useStore = create<State>()((set, get) => ({
     while (i >= 0 && past[i] === project) i--;
     if (i < 0) return past.length ? set({ past: [] }) : undefined;
     const prev = past[i]!;
-    set({ project: prev, past: past.slice(0, i), future: [project, ...future], selection: selectionExists(prev, get().selection) });
+    set({ project: prev, past: past.slice(0, i), future: [project, ...future], selection: selectionExists(prev, get().selection), time: timeIn(prev, get().time) });
   },
   redo: () => {
     const { project, past, future } = get();
     const next = future[0];
     if (!project || !next) return;
-    set({ project: next, past: pushPast(past, project), future: future.slice(1), selection: selectionExists(next, get().selection) });
+    set({ project: next, past: pushPast(past, project), future: future.slice(1), selection: selectionExists(next, get().selection), time: timeIn(next, get().time) });
   },
   setTime: (t) => set({ time: t }),
   setPlaying: (b) => set({ playing: b }),

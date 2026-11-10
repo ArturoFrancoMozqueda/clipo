@@ -1,0 +1,24 @@
+/* Sound and music pickers: chips with a trending badge, favorite stars, mood colors for the newer styles. */
+.sfx-views { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 4px; scrollbar-width: thin; }
+.sfx-views .chip { flex: 0 0 auto; }
+.chip.chip-trend { color: #ff9ec7; border-color: rgba(255, 110, 170, .5); }
+.chip.chip-trend.active { color: #fff; background: linear-gradient(120deg, #ff5fa2, #ff8a3d); border-color: transparent; }
+.trend-tag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 5px; font-size: 9.5px; font-weight: 800; letter-spacing: .03em; line-height: 15px; vertical-align: 2px; color: #fff; background: linear-gradient(120deg, #ff5fa2, #ff8a3d); }
+.sound-row .fav-btn { color: var(--muted); }
+.sound-row .fav-btn.on { color: #f5b942; }
+.sound-row .icon-btn.playing { color: var(--accent); }
+.sound-empty { padding: 14px 4px; }
+.sound-more { margin: 4px auto 0; display: block; }
+.music-trend-title { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; }
+.mood .trend-tag { position: absolute; top: 10px; right: 10px; margin: 0; }
+.mood-phonk { background: linear-gradient(135deg, #7f1d1d, #0a0a0f); }
+.mood-lofihop { background: linear-gradient(135deg, #8b6f9e, #3b2f4a); }
+.mood-dembow { background: linear-gradient(135deg, #f97316, #be123c); }
+.mood-afrobeats { background: linear-gradient(135deg, #eab308, #15803d); }
+.mood-amapiano { background: linear-gradient(135deg, #06b6d4, #7c3aed); }
+.mood-house { background: linear-gradient(135deg, #3b82f6, #1e1b4b); }
+.mood-drill { background: linear-gradient(135deg, #475569, #020617); }
+.mood-synthwave { background: linear-gradient(135deg, #ec4899, #4c1d95 60%, #0ea5e9); }
+.mood-corrido { background: linear-gradient(135deg, #b45309, #422006); }
+.mood-acustico { background: linear-gradient(135deg, #65a30d, #365314); }
+.mood .mood-version { top: 34px; }

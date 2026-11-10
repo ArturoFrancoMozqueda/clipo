@@ -1,7 +1,7 @@
 import type { Asset, Clip, Project, TextItem } from '../types';
 import type { AspectId } from '../types';
 import { canvasSize, clamp, clipDur, layout } from '../model';
-import { getTextStyle } from '../textStyles';
+import { getTextStyle, styleCase } from '../textStyles';
 import { newProject } from '../ops';
 import { uid } from '../store';
 import type { Template, TemplateSlot } from './types';
@@ -19,7 +19,7 @@ export function fitSize(text: string, styleId: string, size: number, aspect: Asp
   const st = getTextStyle(styleId);
   const fs = size * Math.min(W, H);
   measurer.font = `${st.italic ? 'italic ' : ''}${st.weight} ${fs}px ${st.font}`;
-  const raw = st.upper ? text.toUpperCase() : text;
+  const raw = styleCase(st, text);
   // Same padding as drawText (0.45 em per side) plus a small safety margin.
   const need = Math.max(...raw.split('\n').map((l) => measurer!.measureText(l).width)) + fs * 0.9;
   const room = W * 0.94;

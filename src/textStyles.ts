@@ -19,7 +19,13 @@ export interface TextStyle {
   shadow?: string;
   shadowBlur?: number;
   upper?: boolean;
+  /** All lowercase (the quiet "aesthetic" look). Ignored when `upper` is set. */
+  lower?: boolean;
   italic?: boolean;
+  /** Left-to-right colors of the box behind the text (instead of `bg`, which stays as the fallback). */
+  bgGradient?: string[];
+  /** Corner radius of the box as a fraction of the font size; 0.25 when missing, 0.8 or more looks like a pill. */
+  bgRound?: number;
   /** Copies of the letters drawn behind, offset by (dx, dy) font sizes: 3D shadows, glitch edges. */
   echo?: [color: string, dx: number, dy: number][];
   /** Top-to-bottom colors filling the letters (instead of `fill`). */
@@ -48,9 +54,32 @@ export const TEXT_STYLES: [TextStyle, ...TextStyle[]] = [
   { id: 'degradado', name: 'Atardecer', font: SANS, weight: 900, fill: '#ff5e7e', gradient: ['#ffd23f', '#ff5e7e', '#a34bff'], stroke: '#1a0b2e', strokeW: 0.1, trend: true },
   { id: 'cromo', name: 'Cromo Y2K', font: SANS, weight: 900, fill: '#dfe6f2', gradient: ['#ffffff', '#c9d2e3', '#6b7891', '#e8eef8'], stroke: '#1d2333', strokeW: 0.08, shadow: 'rgba(120,180,255,0.6)', shadowBlur: 0.3, trend: true },
   { id: 'contorno', name: 'Contorno', font: SANS, weight: 900, fill: 'rgba(0,0,0,0)', stroke: '#ffffff', strokeW: 0.05, upper: true, trend: true },
+  // Second batch: what creators reach for most (memes, offers, calls to action, quiet lowercase…).
+  { id: 'meme', name: 'Meme', font: SANS, weight: 900, fill: '#ffffff', stroke: '#000000', strokeW: 0.2, upper: true, trend: true },
+  { id: 'popRosa', name: 'Sombra pop', font: SANS, weight: 900, fill: '#ffffff', stroke: '#16101f', strokeW: 0.08, echo: [['#ff2d95', 0.07, 0.07]], trend: true },
+  { id: 'minimal', name: 'minimal', font: SANS, weight: 500, fill: '#ffffff', shadow: 'rgba(0,0,0,0.55)', shadowBlur: 0.18, lower: true, trend: true },
+  { id: 'cta', name: 'Botón', font: SANS, weight: 800, fill: '#ffffff', bg: '#7c5cff', bgGradient: ['#8b5cf6', '#3b82f6'], bgRound: 0.9, trend: true },
+  { id: 'ubicacion', name: 'Ubicación', font: SANS, weight: 700, fill: '#ffffff', bg: 'rgba(18,18,24,0.62)', bgRound: 0.9 },
+  { id: 'nota', name: 'Nota', font: SANS, weight: 700, fill: '#2b2412', bg: '#ffe873', bgRound: 0.08 },
+  { id: 'precio', name: 'Precio', font: SANS, weight: 900, fill: '#111111', bg: '#ffd60a', bgRound: 0.12, upper: true },
+  { id: 'noticia', name: 'Noticia', font: SANS, weight: 800, fill: '#ffffff', bg: '#0b3d91', bgRound: 0.06, upper: true },
+  { id: 'pastel', name: 'Pastel', font: SANS, weight: 800, fill: '#4a2c6a', bg: '#ffd6e8', bgRound: 0.5 },
+  { id: 'alerta', name: 'Alerta', font: SANS, weight: 900, fill: '#ff3b30', stroke: '#ffffff', strokeW: 0.16, upper: true },
+  { id: 'celeste', name: 'Celeste', font: SANS, weight: 900, fill: '#7dd3fc', stroke: '#000000', strokeW: 0.16 },
+  { id: 'rosa', name: 'Rosa', font: SANS, weight: 900, fill: '#ff7ab8', stroke: '#000000', strokeW: 0.16 },
+  { id: 'neonAzul', name: 'Neón azul', font: SANS, weight: 800, fill: '#e6fbff', shadow: '#00d4ff', shadowBlur: 0.45 },
+  { id: 'neonVerde', name: 'Neón verde', font: SANS, weight: 800, fill: '#efffe9', shadow: '#39ff14', shadowBlur: 0.45 },
+  { id: 'fuego', name: 'Fuego', font: SANS, weight: 900, fill: '#ff9f1c', gradient: ['#fff3b0', '#ff9f1c', '#e5383b'], stroke: '#3a0d00', strokeW: 0.1 },
+  { id: 'oro', name: 'Oro', font: SANS, weight: 900, fill: '#f5c542', gradient: ['#fff6c9', '#f5c542', '#b8860b', '#ffe38a'], stroke: '#3b2a00', strokeW: 0.08 },
+  { id: 'hielo', name: 'Hielo', font: SANS, weight: 900, fill: '#9be7ff', gradient: ['#ffffff', '#9be7ff', '#3a86ff'], stroke: '#0b2545', strokeW: 0.1 },
+  { id: 'retro70', name: 'Retro', font: SANS, weight: 900, fill: '#fff1d0', echo: [['#2a9d8f', 0.12, 0.12], ['#e2b714', 0.08, 0.08], ['#f25f4c', 0.04, 0.04]] },
 ];
 
 export const getTextStyle = (id: string) => TEXT_STYLES.find((s) => s.id === id) ?? TEXT_STYLES[0];
+
+/** The text as the style writes it: all capitals, all lowercase or as typed. */
+export const styleCase = (st: Pick<TextStyle, 'upper' | 'lower'>, text: string) =>
+  st.upper ? text.toUpperCase() : st.lower ? text.toLowerCase() : text;
 
 /** Approximate the style in HTML for the style picker. */
 export function styleToCss(st: TextStyle): CSSProperties {
@@ -61,12 +90,17 @@ export function styleToCss(st: TextStyle): CSSProperties {
   ];
   return {
     color: st.gradient ? 'transparent' : st.fill,
-    background: st.gradient ? `linear-gradient(180deg, ${st.gradient.join(', ')}) text` : (st.bg ?? 'transparent'),
+    background: st.gradient
+      ? `linear-gradient(180deg, ${st.gradient.join(', ')}) text`
+      : st.bgGradient
+        ? `linear-gradient(90deg, ${st.bgGradient.join(', ')})`
+        : (st.bg ?? 'transparent'),
+    borderRadius: st.bg && st.bgRound !== undefined ? `${Math.round(Math.min(1, st.bgRound) * 16)}px` : undefined,
     WebkitBackgroundClip: st.gradient ? 'text' : undefined,
     fontFamily: st.font,
     fontWeight: st.weight,
     fontStyle: st.italic ? 'italic' : 'normal',
-    textTransform: st.upper ? 'uppercase' : 'none',
+    textTransform: st.upper ? 'uppercase' : st.lower ? 'lowercase' : 'none',
     WebkitTextStroke: st.stroke ? `${Math.max(1, Math.round((st.strokeW ?? 0.14) * (st.gradient ? 8 : 16)))}px ${st.stroke}` : undefined,
     paintOrder: 'stroke fill',
     textShadow: shadows.length && !st.gradient ? shadows.join(', ') : undefined,
@@ -119,12 +153,12 @@ if (typeof document !== 'undefined' && document.fonts?.addEventListener) documen
 const watchedFonts = new Set<string>();
 
 /** Lines and casing of an item, reused while its text and style stay the same. */
-const shaped = new WeakMap<TextItem, { text: string; upper: boolean; raw: string; lines: string[] }>();
-function linesOf(item: TextItem, upper: boolean) {
+const shaped = new WeakMap<TextItem, { text: string; st: TextStyle; raw: string; lines: string[] }>();
+function linesOf(item: TextItem, st: TextStyle) {
   let s = shaped.get(item);
-  if (!s || s.text !== item.text || s.upper !== upper) {
-    const raw = upper ? item.text.toUpperCase() : item.text;
-    s = { text: item.text, upper, raw, lines: raw.split('\n') };
+  if (!s || s.text !== item.text || s.st !== st) {
+    const raw = styleCase(st, item.text);
+    s = { text: item.text, st, raw, lines: raw.split('\n') };
     shaped.set(item, s);
   }
   return s;
@@ -164,7 +198,7 @@ export function drawText(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
-  const { raw, lines } = linesOf(item, !!st.upper);
+  const { raw, lines } = linesOf(item, st);
   const lh = fs * 1.22;
   let tw = fs * 0.5;
   for (const l of lines) tw = Math.max(tw, measure(ctx, l || ' '));
@@ -222,8 +256,12 @@ export function drawText(
   };
 
   if (st.bg && budget > 0) {
-    ctx.fillStyle = st.bg;
-    roundRect(ctx, box.x, box.y, box.w, box.h, fs * 0.25);
+    if (st.bgGradient && st.bgGradient.length > 1) {
+      const g = ctx.createLinearGradient(box.x, 0, box.x + box.w, 0);
+      st.bgGradient.forEach((c, i) => g.addColorStop(i / (st.bgGradient!.length - 1), c));
+      ctx.fillStyle = g;
+    } else ctx.fillStyle = st.bg;
+    roundRect(ctx, box.x, box.y, box.w, box.h, fs * (st.bgRound ?? 0.25));
     ctx.fill();
   }
   // Karaoke: the word being said gets a color, a box or grows a little.

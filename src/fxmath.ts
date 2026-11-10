@@ -1,6 +1,12 @@
 // Pure timing and geometry of transitions and effects (no canvas), shared by visuals.ts and tests.
 import type { Direction } from './types';
 
+/** Spike at 0 s and every 2 s that falls back to 0 in about half a second (zoom punch, color hit). */
+export function hitPulse(t: number): number {
+  const p = (((t % 2) + 2) % 2) / 0.55;
+  return p >= 1 ? 0 : Math.pow(1 - p, 3);
+}
+
 /** Cheap deterministic noise so effects look the same in preview and export. */
 export function hash(n: number) {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;

@@ -2,34 +2,44 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { useStore } from './store';
-import { collectGarbage, holdTabLock, projectAssetIds, requestPersistence } from './db';
+import { collectGarbage, holdTabLock, projectAssetIds, requestPersistence, toStorageError } from './db';
 import { createAutosave } from './autosave';
 import { startPublishing } from './publish/store';
 import { startProxies } from './proxies';
+import { markPending, markSaved, setSaveNow, trackedSave } from './saveState';
 // UI font, bundled so it works offline (the video text fonts load on demand in fonts.ts).
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
 import '@fontsource/inter/latin-600.css';
 import '@fontsource/inter/latin-700.css';
 import '@fontsource/inter/latin-800.css';
+// Display face of the brand: the start screen's headline and the dialog titles.
+import '@fontsource/bricolage-grotesque/latin-700.css';
+import '@fontsource/bricolage-grotesque/latin-800.css';
+// Monospace for timecodes and durations.
+import '@fontsource/jetbrains-mono/latin-500.css';
 import './styles.css';
 
 // Autosave: every edit is written to the device shortly after the editing pauses.
 const autosave = createAutosave({
-  onError: () =>
-    useStore
-      .getState()
-      .notify('No se pudo guardar tu proyecto en este dispositivo. Puede que falte espacio: libera espacio o guarda el video antes de cerrar.'),
+  save: (p) => trackedSave(p),
+  // toStorageError says what happened and what to do (full disk, private window…).
+  onError: (e) => useStore.getState().notify(toStorageError(e).message),
 });
 useStore.subscribe((s, prev) => {
-  if (s.project !== prev.project) autosave.changed(s.project);
+  if (s.project === prev.project) return;
+  autosave.changed(s.project);
+  // The top bar shows "Guardando…" / "Guardado": only edits of the same project count as unsaved.
+  if (s.project && prev.project?.id === s.project.id) markPending();
+  else markSaved();
 });
+setSaveNow(() => autosave.flush());
 window.addEventListener('pagehide', () => void autosave.flush());
 document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void autosave.flush());
 requestPersistence();
 holdTabLock();
 // Desktop app only: reload the publish queue and its local scheduler.
-startPublishing().catch((e) => console.error(e));
+startPublishing().catch((e) => console.warn('Clipo: no se pudo cargar la cola de publicación', e));
 // Light copies of heavy videos for a smooth preview, made in the background.
 startProxies();
 

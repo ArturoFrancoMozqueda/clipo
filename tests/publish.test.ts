@@ -375,3 +375,22 @@ test('Instagram Reels and Facebook limits', () => {
   assert.match(checkMeta('facebook', { ...vertical, duration: 5 * 3600 }, post).join(), /4 h/);
   assert.match(checkMeta('facebook', vertical, { ...post, title: 'a'.repeat(256) }).join(), /255/);
 });
+
+test('an ended session is flagged so the page offers "Volver a conectar"', async () => {
+  const { needsReconnect } = await import('../src/publish/queue.ts');
+  const { bridgeError } = await import('../src/publish/desktop.ts');
+  const job = createJobs(batch())[0]!;
+  const err = failed(startUpload(job), new PublishError('La conexión venció.', true, true), T0);
+  assert.equal(needsReconnect(err), true);
+  assert.equal(canRetry(err), true, 'retrying works once the account is connected again');
+  assert.equal(needsReconnect(failed(startUpload(job), new PublishError('x'), T0)), false);
+  assert.deepEqual(bridgeError(new Error("Error invoking remote method 'yt:upload': Error: A|Vuelve a conectar.")), { message: 'Vuelve a conectar.', retryable: true, reconnect: true });
+  assert.equal(bridgeError(new Error('F|No.')).retryable, false);
+  assert.doesNotMatch(bridgeError(new Error('forbidden')).message, /forbidden/, 'technical errors never reach the user');
+});
+
+test('a restart warns before retrying an interrupted upload', () => {
+  const up = startUpload(createJobs(batch())[0]!);
+  const [rec] = recoverOnLoad([up], T0 + 1);
+  assert.match((rec!.status as { reason: string }).reason, /no se haya publicado/);
+});

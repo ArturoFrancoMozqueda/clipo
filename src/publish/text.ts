@@ -52,7 +52,7 @@ export function truncateBytes(s: string, max: number): string {
 /** Problems that block uploading this video to YouTube (or as a Short). */
 export function checkYouTube(network: NetworkId, video: VideoInfo, post: PostText): string[] {
   const issues: string[] = [];
-  if (!youtubeTitle(post, video)) issues.push('Escribe un título para YouTube.');
+  if (!youtubeTitle(post, video)) issues.push('Escribe un título para YouTube (arriba, en “Texto”).');
   if (network === 'youtube_shorts') {
     if (video.width > video.height) issues.push('Para Shorts el video tiene que ser vertical o cuadrado (usa el formato 9:16).');
     if (video.duration > SHORTS_MAX_SECONDS + 0.5) issues.push('Un Short puede durar como máximo 3 minutos.');
@@ -137,11 +137,11 @@ export function checkMeta(network: NetworkId, video: VideoInfo, post: PostText):
   if (network === 'instagram_reels') {
     const p = PLATFORMS.instagram_reels;
     if (video.duration && video.duration < IG_REELS_MIN_SECONDS - 0.05) issues.push('Un Reel tiene que durar al menos 3 segundos.');
-    if (video.duration > IG_REELS_MAX_SECONDS + 0.5) issues.push('Por API, Instagram acepta Reels de hasta 15 minutos.');
-    if (video.bytes > IG_REELS_MAX_BYTES) issues.push(`Instagram acepta Reels de hasta ${fmtBytes(IG_REELS_MAX_BYTES)}. Exporta en menor calidad o más corto.`);
-    if (video.width > IG_REELS_MAX_WIDTH) issues.push('Instagram acepta videos de hasta 1920 píxeles de ancho. Exporta en 1080p.');
+    if (video.duration > IG_REELS_MAX_SECONDS + 0.5) issues.push('Instagram acepta Reels de hasta 15 minutos desde otras apps. Acórtalo.');
+    if (video.bytes > IG_REELS_MAX_BYTES) issues.push(`Instagram acepta Reels de hasta ${fmtBytes(IG_REELS_MAX_BYTES)}. Guárdalo en 720p o más corto.`);
+    if (video.width > IG_REELS_MAX_WIDTH) issues.push('Instagram acepta videos de hasta 1920 píxeles de ancho. Guárdalo en 1080p.');
     if (video.type && !/^video\/(mp4|quicktime)$/.test(video.type)) issues.push('Instagram solo acepta videos MP4 o MOV.');
-    if (len > p.captionMax) issues.push(`El texto pasa de ${p.captionMax} letras (lleva ${len}).`);
+    if (len > p.captionMax) issues.push(`El texto pasa de ${p.captionMax} letras (lleva ${len}). Acórtalo.`);
     if (count(caption, /(^|\s)#[\p{L}\p{N}_]+/gu) > IG_HASHTAGS_MAX) issues.push(`Instagram acepta hasta ${IG_HASHTAGS_MAX} hashtags.`);
     if (count(caption, /(^|\s)@[\w.]+/g) > IG_MENTIONS_MAX) issues.push(`Instagram acepta hasta ${IG_MENTIONS_MAX} menciones (@).`);
     return issues;

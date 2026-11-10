@@ -35,7 +35,8 @@ export type EffectId =
   | 'none' | 'glitch' | 'blur' | 'vignette' | 'shake' | 'kenburns'
   | 'grain' | 'vhs' | 'rgb' | 'pixelate' | 'mirror' | 'glow' | 'lightleak' | 'bwdrama'
   | 'zoomout' | 'beatzoom' | 'strobe' | 'dreamy' | 'y2k' | 'cinematic' | 'camcorder' | 'duotone' | 'sparkle'
-  | 'filmLook' | 'halation' | 'handheld' | 'heartbeat' | 'bokeh' | 'tiltShift' | 'anamorphic';
+  | 'filmLook' | 'halation' | 'handheld' | 'heartbeat' | 'bokeh' | 'tiltShift' | 'anamorphic'
+  | 'punch' | 'rgbHit';
 export interface Effect {
   id: EffectId;
   /** 0..1 */

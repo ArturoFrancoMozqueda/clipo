@@ -1,7 +1,7 @@
 // Downloads a curated set of Microsoft Fluent Emoji (MIT license) into public/stickers/fluent/
 // and writes src/stickerCatalog.json. Run with: node scripts/fetch-fluent-emoji.mjs
 // Re-running is safe: it rebuilds the folder from the list below.
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
 const REPO = 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets';
 
@@ -88,5 +88,5 @@ await writeFile(
   'Fluent Emoji © Microsoft Corporation, MIT License.\nhttps://github.com/microsoft/fluentui-emoji/blob/main/LICENSE\n',
 );
 await writeFile('src/stickerCatalog.json', JSON.stringify(catalog, null, 1) + '\n');
-console.log(`saved ${catalog.length} stickers`);
+console.log(`saved ${catalog.length} stickers (+${own.length} of our own kept)`);
 if (missing.length) console.log('not found:', missing.join(', '));

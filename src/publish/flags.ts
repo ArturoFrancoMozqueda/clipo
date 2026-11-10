@@ -10,6 +10,6 @@ function flag(key: string, fallback: boolean) {
 }
 
 export const PUBLISH_FLAGS = {
-  /** Show the networks without an adapter yet, as "Requiere configuración" cards. */
+  /** Show one card in Cuentas listing the networks that publish with their own page. */
   upcomingNetworks: flag('clipo.publish.upcoming', true),
 };

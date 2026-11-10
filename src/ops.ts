@@ -7,6 +7,7 @@ import { EFFECT_DEFAULT_INTENSITY, STICKER_DEFAULT_SIZE } from './visuals';
 import { poseAt, setPose, shiftKeyframes, type Animatable, type Pose } from './keyframes';
 import { shiftWords } from './subtitles';
 import { applyBrand } from './brand';
+import { followClips } from './ripple';
 
 const get = () => useStore.getState();
 
@@ -146,8 +147,13 @@ export function deleteSelected() {
   const sel = s.selection;
   if (!sel) return;
   engine.pause();
+  const before = s.project;
   s.commit((p) => {
-    if (sel.kind === 'clip') p.clips = p.clips.filter((c) => c.id !== sel.id);
+    if (sel.kind === 'clip') {
+      p.clips = p.clips.filter((c) => c.id !== sel.id);
+      // What sat on the later clips moves with them; the captions of the deleted clip go with it.
+      if (before) followClips(before, p, { prune: true });
+    }
     if (sel.kind === 'text') p.texts = p.texts.filter((c) => c.id !== sel.id);
     if (sel.kind === 'audio') p.audios = p.audios.filter((c) => c.id !== sel.id);
     if (sel.kind === 'sticker') p.stickers = (p.stickers ?? []).filter((c) => c.id !== sel.id);
@@ -163,11 +169,13 @@ export function duplicateSelected() {
   const sel = s.selection;
   if (!sel) return;
   const id = uid();
+  const before = s.project;
   s.commit((p) => {
     if (sel.kind === 'clip') {
       const i = p.clips.findIndex((c) => c.id === sel.id);
       const c = p.clips[i];
       if (c) p.clips.splice(i + 1, 0, { ...c, id });
+      if (c && before) followClips(before, p);
     } else if (sel.kind === 'text') {
       const x = p.texts.find((c) => c.id === sel.id);
       if (x) p.texts.push({ ...x, id, start: x.start + x.duration });
@@ -195,9 +203,11 @@ export function moveClip(dir: -1 | 1) {
   const j = i + dir;
   if (i < 0 || j < 0 || j >= s.project.clips.length) return s.notify(dir < 0 ? 'Ya es el primer clip' : 'Ya es el último clip');
   engine.pause();
+  const before = s.project;
   s.commit((p) => {
     const [c] = p.clips.splice(i, 1);
     if (c) p.clips.splice(j, 0, c);
+    followClips(before, p, { reorder: true });
   });
   // Keep the playhead on the moved clip so the user sees where it went.
   const placed = layout(get().project!).find((l) => l.clip.id === sel.id);
@@ -210,9 +220,11 @@ export function moveClipTo(id: string, to: number) {
   const i = s.project?.clips.findIndex((c) => c.id === id) ?? -1;
   if (i < 0 || to === i || to < 0 || to >= s.project!.clips.length) return false;
   engine.pause();
+  const before = s.project!;
   s.commit((p) => {
     const [c] = p.clips.splice(i, 1);
     if (c) p.clips.splice(to, 0, c);
+    followClips(before, p, { reorder: true });
   });
   const placed = layout(get().project!).find((l) => l.clip.id === id);
   if (placed) s.setTime(placed.start + 0.01);

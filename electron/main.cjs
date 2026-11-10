@@ -151,6 +151,27 @@ function createWindow() {
   win.webContents.on('will-redirect', (e, url) => {
     if (!isAppUrl(url)) e.preventDefault();
   });
+  // The page crashed or could not load: say so in plain Spanish and offer to reload (never a blank window).
+  if (!SMOKE) {
+    win.webContents.on('render-process-gone', (_e, details) => {
+      if (details.reason === 'clean-exit' || details.reason === 'killed') return;
+      const choice = dialog.showMessageBoxSync(win, {
+        type: 'error',
+        buttons: ['Volver a abrir', 'Cerrar'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Clipo',
+        message: 'Clipo se detuvo inesperadamente.',
+        detail: 'Tus proyectos se guardan solos. Puedes volver a abrir Clipo para seguir.',
+      });
+      if (choice === 0) win.reload();
+      else app.quit();
+    });
+    win.webContents.on('did-fail-load', (_e, code, _desc, _url, isMainFrame) => {
+      if (!isMainFrame || code === -3) return; // -3 = cancelled by a navigation
+      dialog.showErrorBox('Clipo no pudo abrirse', 'Faltan archivos de la aplicación. Vuelve a instalar Clipo desde la página de descargas.');
+    });
+  }
   // No <webview> tags in Clipo: refuse any attempt to attach one.
   win.webContents.on('will-attach-webview', (e) => e.preventDefault());
 

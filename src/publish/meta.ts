@@ -5,7 +5,7 @@ import { PublishError } from './queue';
 import { checkMeta, metaCaption } from './text';
 import type { Availability, Publisher, UploadInput } from './types';
 
-const ONLY_DESKTOP = 'Publicar directo funciona solo en la app de Clipo para computadora.';
+const ONLY_DESKTOP = 'Publicar directo está en la app de Clipo para computadora.';
 
 export const metaPublisher: Publisher = {
   id: 'meta-desktop',
@@ -13,11 +13,11 @@ export const metaPublisher: Publisher = {
 
   async availability(): Promise<Availability> {
     const m = desktop()?.meta;
-    if (!m) return { ok: false, reason: desktop() ? 'Actualiza la app de Clipo para publicar en Facebook e Instagram.' : ONLY_DESKTOP };
+    if (!m) return { ok: false, reason: desktop() ? 'Actualiza Clipo para publicar directo en Facebook e Instagram.' : ONLY_DESKTOP };
     const c = await m.getConfig();
-    if (!c.encryption) return { ok: false, reason: 'Este equipo no permite guardar la sesión de forma cifrada, así que Clipo no conecta cuentas.' };
-    if (!c.appId && !c.usingBuiltIn) return { ok: false, reason: 'Falta configurar Facebook e Instagram: pega el App ID de tu app de Meta en Cuentas.' };
-    if (!c.hasSecret) return { ok: false, reason: 'Falta configurar Facebook e Instagram: pega la clave secreta (App Secret) de tu app de Meta en Cuentas.' };
+    if (!c.encryption) return { ok: false, reason: 'Este equipo no puede guardar tus cuentas de forma segura, así que Clipo no las conecta. Usa “Publicar en…” desde Redes.' };
+    if (!c.appId && !c.usingBuiltIn) return { ok: false, reason: 'Conectar cuentas no está disponible en este equipo. Usa “Publicar en…” desde Redes: copia el texto y abre la página de cada red.' };
+    if (!c.hasSecret) return { ok: false, reason: 'Conectar cuentas no está disponible en este equipo. Usa “Publicar en…” desde Redes: copia el texto y abre la página de cada red.' };
     return { ok: true };
   },
 
@@ -27,12 +27,13 @@ export const metaPublisher: Publisher = {
 
   async connect() {
     const m = desktop()?.meta;
-    if (!m) throw new PublishError('Conectar cuentas funciona solo en la app de Clipo para computadora.', false);
+    if (!m) throw new PublishError('Conectar cuentas está en la app de Clipo para computadora.', false);
     let r;
     try {
       r = await m.connect();
     } catch (e) {
-      throw new PublishError(bridgeError(e).message, false);
+      const b = bridgeError(e);
+      throw new PublishError(b.message, false);
     }
     const [first] = r.accounts;
     if (!first) throw new PublishError(r.notes.join(' ') || 'No se conectó ninguna cuenta.', false);
@@ -52,7 +53,7 @@ export const metaPublisher: Publisher = {
   async upload(input: UploadInput, onProgress, signal) {
     const m = desktop()?.meta;
     if (!m) throw new PublishError(ONLY_DESKTOP, false);
-    if (input.network !== 'facebook' && input.network !== 'instagram_reels') throw new PublishError('Esta red no se publica con Facebook.', false);
+    if (input.network !== 'facebook' && input.network !== 'instagram_reels') throw new PublishError('Esta red no se puede publicar directo desde aquí.', false);
     const network = input.network;
     const issues = checkMeta(network, input.videoInfo, input.post);
     if (issues.length) throw new PublishError(issues.join(' '), false);
@@ -60,7 +61,7 @@ export const metaPublisher: Publisher = {
     const publishAt = ig ? undefined : input.options.nativePublishAt;
     // Facebook has no "unlisted": anything but public is uploaded without publishing it.
     const unpublished = !ig && !publishAt && input.options.privacy !== 'public';
-    if (ig && input.options.privacy !== 'public') throw new PublishError('Instagram no tiene publicaciones privadas ni no listadas: elige “Público”.', false);
+    if (ig && input.options.privacy !== 'public') throw new PublishError('Instagram no tiene publicaciones privadas: elige “Público”.', false);
 
     const off = m.onProgress((p) => p.jobId === input.jobId && p.total > 0 && onProgress((p.sent / p.total) * 100));
     const abort = () => void m.cancelUpload(input.jobId);
@@ -89,14 +90,14 @@ export const metaPublisher: Publisher = {
       });
       const notes = [res.note];
       if (publishAt) notes.push(`Facebook lo publicará el ${new Date(publishAt).toLocaleString('es')}.`);
-      if (unpublished) notes.push('Quedó sin publicar, en la biblioteca de videos de la página (Facebook no tiene “no listado” ni “privado”).');
-      if (ig && input.thumbnail) notes.push('Instagram usa un cuadro del video como portada: la portada elegida no se puede enviar desde la computadora.');
+      if (unpublished) notes.push('Quedó sin publicar, guardado en los videos de tu página (Facebook no tiene “no listado” ni “privado”).');
+      if (ig && input.thumbnail) notes.push('Instagram eligió un cuadro del video como portada: puedes cambiarla desde la app de Instagram.');
       return { remoteId: res.remoteId, url: res.url, note: notes.filter(Boolean).join(' ') || undefined };
     } catch (e) {
       // A retry sends the video again, so the half-used copy is not needed.
       if (fileId) void m.uploadDiscard(fileId).catch(() => {});
-      const { message, retryable } = bridgeError(e);
-      throw new PublishError(message, retryable);
+      const { message, retryable, reconnect } = bridgeError(e);
+      throw new PublishError(message, retryable, reconnect);
     } finally {
       off();
       signal.removeEventListener('abort', abort);
@@ -105,11 +106,11 @@ export const metaPublisher: Publisher = {
 
   async status(accountId, remoteId) {
     const m = desktop()?.meta;
-    if (!m) return { state: 'unknown', detail: 'Solo se puede consultar desde la app de computadora.' };
+    if (!m) return { state: 'unknown', detail: 'El estado solo se puede consultar desde la app de Clipo para computadora.' };
     try {
       return await m.status(accountId, remoteId);
     } catch (e) {
-      return { state: 'unknown', detail: bridgeError(e).message };
+      return { state: 'unknown', detail: 'No se pudo consultar el estado ahora. Inténtalo en un momento.' };
     }
   },
 };

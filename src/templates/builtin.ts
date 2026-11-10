@@ -1,10 +1,11 @@
-import type { Template, TemplateSlot } from './types';
+import type { Template, TemplateCategory, TemplateSlot } from './types';
+import { MORE_TEMPLATES } from './builtin2';
 
 // Original Clipo templates. All texts, layouts and preview art are made for Clipo.
 
 const slot = (label: string, duration: number, filter = 'none'): TemplateSlot => ({ label, duration, filter, fit: 'fill' });
 
-export const BUILTIN_TEMPLATES: [Template, ...Template[]] = [
+const CLASSIC: Template[] = [
   {
     version: 1,
     id: 'cumple',
@@ -214,3 +215,15 @@ export const BUILTIN_TEMPLATES: [Template, ...Template[]] = [
     look: { colors: ['#264653', '#2a9d8f', '#e9c46a', '#f4a261', '#e76f51'], motif: 'bars' },
   },
 ];
+
+const CLASSIC_CATEGORY: Record<string, TemplateCategory> = {
+  cumple: 'personal', promo: 'negocio', viaje: 'viajes', receta: 'viajes', frase: 'personal',
+  'antes-despues': 'redes', invitacion: 'negocio', 'semana-negocio': 'negocio',
+};
+
+/** Popular formats first, then the classics, then the rest of the new ones. */
+export const BUILTIN_TEMPLATES = [
+  ...MORE_TEMPLATES.slice(0, 3),
+  ...CLASSIC.map((t) => ({ ...t, category: CLASSIC_CATEGORY[t.id] })),
+  ...MORE_TEMPLATES.slice(3),
+] as [Template, ...Template[]];

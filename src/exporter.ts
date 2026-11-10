@@ -9,11 +9,11 @@ import type { AspectId, Project, VoiceFxId } from './types';
 import { FRAME, audioRole, integratedLoudness, normalizeLoudness, peak, type ActivityByAsset } from './audioDsp';
 import { LOUDNESS_TARGET, analyzeAsset, buildVoiceFx, mixOf, projectDuckCurve, voiceAssets } from './audioFx';
 import { AUDIO_BITRATE, audioLevels, exportBitrate, type AudioLevels } from './platforms';
-import { canFastExport, hasRecorder, UnsupportedAspectError } from './exportSupport';
+import { canFastExport, ExportError, hasRecorder, UnsupportedAspectError } from './exportSupport';
 import { extractAudio, releaseAudioCache, toAudioBuffer } from './audioExtract';
 import { firstDecodable } from './convertVideo';
 
-export { canExport, canFastExport, UnsupportedAspectError } from './exportSupport';
+export { canExport, canFastExport, ExportError, UnsupportedAspectError } from './exportSupport';
 
 export interface ExportProgress {
   /** 0..100 */
@@ -44,13 +44,6 @@ class Unsupported extends Error {
     readonly reason: 'decode' | 'encoder',
   ) {
     super(message);
-  }
-}
-
-/** The fast export failed for a reason the real-time recorder wouldn't fix. `message` is for the user. */
-export class ExportError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
   }
 }
 
@@ -89,6 +82,7 @@ export async function exportVideo(
       // Only "this device/file can't do the fast path" falls back; any other error is a real failure.
       if (!(e instanceof Unsupported)) {
         console.error('Fast export failed', e);
+        if (e instanceof ExportError) throw e;
         throw new ExportError(
           isQuota(e)
             ? 'No hay espacio suficiente en el dispositivo para guardar el video. Libera espacio e intenta otra vez.'
@@ -104,9 +98,21 @@ export async function exportVideo(
     // The real-time recorder films the preview, which only shows the project's own format.
     if (p !== open && hasRecorder()) throw new UnsupportedAspectError(reason);
   }
-  if (!hasRecorder()) throw new Error('unsupported');
+  if (!hasRecorder()) throw new ExportError('Este navegador no puede guardar videos. Usa Chrome, Edge o Safari actualizados.');
   if (p !== open) throw new UnsupportedAspectError('encoder');
-  return recordExport(p, short, onProgress, signal);
+  try {
+    return await recordExport(p, short, onProgress, signal);
+  } catch (e) {
+    // Plain errors from the recorder are technical: show a friendly line instead.
+    if (e instanceof ExportError || (e as Error)?.message === 'cancelled') throw e;
+    console.error('Recorded export failed', e);
+    throw new ExportError(
+      (e as Error)?.message === 'unsupported'
+        ? 'Este dispositivo no puede guardar este video. Prueba con otro navegador o con calidad 720p.'
+        : 'Algo salió mal al guardar. Intenta otra vez con calidad 720p.',
+      { cause: e },
+    );
+  }
 }
 
 /** Real-time fallback: the engine plays the project and records the preview canvas. */
@@ -304,13 +310,13 @@ async function fastExport(
 
   if (disk) {
     const file = await disk.file();
-    if (!file.size) throw new Error('empty output');
+    if (!file.size) throw new ExportError('El video quedó vacío. Intenta otra vez con calidad 720p.');
     // The OPFS file has no type of its own; this wraps it without copying the data.
     return { blob: file.slice(0, file.size, 'video/mp4'), ext: 'mp4' };
   }
   const target = output.target as InstanceType<typeof mb.BufferTarget>;
   const buf = target.buffer;
-  if (!buf) throw new Error('empty output');
+  if (!buf) throw new ExportError('El video quedó vacío. Intenta otra vez con calidad 720p.');
   const blob = new Blob([buf], { type: 'video/mp4' });
   // Let the ArrayBuffer go right away so only the Blob's copy stays alive.
   (target as unknown as { buffer: ArrayBuffer | null }).buffer = null;

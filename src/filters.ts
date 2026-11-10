@@ -39,6 +39,18 @@ export const FILTERS: [Filter, ...Filter[]] = [
   { id: 'seventies', name: 'Años 70', css: 'sepia(0.5) saturate(1.4) hue-rotate(-25deg) contrast(0.9) brightness(1.05)', fallback: [{ op: 'color', color: '#c98a3a', alpha: 0.4 }] },
   { id: 'pop', name: 'Pop', css: 'saturate(1.9) contrast(1.15)', fallback: [{ op: 'overlay', self: true, alpha: 0.4 }] },
   { id: 'night', name: 'Noche', css: 'hue-rotate(20deg) saturate(0.8) brightness(0.85) contrast(1.15)', fallback: [{ op: 'multiply', color: '#3a4f9a', alpha: 0.35 }] },
+  // Trending looks (our own recipes).
+  { id: 'film', name: 'Película', css: 'sepia(0.2) saturate(1.15) contrast(1.08) brightness(1.02) hue-rotate(-6deg)', fallback: [{ op: 'soft-light', color: '#e0a060', alpha: 0.35 }] },
+  { id: 'vhs', name: 'VHS', css: 'saturate(1.3) contrast(1.1) sepia(0.15) hue-rotate(-10deg) brightness(1.04)', fallback: [{ op: 'soft-light', color: '#8a5cc8', alpha: 0.35 }] },
+  { id: 'tealorange', name: 'Cine verde-naranja', css: 'contrast(1.18) saturate(1.2) sepia(0.2) hue-rotate(-12deg)', fallback: [{ op: 'soft-light', color: '#2a8a96', alpha: 0.4 }, { op: 'overlay', color: '#ff9a50', alpha: 0.15 }] },
+  { id: 'clean', name: 'Limpio', css: 'brightness(1.08) contrast(1.05) saturate(1.1)', fallback: [{ op: 'screen', color: '#ffffff', alpha: 0.1 }] },
+  { id: 'moody', name: 'Sombrío', css: 'brightness(0.88) contrast(1.25) saturate(0.7) hue-rotate(8deg)', fallback: [{ op: 'multiply', color: '#4a5a70', alpha: 0.3 }, { op: 'overlay', self: true, alpha: 0.3 }] },
+  { id: 'bwhigh', name: 'B/N contraste', css: 'grayscale(1) contrast(1.6) brightness(1.05)', fallback: [{ op: 'saturation', color: '#000', alpha: 1 }, { op: 'overlay', self: true, alpha: 0.7 }] },
+  { id: 'golden', name: 'Hora dorada', css: 'sepia(0.3) saturate(1.45) brightness(1.08) contrast(1.05) hue-rotate(-8deg)', fallback: [{ op: 'soft-light', color: '#ffb84a', alpha: 0.5 }] },
+  { id: 'dreamglow', name: 'Ensueño suave', css: 'brightness(1.12) contrast(0.88) saturate(1.2) hue-rotate(-5deg)', fallback: [{ op: 'screen', color: '#ffd0ea', alpha: 0.2 }] },
+  { id: 'fade', name: 'Desvaído', css: 'contrast(0.85) brightness(1.1) saturate(0.65) sepia(0.12)', fallback: [{ op: 'screen', color: '#403830', alpha: 0.3 }] },
+  { id: 'cyber', name: 'Neón nocturno', css: 'hue-rotate(-30deg) saturate(1.6) contrast(1.2) brightness(0.92)', fallback: [{ op: 'soft-light', color: '#b030ff', alpha: 0.45 }] },
+  { id: 'mint', name: 'Menta', css: 'hue-rotate(25deg) saturate(1.1) brightness(1.08) contrast(0.95)', fallback: [{ op: 'soft-light', color: '#66e0b0', alpha: 0.4 }] },
 ];
 
 export const getFilter = (id: string) => FILTERS.find((f) => f.id === id) ?? FILTERS[0];
