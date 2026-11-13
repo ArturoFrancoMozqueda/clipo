@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronLeft, CircleAlert, CircleHelp, Ellipsis, Keyboard, LayoutTemplate, PanelLeftOpen, Redo2, Undo2, Upload } from 'lucide-react';
+import { useBackLayer } from '../backStack';
 import { useStore } from '../store';
 import { engine } from '../engine';
 import { discardProject, isUntouched, saveNow, useSaveState } from '../saveState';
@@ -92,6 +93,8 @@ export function TopBar({ libraryOpen, onToggleLibrary }: { libraryOpen: boolean;
     else await saveNow();
     s().close();
   };
+  // System back on the editor (nothing else open) saves and returns to the projects, like the arrow.
+  useBackLayer(true, () => void back());
 
   return (
     <header className="topbar">

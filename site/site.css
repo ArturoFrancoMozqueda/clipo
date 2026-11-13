@@ -13,3 +13,5 @@ a { color: var(--accent); }
 code { background: rgba(255,255,255,.08); padding: 1px 6px; border-radius: 6px; font-size: 14px; }
 .btn { display: inline-block; margin-top: 8px; padding: 14px 26px; border-radius: 999px; font-weight: 700; color: #fff; text-decoration: none; background: linear-gradient(135deg, #5b4ae6, #9a3fd0 55%, #d6246e); }
 .links { margin-top: 40px; font-size: 15px; color: var(--muted); }
+.btn-alt { background: transparent; border: 1px solid rgba(255,255,255,.28); margin-left: 6px; }
+.hint { font-size: 14px; opacity: .75; }

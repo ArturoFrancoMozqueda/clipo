@@ -1,4 +1,10 @@
 :root {
+  /* Safe areas (notch, status and navigation bars). The Android app draws edge to edge; WebViews
+     older than 140 report env() as 0, so Capacitor also injects --safe-area-inset-*: use the larger. */
+  --sa-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --sa-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+  --sa-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --sa-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
   /* Surfaces, from the page up to raised controls. */
   --bg: #0a0a0c;
   --bg-elev: #0f0f12;
@@ -102,7 +108,7 @@ h1, h2, .modal h3 { font-family: var(--font-display); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- home ---------- */
-.home { position: relative; isolation: isolate; max-width: 1120px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(48px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
+.home { position: relative; isolation: isolate; max-width: 1120px; margin: 0 auto; padding: max(16px, var(--sa-top)) max(20px, var(--sa-right)) max(48px, var(--sa-bottom)) max(20px, var(--sa-left)); }
 /* Soft brand light behind the hero. */
 .home-glow { position: absolute; z-index: -1; left: 50%; top: -120px; width: min(900px, 100%); height: 560px; transform: translateX(-50%); pointer-events: none;
   background: radial-gradient(closest-side at 35% 45%, rgba(124,108,255,.30), transparent 70%), radial-gradient(closest-side at 68% 40%, rgba(255,95,162,.20), transparent 70%); filter: blur(20px); }
@@ -159,7 +165,7 @@ h1, h2, .modal h3 { font-family: var(--font-display); }
 .modal { background: linear-gradient(180deg, #191922, var(--panel) 120px); border: 1px solid var(--line-strong); border-radius: 22px; padding: 22px; width: min(560px, 100%); max-height: 90vh; max-height: 90dvh; overflow: auto; box-shadow: 0 40px 100px -20px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.06); animation: pop .22s var(--ease); }
 @keyframes pop { from { transform: translateY(8px) scale(.98); opacity: 0; } }
 /* <dialog> from Modal.tsx: a full-screen transparent box that centers the content; ::backdrop dims the page. */
-.modal-dialog { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: 0; background: transparent; color: inherit; display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); overflow: auto; overscroll-behavior: contain; }
+.modal-dialog { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: 0; background: transparent; color: inherit; display: grid; place-items: center; padding: max(16px, var(--sa-top)) max(16px, var(--sa-right)) max(16px, var(--sa-bottom)) max(16px, var(--sa-left)); overflow: auto; overscroll-behavior: contain; }
 .modal-dialog:not([open]) { display: none; }
 .modal-dialog::backdrop { background: rgba(5,5,8,.62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .modal-dialog:focus { outline: none; }
@@ -187,13 +193,13 @@ h1, h2, .modal h3 { font-family: var(--font-display); }
 /* ---------- editor layout (mobile first) ---------- */
 .editor {
   position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg);
-  padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
+  padding-left: var(--sa-left); padding-right: var(--sa-right);
   /* No double-tap zoom, text selection or iOS callout while dragging and long-pressing items. */
   touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 .editor input, .editor textarea, .editor [contenteditable] { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
 .editor.exporting .topbar, .editor.exporting .timeline, .editor.exporting .toolbar, .editor.exporting .library-side { pointer-events: none; opacity: .4; }
-.topbar { position: relative; z-index: 30; display: flex; align-items: center; gap: 4px; padding: max(8px, env(safe-area-inset-top)) 10px 8px; border-bottom: 1px solid var(--line); background: rgba(12,12,16,.82); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); }
+.topbar { position: relative; z-index: 30; display: flex; align-items: center; gap: 4px; padding: max(8px, var(--sa-top)) 10px 8px; border-bottom: 1px solid var(--line); background: rgba(12,12,16,.82); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); }
 .title-input { min-width: 0; flex: 1 1 260px; background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 7px 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; text-overflow: ellipsis; transition: background-color .15s, border-color .15s; }
 .title-input:focus { border-color: var(--line); background: var(--panel); outline: none; }
 @media (hover: hover) { .title-input:hover { border-color: var(--line); background: var(--panel); } }
@@ -220,7 +226,10 @@ h1, h2, .modal h3 { font-family: var(--font-display); }
 .canvas-wrap { flex: 1; min-height: 0; display: grid; place-items: center; position: relative; }
 .preview-canvas { background: #000; border-radius: 10px; touch-action: none; grid-area: 1 / 1; box-shadow: 0 30px 70px -24px rgba(0,0,0,.95), 0 0 0 1px rgba(255,255,255,.07); }
 .empty-state { grid-area: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 20px; color: var(--muted); border: 1.5px dashed var(--line-strong); border-radius: 14px; min-height: 220px; min-width: 240px; background: linear-gradient(180deg, rgba(139,123,255,.06), rgba(255,95,162,.03)); }
-.empty-state > svg { color: #b9adff; padding: 14px; width: 72px; height: 72px; border-radius: 22px; background: var(--accent-soft); border: 1px solid rgba(139,123,255,.25); }
+.empty-state { width: min(100%, 360px); }
+/* Phones and tablets can't drag files onto the page: don't promise it. */
+@media (pointer: coarse) { .empty-state .drop-hint { display: none; } }
+.empty-state > svg { flex-shrink: 0; color: #b9adff; padding: 14px; width: 72px; height: 72px; border-radius: 22px; background: var(--accent-soft); border: 1px solid rgba(139,123,255,.25); }
 .empty-state p { color: var(--text); font-size: 17px; font-weight: 600; margin: 0; }
 .proxy-badge { position: absolute; top: 10px; right: 12px; z-index: 2; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); background: rgba(16,16,24,.72); border: 1px solid var(--line); pointer-events: auto; backdrop-filter: blur(6px); }
 .controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 6px 12px; }
@@ -290,7 +299,7 @@ h1, h2, .modal h3 { font-family: var(--font-display); }
 .playhead::before { content: ''; position: absolute; top: 0; left: -5px; border: 6px solid transparent; border-top-color: #fff; }
 
 /* ---------- toolbar ---------- */
-.toolbar { display: flex; align-items: stretch; border-top: 1px solid var(--line); background: rgba(16,16,22,.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); padding: 4px 4px env(safe-area-inset-bottom); }
+.toolbar { display: flex; align-items: stretch; border-top: 1px solid var(--line); background: rgba(16,16,22,.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); padding: 4px 4px var(--sa-bottom); }
 .tools { display: flex; overflow-x: auto; flex: 1; scrollbar-width: none; }
 /* Fade the edge(s) that hide more tools (classes set by Toolbar.tsx). */
 .tools.more-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
@@ -314,7 +323,7 @@ h1, h2, .modal h3 { font-family: var(--font-display); }
 .sheet { --room: calc(100vh - var(--kb, 0px) - 16px); }
 @supports (height: 100dvh) { .sheet { --room: calc(100dvh - var(--kb, 0px) - 16px); } }
 /* Opaque instead of a backdrop blur: the sheet sits over the preview and the timeline, which repaint every frame while playing. */
-.sheet { position: absolute; left: 0; right: 0; bottom: var(--kb, 0px); max-height: min(52vh, var(--room)); max-height: min(52dvh, var(--room)); z-index: 20; padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); background: rgba(20,20,27,.97); border-top: 1px solid var(--line-strong); border-radius: 22px 22px 0 0; display: flex; flex-direction: column; box-shadow: 0 -20px 50px -10px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.05); animation: up .24s var(--ease); padding-bottom: env(safe-area-inset-bottom); }
+.sheet { position: absolute; left: 0; right: 0; bottom: var(--kb, 0px); max-height: min(52vh, var(--room)); max-height: min(52dvh, var(--room)); z-index: 20; padding-left: var(--sa-left); padding-right: var(--sa-right); background: rgba(20,20,27,.97); border-top: 1px solid var(--line-strong); border-radius: 22px 22px 0 0; display: flex; flex-direction: column; box-shadow: 0 -20px 50px -10px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.05); animation: up .24s var(--ease); padding-bottom: var(--sa-bottom); }
 /* Grabber: says "this is a sheet" on phones. */
 .sheet::before { content: ''; position: absolute; top: 7px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: rgba(255,255,255,.18); }
 .sheet-help, .sheet-export, .sheet-media { max-height: min(80vh, var(--room)); max-height: min(80dvh, var(--room)); }
@@ -389,7 +398,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
 .asset-preview-media video, .asset-preview-media img { display: block; max-width: 100%; max-height: 62vh; max-height: 62dvh; }
 
 .toast-live { position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 100; }
-.toast { cursor: pointer; position: fixed; top: max(64px, calc(env(safe-area-inset-top) + 56px)); left: 50%; transform: translateX(-50%); background: rgba(30,30,40,.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); color: var(--text); border: 1px solid var(--line-strong); padding: 10px 18px; border-radius: 999px; font-weight: 600; font-size: 14px; z-index: 100; box-shadow: 0 16px 40px -10px rgba(0,0,0,.7); max-width: calc(100% - 32px); text-align: center; animation: up .2s ease-out; }
+.toast { cursor: pointer; position: fixed; top: max(64px, calc(var(--sa-top) + 56px)); left: 50%; transform: translateX(-50%); background: rgba(30,30,40,.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); color: var(--text); border: 1px solid var(--line-strong); padding: 10px 18px; border-radius: 999px; font-weight: 600; font-size: 14px; z-index: 100; box-shadow: 0 16px 40px -10px rgba(0,0,0,.7); max-width: calc(100% - 32px); text-align: center; animation: up .2s ease-out; }
 .drop-overlay { position: absolute; inset: 0; z-index: 60; display: grid; place-items: center; font-size: 24px; font-weight: 800; background: rgba(124,108,255,.18); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); border: 3px dashed var(--accent); border-radius: 18px; margin: 8px; pointer-events: none; }
 
 /* ---------- transitions, effects, stickers ---------- */
@@ -424,7 +433,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
   .toolbar { justify-content: center; }
   .tools { flex: 0 1 auto; }
   .tool { min-width: 76px; }
-  .sheet { left: auto; right: calc(16px + env(safe-area-inset-right)); bottom: calc(16px + var(--kb, 0px)); top: 72px; width: 380px; max-height: none; border-radius: 22px; border: 1px solid var(--line-strong); padding-left: 0; padding-right: 0; box-shadow: var(--shadow-2); }
+  .sheet { left: auto; right: calc(16px + var(--sa-right)); bottom: calc(16px + var(--kb, 0px)); top: 72px; width: 380px; max-height: none; border-radius: 22px; border: 1px solid var(--line-strong); padding-left: 0; padding-right: 0; box-shadow: var(--shadow-2); }
   .sheet::before { display: none; }
   .sheet-help, .sheet-export, .sheet-media, .sheet-stickers { max-height: none; }
   /* Keep the preview visible next to an open panel. */
@@ -454,8 +463,8 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
     grid-template-rows: auto minmax(0, 1fr) auto;
     grid-template-areas: 'top top' 'work tl' 'work tools';
   }
-  .topbar { grid-area: top; padding-top: max(4px, env(safe-area-inset-top)); padding-bottom: 4px; }
-  .workspace { grid-area: work; min-height: 0; padding-bottom: env(safe-area-inset-bottom); }
+  .topbar { grid-area: top; padding-top: max(4px, var(--sa-top)); padding-bottom: 4px; }
+  .workspace { grid-area: work; min-height: 0; padding-bottom: var(--sa-bottom); }
   .controls { padding: 2px 8px; }
   .play-btn { width: 44px; height: 44px; }
   .timeline { grid-area: tl; min-height: 0; display: flex; flex-direction: column; border-top: 0; border-left: 1px solid var(--line); }
@@ -468,7 +477,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
   .toolbar { grid-area: tools; border-left: 1px solid var(--line); }
   .tool { min-height: 52px; min-width: 64px; padding: 4px 6px; }
   /* Panels open over the timeline column so the preview stays visible. */
-  .sheet { left: auto; right: env(safe-area-inset-right); width: min(440px, 55%); max-height: calc(var(--room) - 40px); border-radius: 20px 0 0 0; padding-left: 0; padding-right: 0; }
+  .sheet { left: auto; right: var(--sa-right); width: min(440px, 55%); max-height: calc(var(--room) - 40px); border-radius: 20px 0 0 0; padding-left: 0; padding-right: 0; }
   .sheet-help, .sheet-export, .sheet-media, .sheet-stickers { max-height: calc(var(--room) - 40px); } /* top bar stays reachable */
   .editor:has(.sheet) .workspace { padding-right: 0; }
 }
@@ -778,3 +787,8 @@ kbd { font-family: inherit; color: var(--text); }
 .save-badge { font-family: var(--font-mono); font-size: 11.5px; }
 
 @media (prefers-reduced-motion: reduce) { .hv-head { animation: none !important; left: 46% !important; } }
+
+/* ---------- iPhone install steps ---------- */
+.ios-steps { list-style: none; margin: 14px 0 4px; padding: 0; display: grid; gap: 10px; }
+.ios-steps li { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
+.ios-steps .step-icon { flex: 0 0 auto; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); color: #d8d4f5; }

@@ -206,7 +206,8 @@ export function Preview() {
         <canvas
           ref={canvas}
           className="preview-canvas"
-          style={{ width: box.w, height: box.h }}
+          // Hidden while empty: the call to action takes the whole stage instead of sitting on a black frame.
+          style={{ width: box.w, height: box.h, visibility: empty ? 'hidden' : undefined }}
           onPointerDown={onDown}
           onPointerMove={onMove}
           onPointerUp={onUp}
@@ -214,11 +215,11 @@ export function Preview() {
         />
         {!empty && <SafeZoneGuide aspect={aspect} w={box.w} h={box.h} />}
         {empty && (
-          <div className="empty-state" style={{ width: box.w, height: box.h }}>
+          <div className="empty-state">
             <ImagePlus size={44} />
             <p>Empieza agregando tus videos o fotos</p>
             <ImportButton className="btn-primary big">Agregar videos o fotos</ImportButton>
-            <small>También puedes arrastrarlos aquí</small>
+            <small className="drop-hint">También puedes arrastrarlos aquí</small>
           </div>
         )}
       </div>

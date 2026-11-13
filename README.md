@@ -18,7 +18,14 @@ npm run dev
 
 Abre http://localhost:5173.
 
-## Probarlo en tu teléfono
+## Usarlo en tu iPhone
+
+Abre **https://arturofrancomozqueda.github.io/clipo/app/** en Safari, toca Compartir → **Agregar a
+inicio** y abre Clipo desde su ícono: se ve a pantalla completa, funciona sin internet y tus
+proyectos quedan en el iPhone. Esa dirección se actualiza sola con cada cambio en `main`. Al terminar
+un video, “Guardar en Fotos” abre el menú de iOS: toca “Guardar video”.
+
+## Probarlo en tu teléfono (desarrollo)
 
 `npm run dev` también muestra una dirección "Network" (por ejemplo
 `http://192.168.1.20:5173`). Ábrela en el teléfono, conectado al mismo wifi.

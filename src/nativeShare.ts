@@ -83,6 +83,12 @@ const cancelledShare = (e: unknown) => {
 };
 
 /** Whether "Compartir" can be offered for this file. */
+/** iPhone or iPad (iPadOS reports itself as a Mac with touch). */
+export function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 export function canShareFile(file: File): boolean {
   if (nativeReady()) return true;
   if (isNative()) return false;

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useBackLayer } from '../backStack';
 
 interface ModalProps {
   /** Called on Escape, backdrop click or the browser closing the dialog. Omit for a modal that can't be dismissed. */
@@ -28,6 +29,11 @@ export function Modal({ onClose, dismissible = true, labelledBy, label, classNam
   closeRef.current = onClose;
   canClose.current = dismissible && !!onClose;
   const downOnBackdrop = useRef(false);
+  // System back (Android button, browser back) closes it like Escape does.
+  useBackLayer(true, () => {
+    if (!canClose.current) return false;
+    closeRef.current?.();
+  });
 
   useLayoutEffect(() => {
     const d = ref.current!;

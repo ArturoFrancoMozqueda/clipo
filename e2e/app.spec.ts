@@ -115,3 +115,21 @@ test('un proyecto se guarda, se renombra y se elimina con diálogos de la app', 
   await expect(page.getByText('Prueba de borrado')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('el botón Atrás del sistema cierra el panel y luego vuelve a los proyectos', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('/');
+  await page.addLocatorHandler(page.getByRole('button', { name: 'Saltar' }), async (skip) => {
+    await skip.click();
+  });
+  await page.getByRole('button', { name: 'Nuevo video' }).click();
+  await page.getByRole('button', { name: /Vertical/ }).click();
+  await page.locator('.toolbar button').filter({ hasText: 'Música' }).first().click();
+  await expect(page.locator('.sheet')).toBeVisible();
+  await page.goBack();
+  await expect(page.locator('.sheet')).toHaveCount(0);
+  await expect(page.getByLabel('Nombre del proyecto')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: /Crea videos geniales/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});

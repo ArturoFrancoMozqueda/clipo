@@ -1,10 +1,11 @@
 import { Suspense, lazy, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { CheckCircle2, Download, Send, Share2, TriangleAlert, VolumeX } from 'lucide-react';
+import { CheckCircle2, Download, ImageDown, Send, Share2, TriangleAlert, VolumeX } from 'lucide-react';
+import { useBackLayer } from '../backStack';
 import type { AudioItem, Clip, OverlayItem, PanelId, SelectionKind, StickerItem, TextItem } from '../types';
 import { itemsOf, useStore } from '../store';
 import type { ExportProgress } from '../exporter';
 import { canExport } from '../exportSupport';
-import { canShareFile, saveFile, shareFile } from '../nativeShare';
+import { canShareFile, isIOS, saveFile, shareFile } from '../nativeShare';
 import { FILTERS } from '../filters';
 import { clipDur, fmtTime, totalDuration } from '../model';
 import { setAspect } from '../ops';
@@ -88,8 +89,14 @@ export function Sheet() {
   const panel = useStore((s) => s.panel);
   const exporting = useStore((s) => s.exporting);
   const captioning = useStore((s) => s.captioning);
-  if (!panel) return null;
   const close = () => useStore.getState().setPanel(null);
+  // System back closes the panel, except while it is busy saving the video or writing subtitles.
+  useBackLayer(!!panel, () => {
+    const st = useStore.getState();
+    if (st.exporting || st.captioning) return false;
+    close();
+  });
+  if (!panel) return null;
   const body: Record<PanelId, ReactNode> = {
     media: <MediaLibrary />,
     audio: <MediaLibrary only="audio" />,
@@ -361,20 +368,36 @@ function ExportPanel() {
   if (state.kind === 'done') {
     const share = () => void shareFile(state.file, project.name);
     const canShare = canShareFile(state.file);
+    const ios = isIOS();
     return (
       <div className="export-done">
         <p className="ok"><CheckCircle2 /> ¡Tu video está listo!</p>
         <video src={state.url} controls playsInline className="export-video" />
-        <div className="row">
-          <button className="btn-primary" onClick={() => void saveFile(state.file)}>
-            <Download size={18} /> Descargar
-          </button>
-          {canShare && (
-            <button className="btn-primary alt" onClick={share}>
-              <Share2 size={18} /> Compartir
+        {ios && canShare ? (
+          // iPhone: "Descargar" lands in the Files app; Photos is reached through the share sheet.
+          <>
+            <div className="row">
+              <button className="btn-primary" onClick={share}>
+                <ImageDown size={18} /> Guardar en Fotos
+              </button>
+              <button className="btn-primary alt" onClick={() => void saveFile(state.file)}>
+                <Download size={18} /> En Archivos
+              </button>
+            </div>
+            <Hint>En el menú que se abre, toca “Guardar video”. Desde ahí también puedes mandarlo por WhatsApp o Instagram.</Hint>
+          </>
+        ) : (
+          <div className="row">
+            <button className="btn-primary" onClick={() => void saveFile(state.file)}>
+              <Download size={18} /> Descargar
             </button>
-          )}
-        </div>
+            {canShare && (
+              <button className="btn-primary alt" onClick={share}>
+                <Share2 size={18} /> Compartir
+              </button>
+            )}
+          </div>
+        )}
         <button className="btn-primary full" onClick={async () => {
           const { handOffVideo } = await import('../publish/store');
           handOffVideo(state.file);

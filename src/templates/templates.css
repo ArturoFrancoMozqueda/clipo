@@ -42,8 +42,8 @@
   .modal-dialog.tpl-backdrop { padding: 0; }
   .modal.tpl-modal {
     border-radius: 0; height: 100vh; max-height: 100vh; height: 100dvh; max-height: 100dvh; border: 0;
-    --pt: max(20px, env(safe-area-inset-top)); --pb: max(20px, env(safe-area-inset-bottom));
-    padding: var(--pt) max(16px, env(safe-area-inset-right)) var(--pb) max(16px, env(safe-area-inset-left));
+    --pt: max(20px, var(--sa-top)); --pb: max(20px, var(--sa-bottom));
+    padding: var(--pt) max(16px, var(--sa-right)) var(--pb) max(16px, var(--sa-left));
   }
   .tpl-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .tpl-thumb { height: 180px; }

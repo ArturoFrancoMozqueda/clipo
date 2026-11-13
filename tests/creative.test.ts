@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { stub } from './helpers/hooks.ts';
-import type { Asset } from '../src/types.ts';
+import type { Asset, TextItem } from '../src/types.ts';
 
 stub('engine', 'export const engine = { pause() {}, play() {} };');
 // Text fitting measures with a canvas; without one it keeps the template's own sizes.
@@ -91,17 +91,17 @@ test('text styles and quick looks are consistent', () => {
 });
 
 test('a quick look keeps the user\'s words but fills the placeholder with an example', () => {
-  const base = { id: 't', start: 0, duration: 3, x: 0.5, y: 0.75, size: 0.075, styleId: 'clasico' };
+  const base: Omit<TextItem, 'text'> = { id: 't', start: 0, duration: 3, x: 0.5, y: 0.75, size: 0.075, styleId: 'clasico' };
   const sample = TEXT_PRESETS.find((p) => p.sample)!;
-  const empty = { ...base, text: PLACEHOLDER_TEXT };
+  const empty: TextItem = { ...base, text: PLACEHOLDER_TEXT };
   applyPreset(empty, sample);
   assert.equal(empty.text, sample.sample);
-  const own = { ...base, text: 'Mi receta' };
+  const own: TextItem = { ...base, text: 'Mi receta' };
   applyPreset(own, sample);
   assert.equal(own.text, 'Mi receta');
   assert.equal(own.styleId, sample.styleId);
   const karaoke = TEXT_PRESETS.find((p) => p.karaoke)!;
-  const k = { ...base, text: 'hola a todos' };
+  const k: TextItem = { ...base, text: 'hola a todos' };
   applyPreset(k, karaoke);
   assert.deepEqual(k.karaoke, karaoke.karaoke);
   applyPreset(k, TEXT_PRESETS.find((p) => !p.karaoke)!);

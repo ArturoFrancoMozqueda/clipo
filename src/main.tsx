@@ -4,8 +4,6 @@ import App from './App';
 import { useStore } from './store';
 import { collectGarbage, holdTabLock, projectAssetIds, requestPersistence, toStorageError } from './db';
 import { createAutosave } from './autosave';
-import { startPublishing } from './publish/store';
-import { startProxies } from './proxies';
 import { markPending, markSaved, setSaveNow, trackedSave } from './saveState';
 // UI font, bundled so it works offline (the video text fonts load on demand in fonts.ts).
 import '@fontsource/inter/latin-400.css';
@@ -39,9 +37,15 @@ document.addEventListener('visibilitychange', () => document.visibilityState ===
 requestPersistence();
 holdTabLock();
 // Desktop app only: reload the publish queue and its local scheduler.
-startPublishing().catch((e) => console.warn('Clipo: no se pudo cargar la cola de publicación', e));
+// (Loaded on demand so the start screen doesn't wait for publishing code it never uses on phones.)
+import('./publish/store')
+  .then((m) => m.startPublishing())
+  .catch((e) => console.warn('Clipo: no se pudo cargar la cola de publicación', e));
 // Light copies of heavy videos for a smooth preview, made in the background.
-startProxies();
+// (Also on demand: it only has work once a project with videos is open.)
+import('./proxies')
+  .then((m) => m.startProxies())
+  .catch((e) => console.warn('Clipo: no se pudo iniciar la optimización de videos', e));
 
 // Free media left behind (e.g. a file imported and then undone) once the app is idle.
 const idle = (fn: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 10_000 }) : setTimeout(fn, 3000));

@@ -3,16 +3,16 @@ import { Clapperboard, Copy, Download, Film, FolderInput, ImagePlus, LayoutTempl
 import type { AspectId } from '../types';
 import { deleteProject, getBlob, getProject, listProjectMeta, type ProjectMeta } from '../db';
 import { useStore } from '../store';
-import { newProject } from '../ops';
 import { FormatPicker } from './FormatPicker';
 import { Modal } from './Modal';
 import { useInstallPrompt } from './useInstallPrompt';
+import { IosInstallButton } from './IosInstall';
 import { confirmDialog, promptDialog } from './confirm';
-import { SaveTemplateButton } from '../templates/SaveTemplateButton';
 import { SORT_LABELS, duplicateProject, filterProjects, fmtLength, relativeDate, renameProject, sortProjects, type ProjectSort } from '../projectActions';
 
 // Opened on demand from the start screen.
 const TemplateGallery = lazy(() => import('../templates/TemplateGallery').then((m) => ({ default: m.TemplateGallery })));
+const SaveTemplateButton = lazy(() => import('../templates/SaveTemplateButton').then((m) => ({ default: m.SaveTemplateButton })));
 const CapcutImport = lazy(() => import('./CapcutImport').then((m) => ({ default: m.CapcutImport })));
 
 const STEPS = [
@@ -76,7 +76,11 @@ export function Home() {
   };
   useEffect(load, []);
 
-  const create = (aspect: AspectId) => useStore.getState().open(newProject(aspect), {});
+  // The editing code loads on demand, so the start screen opens fast on phones.
+  const create = async (aspect: AspectId) => {
+    const { newProject } = await import('../ops');
+    useStore.getState().open(newProject(aspect), {});
+  };
 
   const openProject = async (m: ProjectMeta) => {
     if (opening) return;
@@ -168,6 +172,7 @@ export function Home() {
             <Download size={18} /> Instalar app
           </button>
         )}
+        {!install && <IosInstallButton />}
       </header>
 
       <section className={`hero ${hasProjects ? 'compact' : ''}`}>
@@ -284,7 +289,11 @@ export function Home() {
                   <small>{relativeDate(p.updatedAt)}</small>
                 </button>
                 <div className="project-actions">
-                  {p.clipCount > 0 && <SaveTemplateButton load={() => getProject(p.id)} className="icon-btn" />}
+                  {p.clipCount > 0 && (
+                    <Suspense fallback={null}>
+                      <SaveTemplateButton load={() => getProject(p.id)} className="icon-btn" />
+                    </Suspense>
+                  )}
                   <button className="icon-btn" aria-label={`Cambiar nombre de ${p.name}`} title="Cambiar nombre" onClick={() => rename(p)}>
                     <Pencil size={17} />
                   </button>

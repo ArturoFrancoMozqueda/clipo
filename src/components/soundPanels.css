@@ -10,7 +10,7 @@
 .sound-empty { padding: 14px 4px; }
 .sound-more { margin: 4px auto 0; display: block; }
 .music-trend-title { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; }
-.mood .trend-tag { position: absolute; top: 10px; right: 10px; margin: 0; }
+.sound-text .trend-tag { position: static; }
 .mood-phonk { background: linear-gradient(135deg, #7f1d1d, #0a0a0f); }
 .mood-lofihop { background: linear-gradient(135deg, #8b6f9e, #3b2f4a); }
 .mood-dembow { background: linear-gradient(135deg, #f97316, #be123c); }

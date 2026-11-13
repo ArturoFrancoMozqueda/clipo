@@ -6,7 +6,12 @@ const config: CapacitorConfig = {
   appId: 'app.clipo.editor',
   appName: 'Clipo',
   webDir: 'dist',
-  backgroundColor: '#0e0e12',
+  backgroundColor: '#0a0a0c',
+  plugins: {
+    // Clipo is always dark: keep the clock and battery icons light even when the phone is in light
+    // mode, and pass the bar sizes to the page (--safe-area-inset-*, used in styles.css).
+    SystemBars: { style: 'DARK', insetsHandling: 'css' },
+  },
 };
 
 export default config;

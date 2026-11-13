@@ -183,7 +183,6 @@ export function MusicSection() {
 
   const card = (m: Mood) => (
     <div key={m.id} className={`mood mood-${m.id}`}>
-      {m.trending && <span className="trend-tag">Tendencia</span>}
       <strong>{m.name}</strong>
       <small>{m.hint}</small>
       <div className="mood-actions">
