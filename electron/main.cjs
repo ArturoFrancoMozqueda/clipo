@@ -28,6 +28,7 @@ if (!gotLock) app.quit();
 
 let publishing = null;
 let mainWindow = null;
+let automation = null;
 
 const ORIGIN = `${SCHEME}://${HOST}`;
 // (URL.origin is "null" for custom schemes, so compare scheme and host.)
@@ -113,8 +114,12 @@ function createWindow() {
       sandbox: true,
       nodeIntegration: false,
       spellcheck: false,
+      // Keep hidden integration-test windows rendering the actual editor and preview.
+      backgroundThrottling: !SMOKE,
+      offscreen: SMOKE && process.env.CLIPO_SMOKE_EXTERNAL === '1',
       // Publishing bridge (src/publish/desktop.ts): connect accounts and upload from the main process.
       preload: path.join(__dirname, 'preload.cjs'),
+      additionalArguments: require('./automation.cjs').enabled() ? ['--clipo-agent'] : [],
     },
   });
   mainWindow = win;
@@ -184,7 +189,7 @@ function createWindow() {
       console.log('LOAD FAILED', code, desc);
       app.exit(1);
     });
-    win.webContents.on('did-finish-load', async () => {
+    if (process.env.CLIPO_SMOKE_EXTERNAL !== '1') win.webContents.on('did-finish-load', async () => {
       await new Promise((r) => setTimeout(r, 2500));
       const probe = await win.webContents.executeJavaScript(
         `({ title: document.title, heading: document.querySelector('.hero h2')?.textContent ?? null,
@@ -262,6 +267,7 @@ app.whenReady().then(() => {
   };
 
   Menu.setApplicationMenu(null);
+  automation = require('./automation.cjs').register({ app, ipcMain, getWindow: () => mainWindow, isAppUrl, canClose: () => !publishing?.activeUploads() });
   const win = createWindow();
   // Installed copies look for a newer release a few seconds after opening (never in tests or `npm run app:dev`).
   if (app.isPackaged && !SMOKE) setTimeout(() => void checkForUpdates({ app, net, dialog, shell, win }), 5000);
@@ -274,4 +280,4 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => app.quit());
 // Temp copies of videos sent for upload never outlive the app.
-app.on('will-quit', () => publishing?.cleanup?.());
+app.on('will-quit', () => { publishing?.cleanup?.(); automation?.cleanup(); });

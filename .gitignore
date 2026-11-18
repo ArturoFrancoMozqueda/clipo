@@ -8,3 +8,4 @@ playwright-report
 electron/publish/google-client.json
 electron/publish/meta-client.json
 site/app
+mcp/standalone/

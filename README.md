@@ -92,3 +92,19 @@ Las licencias de las fuentes, modelos de IA y voces están en
 
 Para una prueba completa (crear video, editar y exportar) dentro de la app:
 `CLIPO_SMOKE_SCRIPT=scripts/smoke-scenario.js npm run app:smoke`.
+
+## Editar con un agente de IA (MCP)
+
+Clipo actualizado admite MCP al abrirlo normalmente. `clipo_status` y
+`clipo_connect` también pueden iniciarlo automáticamente. En desarrollo,
+`npm run app:agent` abre Clipo con una conexión MCP local para preparar proyectos
+desde un agente y seguir editándolos en la interfaz. Incluye cortes, textos,
+música, estilos, superposiciones, subtítulos automáticos con progreso, capturas
+de la ventana y deshacer/rehacer. Los controles semánticos del editor dan acceso
+por MCP a las demás funciones, paneles y diálogos, sin Computer Use. Incluye
+acciones directas, trabajos persistentes, exportación verificada y transporte
+STDIO/Streamable HTTP autenticado. El servidor autónomo se distribuye con la app.
+`npm run --silent mcp:config` genera la configuración para tu cliente.
+
+La instalación, las herramientas y los límites (incluida la conexión desde
+ChatGPT web) están en [docs/MCP.md](docs/MCP.md).

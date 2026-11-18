@@ -173,6 +173,25 @@ class Engine {
   /** Boxes of the visible overlays (picture-in-picture), topmost last. */
   overlayBoxes: StickerBox[] = [];
   exporting = false;
+  private lastPreview: { project: Project; time: number } | null = null;
+
+  /** Await an actually drawn paused frame, rather than guessing a decoder delay. */
+  async waitForPreview(timeout = 10000) {
+    const s = useStore.getState(); const p = s.project; const time = s.time;
+    if (!p || !this.canvas || s.playing || this.hold || this.exporting) throw new Error('La vista previa no está disponible para una captura.');
+    this.lastPreview = null;
+    const end = performance.now() + timeout;
+    while (performance.now() < end) {
+      const current = useStore.getState();
+      if (current.project !== p || current.time !== time || current.playing) throw new Error('La vista previa cambió durante la captura.');
+      this.tick(performance.now());
+      const busy = [...this.videos.values()].some((v) => v.live && (v.el.seeking || v.el.readyState < 2));
+      const frame = this.lastPreview as { project: Project; time: number } | null;
+      if (!busy && frame?.project === p && Math.abs(frame.time - time) < 0.001) return;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    throw new Error('El fotograma todavía no está decodificado. Intenta capturarlo de nuevo.');
+  }
 
   /** Set by the fast exporter so the preview stops redrawing and leaves it the processor. */
   get holdPreview() {
@@ -601,7 +620,7 @@ class Engine {
     const drawn = this.render(p, t, s.selection, placed);
     if (playing && !this.exporting && !this.lowered && drawn) this.measure(performance.now() - t0);
     // A picture isn't decoded yet: media events wake the loop, but retry for a moment anyway.
-    if (drawn) this.misses = 0;
+    if (drawn) { this.misses = 0; this.lastPreview = { project: p, time: t }; }
     else if (this.misses++ < 30) this.dirty = true;
   }
 

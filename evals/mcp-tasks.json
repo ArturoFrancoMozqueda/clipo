@@ -1,0 +1,22 @@
+[
+  {
+    "id": "assembly",
+    "prompt": "Con el video suministrado, crea dos clips consecutivos: fuente 0 a 1 s y fuente 1 a 3 s. Añade el texto Inicio durante el primer segundo. Valida el plan, aplica un solo lote y deja guardado el proyecto editable.",
+    "maxCalls": 8
+  },
+  {
+    "id": "conflict",
+    "prompt": "Lee el proyecto y cambia su nombre a Revisado. Si la persona modifica el proyecto durante el trabajo, vuelve a leerlo y aplica únicamente el cambio de nombre. Conserva su texto y los clips.",
+    "maxCalls": 8
+  },
+  {
+    "id": "lost-reply",
+    "prompt": "Añade exactamente un texto Una vez en 0 s durante 1 s. Utiliza el requestKey suministrado. Si se pierde la respuesta de la edición, recupera el recibo con clipo_get_request sin repetir la escritura.",
+    "maxCalls": 8
+  },
+  {
+    "id": "review",
+    "prompt": "Inspecciona los 3 segundos del video original con 6 muestras. Exporta el proyecto a 360, espera su finalización y revisa el archivo exportado con 6 muestras y audio. Comprueba duración de 3 segundos e informa candidatos negros sin afirmar que revisaste todos los fotogramas.",
+    "maxCalls": 30
+  }
+]

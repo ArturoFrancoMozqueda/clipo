@@ -2,6 +2,28 @@
 // it asks the main process to connect, upload and check, and gets plain results back.
 const { contextBridge, ipcRenderer } = require('electron');
 
+// An intentionally narrow bridge: no arbitrary JavaScript, shell, or filesystem API.
+// Main enables local authenticated automation on normal startup; explicit disable is respected.
+if (process.argv.includes('--clipo-agent')) contextBridge.exposeInMainWorld('clipoAgent', {
+  ready: () => ipcRenderer.invoke('agent:ready'),
+  onRequest: (cb) => {
+    const fn = (_event, request) => cb(request);
+    ipcRenderer.on('agent:request', fn);
+    return () => ipcRenderer.removeListener('agent:request', fn);
+  },
+  onCancel: (cb) => {
+    const fn = (_event, id) => cb(id);
+    ipcRenderer.on('agent:cancel', fn);
+    return () => ipcRenderer.removeListener('agent:cancel', fn);
+  },
+  respond: (response) => ipcRenderer.send('agent:response', response),
+  readMedia: (requestId, filePath) => ipcRenderer.invoke('agent:readMedia', requestId, filePath),
+  statMedia: (requestId, filePath) => ipcRenderer.invoke('agent:statMedia', requestId, filePath),
+  compatibleMedia: (requestId, filePath, range) => ipcRenderer.invoke('agent:compatibleMedia', requestId, filePath, range),
+  readMediaChunk: (requestId, filePath, expected, offset, length) => ipcRenderer.invoke('agent:readMediaChunk', requestId, filePath, expected, offset, length),
+  closeEditor: (requestId) => ipcRenderer.invoke('agent:closeEditor', requestId),
+});
+
 contextBridge.exposeInMainWorld('clipoDesktop', {
   version: '1',
   youtube: {

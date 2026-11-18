@@ -194,7 +194,7 @@ const grow = (a: ItemBox | null, b: ItemBox): ItemBox =>
   a ? { ...a, x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) } : b;
 
 /** Where every text and sticker sits in a format, as fractions of the frame (union over its keyframes). */
-async function itemBoxes(p: Project, aspect: AspectId): Promise<ItemBox[]> {
+export async function itemBoxes(p: Project, aspect: AspectId): Promise<ItemBox[]> {
   await loadProjectFonts(p);
   const [W, H] = canvasSize(aspect);
   const c = document.createElement('canvas');

@@ -146,6 +146,8 @@ jobs:
           else
             echo "Sin GOOGLE_CLIENT_ID: la app pedirá configurar Google la primera vez."
           fi
+      - name: Empaquetar servidor MCP autónomo
+        run: npm run mcp:build
       - run: npx electron-builder --win --publish never
       # Opens the packaged app (fuses, asar integrity and CSP all active) and checks the editor loads.
       - name: Smoke test del .exe empaquetado
@@ -201,6 +203,8 @@ jobs:
           fi
       # Ad-hoc signature (identity "-" in package.json): enough for Apple Silicon to run it. Without an
       # Apple Developer ID it isn't notarized, so the first launch needs "Abrir igualmente" (PUBLICAR.md).
+      - name: Empaquetar servidor MCP autónomo
+        run: npm run mcp:build
       - run: npx electron-builder --mac --publish never
       - name: Smoke test del .app empaquetado
         env:

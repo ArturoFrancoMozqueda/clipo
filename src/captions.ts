@@ -23,6 +23,7 @@ export const CAPTION_LANGUAGES = [
 export const CAPTION_MODELS = {
   rapido: 'onnx-community/whisper-base_timestamped',
   preciso: 'onnx-community/whisper-small_timestamped',
+  revision: 'onnx-community/whisper-large-v3-turbo_timestamped',
 } as const;
 export type CaptionQuality = keyof typeof CAPTION_MODELS;
 
@@ -33,10 +34,12 @@ export type CaptionQuality = keyof typeof CAPTION_MODELS;
 export const CAPTION_REVISIONS: Record<CaptionQuality, string> = {
   rapido: '608c49e61301901684bc36cac8f74b95ff6b5a8e',
   preciso: '65caa70f294b46e1c33ff820aae6b16d048ab818',
+  revision: 'b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a',
 };
 
 /** Approximate first-time download in MB. The GPU version uses larger files but runs much faster. */
 export function captionDownloadMB(q: CaptionQuality) {
+  if (q === 'revision') return 1085;
   const gpu = 'gpu' in navigator;
   return q === 'rapido' ? (gpu ? 210 : 80) : gpu ? 590 : 250;
 }
@@ -58,7 +61,7 @@ const HALLUCINATIONS = /amara\.org|subt[ií]tulos (realizados|por|hechos)|^\s*(g
 
 interface WindowMeta {
   /** Clip the window was cut from, and the file it plays. */
-  clipId: string;
+  clipIds: string[];
   assetId: string;
   /** Source time (seconds in the file) where this window starts. */
   srcStart: number;
@@ -93,6 +96,20 @@ const speaking = (p: Project) =>
   layout(p).filter((l) => p.assets[l.clip.assetId]?.kind === 'video' && l.clip.volume > 0 && l.clip.freeze == null);
 const timingOf = (placed: Placed[]) =>
   placed.map(({ clip: c }) => `${c.id}:${c.assetId}:${c.in}:${c.out}:${c.speed}`).join('|');
+
+/** Recognize nearby cuts of the same recording together, retaining each clip's source mapping. */
+export function captionSourceGroups(placed: Placed[]) {
+  const groups: { assetId: string; clipIds: string[]; from: number; to: number }[] = [];
+  for (const { clip } of placed) {
+    const prev = groups.at(-1);
+    const from = Math.min(prev?.from ?? clip.in, clip.in);
+    const to = Math.max(prev?.to ?? clip.out, clip.out);
+    if (prev && prev.assetId === clip.assetId && clip.in <= prev.to + 3 && clip.out >= prev.from - 3 && to - from <= MAX_WINDOW) {
+      prev.clipIds.push(clip.id); prev.from = from; prev.to = to;
+    } else groups.push({ assetId: clip.assetId, clipIds: [clip.id], from: clip.in, to: clip.out });
+  }
+  return groups;
+}
 
 /**
  * Turns source times into timeline times with the clips as they are now. A moment goes to the same
@@ -173,6 +190,48 @@ export function cancelCaptions() {
   cancelFlag = true;
   abortRun?.();
 }
+
+export interface AudioReviewOptions {
+  project: Project;
+  urls: Record<string, string>;
+  assetId: string;
+  from: number;
+  to: number;
+  language: string;
+  quality: CaptionQuality;
+  onProgress(p: CaptionProgress): void;
+}
+
+/** Independent recognition of an ORIGINAL source interval. Never changes the project. */
+export async function reviewSourceAudio(opts: AudioReviewOptions) {
+  const asset = opts.project.assets[opts.assetId];
+  if (!asset || asset.kind === 'image' || opts.to <= opts.from || opts.to - opts.from > MAX_WINDOW || opts.to > asset.duration + 0.001) throw new Error('Usa un intervalo del audio original de hasta 28 segundos.');
+  cancelFlag = false;
+  opts.onProgress({ phase: 'audio', pct: 0 });
+  const samples = await decodeClipMono(opts.urls[opts.assetId], opts.from, opts.to);
+  if (cancelFlag) throw new Error('cancelled');
+  if (!samples || rms(samples) < SILENCE_RMS) throw new Error('no-speech');
+  worker ??= new Worker(new URL('./captionsWorker.ts', import.meta.url), { type: 'module' });
+  const w = worker;
+  return new Promise<{ wordTimed: boolean; words: TimedWord[]; text: string; from: number; to: number }>((resolve, reject) => {
+    let result: { wordTimed: boolean; words: TimedWord[]; text: string; from: number; to: number } | null = null;
+    abortRun = () => reject(new Error('cancelled'));
+    w.onerror = (e) => { w.terminate(); if (worker === w) worker = null; reject(new Error(e.message || 'worker')); };
+    w.onmessage = (e: MessageEvent<WorkerOut>) => {
+      const m = e.data;
+      if (m.type === 'download') opts.onProgress({ phase: 'download', pct: m.total ? m.loaded / m.total * 100 : 0, loaded: m.loaded, total: m.total });
+      else if (m.type === 'ready') opts.onProgress({ phase: 'listen', pct: 0 });
+      else if (m.type === 'window') {
+        const words = cleanWords(m.chunks, opts.to - opts.from).map((x) => ({ ...x, start: opts.from + x.start, end: opts.from + x.end }));
+        result = { wordTimed: m.words, words, text: words.map((x) => x.text).join(' '), from: opts.from, to: opts.to };
+        opts.onProgress({ phase: 'listen', pct: 100 });
+      } else if (m.type === 'done') result ? resolve(result) : reject(new Error('no-speech'));
+      else if (m.type === 'error') reject(new Error(m.message));
+    };
+    w.postMessage({ type: 'run', model: CAPTION_MODELS[opts.quality], revision: CAPTION_REVISIONS[opts.quality],
+      language: opts.language, windows: [{ id: 0, samples }] } satisfies WorkerIn, [samples.buffer]);
+  }).finally(() => { abortRun = null; });
+}
 /** Set by cancelCaptions(); checked between the slow steps that have nothing to abort. */
 let cancelFlag = false;
 
@@ -200,15 +259,20 @@ export async function generateCaptions(opts: {
   opts.onProgress({ phase: 'audio', pct: 0 });
   const windows: CaptionWindow[] = [];
   const metas: WindowMeta[] = [];
-  for (const [k, { clip }] of placed.entries()) {
-    const slice = await decodeClipMono(s.urls[clip.assetId], clip.in, clip.out);
+  const sourceGroups = captionSourceGroups(placed);
+  for (const [k, group] of sourceGroups.entries()) {
+    // Short cuts need the surrounding speech for recognition. Keep source timestamps
+    // and discard words outside the actual trim when mapping back to the timeline.
+    const from = Math.max(0, group.from - 1.5);
+    const to = Math.min(p.assets[group.assetId]?.duration ?? group.to, group.to + 1.5);
+    const slice = await decodeClipMono(s.urls[group.assetId], from, to);
     if (cancelFlag) throw new Error('cancelled');
-    opts.onProgress({ phase: 'audio', pct: ((k + 1) / placed.length) * 100 });
+    opts.onProgress({ phase: 'audio', pct: ((k + 1) / sourceGroups.length) * 100 });
     if (!slice) continue;
     for (const [a, b] of splitWindows(slice)) {
       if (rms(slice, a, b) < SILENCE_RMS) continue;
       windows.push({ id: windows.length, samples: slice.slice(a, b) });
-      metas.push({ clipId: clip.id, assetId: clip.assetId, srcStart: clip.in + a / SR, length: (b - a) / SR });
+      metas.push({ clipIds: group.clipIds, assetId: group.assetId, srcStart: from + a / SR, length: (b - a) / SR });
     }
   }
   if (!windows.length) throw new Error('no-speech');
@@ -237,20 +301,22 @@ export async function generateCaptions(opts: {
         opts.onProgress({ phase: 'listen', pct: 0 });
       } else if (m.type === 'window') {
         const meta = metas[m.id]!; // ids are the indexes of `windows`, sent above
-        const toSource = (t: number): SrcTime => ({ clipId: meta.clipId, assetId: meta.assetId, t: meta.srcStart + t });
-        if (m.words) spoken.push(...cleanWords(m.chunks, meta.length).map((w) => ({ text: w.text, start: toSource(w.start), end: toSource(w.end) })));
-        else for (const c of m.chunks) {
-          const text = cleanChunk(c.text);
-          if (!text) continue;
-          const a = Math.min(c.start, meta.length);
-          const b = Math.min(c.end ?? meta.length, meta.length);
-          const lines = phrases(text);
-          const total = lines.reduce((n, l) => n + l.length, 0);
-          let t = a;
-          for (const line of lines) {
-            const d = ((b - a) * line.length) / total;
-            found.push({ text: line, start: toSource(t), end: toSource(t + d) });
-            t += d;
+        for (const clipId of meta.clipIds) {
+          const toSource = (t: number): SrcTime => ({ clipId, assetId: meta.assetId, t: meta.srcStart + t });
+          if (m.words) spoken.push(...cleanWords(m.chunks, meta.length).map((w) => ({ text: w.text, start: toSource(w.start), end: toSource(w.end) })));
+          else for (const c of m.chunks) {
+            const text = cleanChunk(c.text);
+            if (!text) continue;
+            const a = Math.min(c.start, meta.length);
+            const b = Math.min(c.end ?? meta.length, meta.length);
+            const lines = phrases(text);
+            const total = lines.reduce((n, l) => n + l.length, 0);
+            let t = a;
+            for (const line of lines) {
+              const d = ((b - a) * line.length) / total;
+              found.push({ text: line, start: toSource(t), end: toSource(t + d) });
+              t += d;
+            }
           }
         }
         opts.onProgress({ phase: 'listen', pct: (++done / windows.length) * 100 });
@@ -292,7 +358,7 @@ export async function generateCaptions(opts: {
   for (const c of groupWords(words, CHUNK_OPTIONS[opts.look.chunk ?? 'frase'])) if (cleanChunk(c.text)) cues.push(c);
 
   // 4. Tidy timing: no overlaps, each line visible long enough to read.
-  const items = cuesToItems(cues, opts.look);
+  const items = cuesToItems(cues, opts.look, layout(now).at(-1)?.end ?? 0);
   if (!items.length) {
     if (edited) {
       useStore.getState().notify('Cambiaste los clips mientras se creaban los subtítulos y ya no quedan partes con voz. Vuelve a crearlos.');
@@ -312,7 +378,7 @@ export async function generateCaptions(opts: {
 }
 
 /** Word chunks of one window, without bracketed noise like "[Música]" and with sane times. */
-function cleanWords(chunks: { text: string; start: number; end: number | null }[], length: number): TimedWord[] {
+export function cleanWords(chunks: { text: string; start: number; end: number | null }[], length: number): TimedWord[] {
   const out: TimedWord[] = [];
   let depth = 0;
   for (const c of chunks) {
@@ -325,20 +391,21 @@ function cleanWords(chunks: { text: string; start: number; end: number | null }[
     const text = raw.replace(/[♪♫]/g, '').trim();
     if (!text) continue;
     const start = Math.min(Math.max(0, c.start), length);
+    if (start >= length - 0.01) continue; // Whisper sometimes emits phantom words at the window end.
     out.push({ text, start, end: Math.min(Math.max(c.end ?? start + 0.3, start + 0.05), length) });
   }
   return out;
 }
 
-function cuesToItems(cues: Cue[], look: CaptionLook): TextItem[] {
+export function cuesToItems(cues: Cue[], look: CaptionLook, maxEnd = Infinity): TextItem[] {
   const sorted = [...cues].sort((a, b) => a.start - b.start);
   const items: TextItem[] = [];
   for (const [i, f] of sorted.entries()) {
     const next = sorted[i + 1]?.start ?? Infinity;
-    const end = Math.min(Math.max(f.end, f.start + MIN_SHOW), next);
+    const end = Math.min(Math.max(f.end, f.start + MIN_SHOW), next, maxEnd);
     if (end - f.start < 0.15) continue;
     const t: TextItem = { id: uid(), text: f.text, start: f.start, duration: end - f.start, x: 0.5, y: 0.8, size: 0.06, styleId: 'amarillo', caption: true };
-    const words = relativeWords(f.words, f.start);
+    const words = relativeWords(f.words, f.start)?.map((w) => ({ ...w, end: Math.min(w.end, t.duration) })).filter((w) => w.end > w.start);
     if (words?.length) t.words = words;
     items.push(styleCaption(t, look));
   }
