@@ -54,6 +54,10 @@ jobs:
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - run: node scripts/sync-version.mjs --check
       - run: npx tsc --noEmit -p tsconfig.test.json
+      - name: Instalar FFmpeg para pruebas de medios reales
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg
       - run: npm test
       - run: npm run build
       # Reports known vulnerabilities in what ships to users; informative, it doesn't block a release.
