@@ -32,6 +32,10 @@ useStore.subscribe((s, prev) => {
   else markSaved();
 });
 setSaveNow(() => autosave.flush());
+if (window.clipoAgent) {
+  import('./automation/bridge').then((m) => m.startAgentBridge())
+    .catch((e) => console.warn('Clipo: no se pudo iniciar la conexión con IA', e));
+}
 window.addEventListener('pagehide', () => void autosave.flush());
 document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void autosave.flush());
 requestPersistence();

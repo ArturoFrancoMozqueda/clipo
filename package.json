@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/build-mcp.mjs",
     "preview": "vite preview --host",
     "test": "node --test \"tests/*.test.ts\"",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
@@ -17,7 +17,17 @@
     "cap:ios": "npm run version:sync && npm run build && cap sync ios && cap open ios",
     "app:dev": "npm run build && electron .",
     "app:smoke": "npm run build && node scripts/app-smoke.mjs",
-    "app:dist": "npm run build && node scripts/dist.mjs"
+    "app:dist": "npm run build && node scripts/dist.mjs",
+    "app:agent": "npm run build && node scripts/app-agent.mjs",
+    "mcp": "node mcp/server.mjs",
+    "mcp:http": "node mcp/http-server.mjs",
+    "mcp:config": "node mcp/config.mjs",
+    "mcp:doctor": "node mcp/doctor.mjs",
+    "mcp:build": "node scripts/build-mcp.mjs",
+    "mcp:validate": "node scripts/mcp-smoke.mjs",
+    "mcp:eval": "node scripts/mcp-agent-eval.mjs",
+    "mcp:smoke": "npm run build && node scripts/mcp-smoke.mjs",
+    "mcp:call": "node mcp/control.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.3",
@@ -148,16 +158,20 @@
     "onnxruntime-web": "1.31.0-dev.20260914-8d85527a0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "zod": "^4.6.7",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.3",
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@playwright/test": "^1.55.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^44.7.2",
     "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.12",
     "sharp": "^0.34.5",
     "typescript": "^5.6.3",
     "vite": "^6.0.3"
@@ -184,6 +198,7 @@
       "THIRD_PARTY_NOTICES.md",
       "!node_modules/**/*"
     ],
+    "extraResources": [{ "from": "mcp/standalone", "to": "mcp", "filter": ["**/*"] }],
     "asar": true,
     "win": {
       "target": [

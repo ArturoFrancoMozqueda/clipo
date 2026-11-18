@@ -55,7 +55,9 @@ async function load(model: string, revision?: string) {
     })) as AutomaticSpeechRecognitionPipeline;
     return { key, asr, device };
   };
-  if (await hasWebGPU()) {
+  // The review model uses quantized CPU weights (~1 GB) rather than downloading
+  // its multi-GB fp32 encoder for WebGPU. Keep attention outputs for word timing.
+  if (!model.includes('/whisper-large-v3-turbo') && await hasWebGPU()) {
     try {
       loaded = await tryLoad('webgpu');
       return loaded;

@@ -98,7 +98,7 @@ async function analyzeClip(p: Project, c: Clip, urls: Record<string, string>, ti
  * Analyzes every clip and saves the paths as one undoable step. Clips are set to "Rellenar" so the
  * crop can follow the person. Returns how many clips had a person.
  */
-export async function autoReframe(onProgress: (p: ReframeProgress) => void, signal: AbortSignal): Promise<{ found: number; total: number }> {
+export async function autoReframe(onProgress: (p: ReframeProgress) => void, signal: AbortSignal, beforeCommit: () => void = () => {}): Promise<{ found: number; total: number }> {
   const s = useStore.getState();
   const p = s.project;
   if (!p) throw new Error('No hay proyecto abierto');
@@ -122,6 +122,7 @@ export async function autoReframe(onProgress: (p: ReframeProgress) => void, sign
     if (r) found.set(c.id, r);
   }
   if (signal.aborted) throw cancelled();
+  beforeCommit();
   useStore.getState().commit((proj) => {
     for (const c of proj.clips) {
       const r = found.get(c.id);
